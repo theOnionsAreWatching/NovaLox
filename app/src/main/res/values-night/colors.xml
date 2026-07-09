@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="text_primary">#DEFFFFFF</color>
+    <color name="bubble_other">#22FFFFFF</color>
+
+    <color name="accent_blue">#64B5F6</color>
+    <color name="accent_teal">#4DB6AC</color>
+    <color name="accent_green">#81C784</color>
+    <color name="accent_orange">#FFB74D</color>
+    <color name="accent_red">#E57373</color>
+    <color name="accent_purple">#BA68C8</color>
+    <color name="accent_pink">#F06292</color>
+    <color name="accent_gray">#90A4AE</color>
+</resources>

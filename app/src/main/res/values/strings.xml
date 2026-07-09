@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">D-SMS</string>
+
+    <!-- gate / first run -->
+    <string name="gate_message">D-SMS needs to be your default messaging app to send and receive SMS and MMS.</string>
+    <string name="gate_button">Set as default SMS app</string>
+    <string name="import_title">Importing messages</string>
+    <string name="import_running">Copying your existing messages into D-SMS. This runs once.</string>
+    <string name="battery_title">Reliable notifications</string>
+    <string name="battery_message">To make sure new messages alert you instantly, allow D-SMS to ignore battery optimizations.</string>
+    <string name="allow">Allow</string>
+    <string name="later">Later</string>
+
+    <!-- softkeys -->
+    <string name="softkey_options">Options</string>
+    <string name="softkey_open">Open</string>
+    <string name="softkey_compose">Compose</string>
+    <string name="softkey_attach">Attach</string>
+    <string name="softkey_send">Send</string>
+    <string name="softkey_select">Select</string>
+    <string name="softkey_add">Add</string>
+    <string name="softkey_start">Start</string>
+
+    <!-- main -->
+    <string name="no_conversations">No conversations yet</string>
+    <string name="menu_search">Search</string>
+    <string name="menu_archived">Archived</string>
+    <string name="menu_sort">Sort</string>
+    <string name="menu_filter">Filter</string>
+    <string name="menu_mark_all_read">Mark all read</string>
+    <string name="menu_settings">Settings</string>
+    <string name="sort_recent">Most recent</string>
+    <string name="sort_unread">Unread first</string>
+    <string name="sort_alpha">Alphabetical</string>
+    <string name="sort_oldest">Oldest first</string>
+    <string name="filter_all">All</string>
+    <string name="filter_unread">Unread</string>
+    <string name="filter_unknown">Unknown senders</string>
+    <string name="filter_groups">Groups</string>
+    <string name="no_archived">No archived conversations</string>
+    <string name="you_prefix">You:</string>
+    <string name="draft_prefix">Draft:</string>
+
+    <!-- conversation options -->
+    <string name="open">Open</string>
+    <string name="call_contact">Call %1$s</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="archive">Archive</string>
+    <string name="unarchive">Unarchive</string>
+    <string name="mute">Mute (silent notifications)</string>
+    <string name="unmute">Unmute</string>
+    <string name="block_notifications">Block notifications</string>
+    <string name="unblock_notifications">Allow notifications</string>
+    <string name="hide_conversation">Hide conversation</string>
+    <string name="hide_confirm">Hide this conversation? It will keep receiving messages silently. Find it under Settings, Hidden conversations.</string>
+    <string name="hide">Hide</string>
+    <string name="unhide">Unhide</string>
+    <string name="mark_read">Mark read</string>
+    <string name="mark_unread">Mark unread</string>
+    <string name="block_number">Block number</string>
+    <string name="number_blocked">Number blocked</string>
+    <string name="delete_thread">Delete conversation</string>
+    <string name="delete_thread_confirm">Delete all messages with %1$s? They move to the recycle bin.</string>
+    <string name="delete_thread_locked">This conversation has %1$d locked messages. Delete those too?</string>
+    <string name="delete_all">Delete all</string>
+    <string name="keep_locked">Keep locked</string>
+
+    <!-- thread -->
+    <string name="no_messages">No messages</string>
+    <string name="compose_hint">Message</string>
+    <string name="draft_continues">… draft continues below</string>
+    <string name="n_recipients">%1$d recipients</string>
+    <string name="back">Back</string>
+    <string name="overflow_glyph" translatable="false">\u22EE</string>
+    <string name="group_send_mode">Group send mode</string>
+    <string name="mode_broadcast">Broadcast (separate SMS, replies come one-to-one)</string>
+    <string name="mode_group_mms">Group MMS (shared thread, replies to all)</string>
+    <string name="switched_broadcast">Switched to broadcast for future messages</string>
+    <string name="switched_group_mms">Switched to group MMS for future messages</string>
+    <string name="schedule_send">Send later…</string>
+    <string name="schedule_needs_text">Type the message first, then choose Send later</string>
+    <string name="schedule_in_past">That time is in the past</string>
+    <string name="scheduled_for">Scheduled for %1$s</string>
+    <string name="send_now">Send now</string>
+    <string name="cancel_schedule">Cancel scheduled send</string>
+    <string name="view_media">View media</string>
+
+    <!-- message actions -->
+    <string name="message_options">Message options…</string>
+    <string name="retry">Retry</string>
+    <string name="resend">Resend</string>
+    <string name="cancel_sending">Cancel sending</string>
+    <string name="forward">Forward</string>
+    <string name="forward_to">Forward to</string>
+    <string name="forwarded">Forwarded</string>
+    <string name="save_attachment">Save attachment</string>
+    <string name="lock">Lock</string>
+    <string name="unlock">Unlock</string>
+    <string name="details">Details</string>
+    <string name="delete">Delete</string>
+    <string name="delete_message_confirm">Delete this message? It moves to the recycle bin.</string>
+    <string name="delete_locked_confirm">This message is locked. Delete it anyway? It moves to the recycle bin and loses its lock.</string>
+    <string name="detail_type">Type</string>
+    <string name="detail_from">From</string>
+    <string name="detail_to">To</string>
+    <string name="detail_date">Date</string>
+    <string name="detail_status">Status</string>
+    <string name="detail_locked">Locked</string>
+
+    <!-- statuses -->
+    <string name="status_sending">Sending…</string>
+    <string name="status_sent">Sent</string>
+    <string name="status_delivered">Delivered</string>
+    <string name="status_failed">Failed</string>
+    <string name="status_canceled">Canceled</string>
+    <string name="status_scheduled">Scheduled</string>
+
+    <!-- attachments -->
+    <string name="snippet_attachment">Attachment</string>
+    <string name="attach_audio">[Audio message] press OK to open</string>
+    <string name="attach_vcard">Contact card</string>
+    <string name="attach_file">[File: %1$s]</string>
+    <string name="more_attachments">%1$d attachments, press OK to view</string>
+    <string name="open_in_contacts">Open in Contacts</string>
+    <string name="save">Save</string>
+    <string name="play">Play</string>
+    <string name="media_counter">%1$d / %2$d</string>
+    <string name="saved_to_downloads">Saved to Downloads/D-SMS</string>
+    <string name="save_failed">Could not save</string>
+
+    <!-- elements -->
+    <string name="elements_title">In this message</string>
+    <string name="el_phone">Number: %1$s</string>
+    <string name="el_email">Email: %1$s</string>
+    <string name="el_link">Link: %1$s</string>
+    <string name="el_address">Address: %1$s</string>
+    <string name="act_call">Call</string>
+    <string name="act_message">Send message</string>
+    <string name="act_copy">Copy</string>
+    <string name="act_email">Send email</string>
+    <string name="act_open_link">Open link</string>
+    <string name="act_open_maps">Open in maps</string>
+    <string name="open_link_confirm">Open %1$s in the browser?</string>
+    <string name="copied">Copied</string>
+
+    <!-- compose (new message) -->
+    <string name="new_message">New message</string>
+    <string name="recipient_hint">Name or number</string>
+    <string name="add">Add</string>
+    <string name="no_recipients">No recipients yet</string>
+    <string name="remove_recipient">Remove recipient</string>
+
+    <!-- search -->
+    <string name="no_results">No results</string>
+
+    <!-- notifications -->
+    <string name="channel_messages">Messages</string>
+    <string name="action_mark_read">Mark read</string>
+
+    <!-- settings -->
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_behavior">Behavior</string>
+    <string name="settings_blocking">Blocking</string>
+    <string name="settings_data">Messages and data</string>
+    <string name="settings_device">Device</string>
+    <string name="pref_theme">Theme</string>
+    <string name="pref_accent">Accent color</string>
+    <string name="pref_message_style">Sent/received style</string>
+    <string name="pref_msg_text_size">Message text size</string>
+    <string name="pref_time_text_size">Timestamp size</string>
+    <string name="pref_list_density">List density</string>
+    <string name="pref_ui_scale">Overall text scale</string>
+    <string name="pref_focus_stroke">Focus outline thickness</string>
+    <string name="pref_layout_direction">Layout direction</string>
+    <string name="pref_show_search">Show search bar on main screen</string>
+    <string name="pref_delivery_reports">Request delivery reports</string>
+    <string name="pref_default_group_mode">Default for new groups</string>
+    <string name="pref_link_opening">Opening links</string>
+    <string name="pref_compose_max_lines">Compose box max lines</string>
+    <string name="pref_bin_retention">Recycle bin auto-empty</string>
+    <string name="pref_softkey_mode">Softkey bar</string>
+    <string name="open_softkey_config">Softkey key capture</string>
+    <string name="open_search_pref">Search messages</string>
+    <string name="open_keywords_pref">Blocked keywords</string>
+    <string name="open_blocked_pref">Blocked messages</string>
+    <string name="open_bin_pref">Recycle bin</string>
+    <string name="open_hidden_pref">Hidden conversations</string>
+    <string name="resync_pref">Re-sync with system messages</string>
+    <string name="resync_started">Sync started</string>
+    <string name="refresh_contacts_pref">Refresh contact names</string>
+    <string name="contacts_refreshing">Refreshing contact names</string>
+
+    <!-- keywords -->
+    <string name="keywords_title">Blocked keywords</string>
+    <string name="add_keyword">Add keyword</string>
+    <string name="keyword_hint_row">Messages containing this are stored silently</string>
+    <string name="remove_keyword_confirm">Remove keyword \"%1$s\"?</string>
+    <string name="remove">Remove</string>
+
+    <!-- recycle bin -->
+    <string name="bin_title">Recycle bin</string>
+    <string name="deleted_on">Deleted %1$s</string>
+    <string name="restore">Restore</string>
+    <string name="delete_forever">Delete forever</string>
+    <string name="empty_bin">Empty bin</string>
+    <string name="empty_bin_confirm">Permanently delete %1$d messages?</string>
+
+    <!-- hidden -->
+    <string name="hidden_title">Hidden conversations</string>
+
+    <!-- blocked messages -->
+    <string name="blocked_title">Blocked messages</string>
+
+    <!-- softkey config -->
+    <string name="softkey_config_title">Softkey capture</string>
+    <string name="capture_left">Capture left softkey</string>
+    <string name="capture_right">Capture right softkey</string>
+    <string name="press_left_softkey">Press your phone\'s LEFT softkey now (Back cancels)</string>
+    <string name="press_right_softkey">Press your phone\'s RIGHT softkey now (Back cancels)</string>
+    <string name="captured_code">Captured key code %1$d</string>
+    <string name="softkey_current">Current codes — left: %1$d, right: %2$d</string>
+
+    <string name="nothing_here">Nothing here</string>
+</resources>
