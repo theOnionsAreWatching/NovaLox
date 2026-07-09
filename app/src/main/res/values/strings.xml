@@ -233,4 +233,11 @@
     <string name="softkeys_saved">Softkeys saved</string>
     <string name="not_a_softkey">That looks like a regular key — press the softkey under the screen label</string>
     <string name="same_key_twice">That\'s the same key as the left softkey — press the other one</string>
+
+    <!-- v0.3 additions -->
+    <string name="attached_label">Attached: %1$s</string>
+    <string name="remove_attachment_confirm">Remove this attachment? It won\'t be sent.</string>
+    <string name="clear_glyph" translatable="false">\u2715</string>
+    <string name="softkey_new_message">New msg</string>
+    <string name="pref_show_search_short">Search bar on main screen</string>
 </resources>

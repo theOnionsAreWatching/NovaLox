@@ -61,19 +61,27 @@ object ThemeUtils {
     fun dp(context: Context, v: Int): Int =
         (v * context.resources.displayMetrics.density).toInt()
 
-    /** Focus indicator: distinct outline, not a fill, thickness user-configurable. */
+    /** Focus indicator: accent outline PLUS a translucent accent fill so the focused
+     *  item is unmistakable even on low-contrast screens. Thickness user-configurable. */
     fun focusForeground(context: Context): StateListDrawable {
         val stroke = dp(context, Prefs.get(context).focusStrokeDp)
+        val accent = accentColor(context)
+        val fill = Color.argb(40, Color.red(accent), Color.green(accent), Color.blue(accent))
         val focused = GradientDrawable().apply {
-            setColor(Color.TRANSPARENT)
-            setStroke(stroke, accentColor(context))
-            cornerRadius = dp(context, 6).toFloat()
+            setColor(fill)
+            setStroke(stroke, accent)
+            cornerRadius = dp(context, 8).toFloat()
         }
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
             addState(intArrayOf(android.R.attr.state_selected), focused)
             addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
         }
+    }
+
+    /** Give buttons / inputs the same visible focus highlight as list items. */
+    fun applyFocusHighlight(vararg views: android.view.View) {
+        for (v in views) v.foreground = focusForeground(v.context)
     }
 
     fun densityPad(context: Context): Int = when (Prefs.get(context).listDensity) {
@@ -127,6 +135,11 @@ abstract class BaseActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        softkeys?.refreshVisibility()
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (softkeys?.handleKey(event) == true) return true
         return super.dispatchKeyEvent(event)
@@ -153,11 +166,20 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
         "always" -> true
         "never" -> false
         else -> {
-            // keypad phone heuristic: 12-key keyboard, or no touchscreen at all
+            // Auto: show once the user has actually saved softkey mappings, or on obvious
+            // keypad hardware. Saved keys are the reliable signal on real devices, since
+            // many keypad phones still report a touchscreen feature.
             val cfg = activity.resources.configuration
-            cfg.keyboard == Configuration.KEYBOARD_12KEY ||
+            prefs.softkeysMapped ||
+                cfg.keyboard == Configuration.KEYBOARD_12KEY ||
                 !activity.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
         }
+    }
+
+    /** Re-evaluate whether the bar should be visible (call from onResume so a setting or
+     *  a just-finished setup takes effect without restarting the app). */
+    fun refreshVisibility() {
+        binding.root.visibility = if (shouldShow()) View.VISIBLE else View.GONE
     }
 
     fun set(left: String?, center: String?, right: String?,

@@ -98,6 +98,7 @@ abstract class SimpleListActivity : BaseActivity() {
         setContentView(binding.root)
         binding.listTitle.setText(titleRes())
         binding.btnBack.setOnClickListener { finish() }
+        ThemeUtils.applyFocusHighlight(binding.btnBack, binding.btnAction, binding.btnAction2)
         binding.list.layoutManager = LinearLayoutManager(this)
     }
 
@@ -390,6 +391,7 @@ class SoftkeyConfigActivity : BaseActivity() {
         onboarding = intent.getBooleanExtra(EXTRA_ONBOARDING, false)
         binding.listTitle.setText(R.string.softkey_config_title)
         binding.btnBack.setOnClickListener { finishFlow(save = false) }
+        ThemeUtils.applyFocusHighlight(binding.btnBack, binding.btnAction, binding.btnAction2)
         binding.list.visibility = View.GONE
         binding.emptyLabel.visibility = View.VISIBLE
         binding.btnAction.visibility = View.VISIBLE
@@ -435,6 +437,7 @@ class SoftkeyConfigActivity : BaseActivity() {
         if (save && capturedLeft > 0 && capturedRight > 0) {
             prefs.softkeyLeftCode = capturedLeft
             prefs.softkeyRightCode = capturedRight
+            prefs.softkeysMapped = true
             Toast.makeText(this, R.string.softkeys_saved, Toast.LENGTH_SHORT).show()
         }
         if (onboarding) prefs.softkeySetupDone = true

@@ -70,12 +70,16 @@ class MainActivity : BaseActivity() {
 
         softkeys = Softkeys(this, binding.softkeyBar).also {
             it.set(
-                getString(R.string.softkey_options), getString(R.string.softkey_open), getString(R.string.softkey_compose),
-                onLeft = { optionsMenu() },
+                getString(R.string.softkey_new_message), getString(R.string.softkey_open), getString(R.string.softkey_options),
+                onLeft = { startActivity(Intent(this, ComposeActivity::class.java)) },
                 onCenter = { (binding.convoList.focusedChild)?.performClick() },
-                onRight = { startActivity(Intent(this, ComposeActivity::class.java)) }
+                onRight = { optionsMenu() },
+                onMenu = { optionsMenu() }
             )
         }
+        ThemeUtils.applyFocusHighlight(
+            binding.btnSettings, binding.btnCompose, binding.gateButton, binding.searchInput
+        )
     }
 
     override fun onStart() {

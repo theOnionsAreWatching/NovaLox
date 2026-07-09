@@ -20,6 +20,9 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    var softkeysMapped: Boolean
+        get() = sp.getBoolean("softkeys_mapped", false)
+        set(v) = sp.edit().putBoolean("softkeys_mapped", v).apply()
 
     // ---- appearance ----
     // system / light / dark

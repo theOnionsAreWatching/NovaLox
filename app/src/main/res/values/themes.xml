@@ -4,6 +4,19 @@
         <item name="colorPrimary">@color/accent_blue</item>
         <item name="colorAccent">@color/accent_blue</item>
         <item name="android:textColorLink">@color/accent_blue</item>
+        <item name="alertDialogTheme">@style/DSMS.AlertDialog</item>
+    </style>
+
+    <style name="DSMS.AlertDialog" parent="ThemeOverlay.AppCompat.Dialog.Alert">
+        <item name="buttonBarPositiveButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="android:listChoiceBackgroundIndicator">@drawable/bg_focus_pill</item>
+    </style>
+
+    <style name="DSMS.DialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="android:background">@drawable/bg_focus_pill</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
     </style>
 
     <style name="Accent_Blue" parent="">

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory android:title="@string/settings_appearance">
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="theme"
             android:title="@string/pref_theme"
             android:entries="@array/theme_entries"
@@ -10,6 +12,7 @@
             android:defaultValue="system"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="accent"
             android:title="@string/pref_accent"
             android:entries="@array/accent_entries"
@@ -17,6 +20,7 @@
             android:defaultValue="blue"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="message_style"
             android:title="@string/pref_message_style"
             android:entries="@array/style_entries"
@@ -24,6 +28,7 @@
             android:defaultValue="bubble"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="msg_text_size"
             android:title="@string/pref_msg_text_size"
             android:entries="@array/msg_size_entries"
@@ -31,6 +36,7 @@
             android:defaultValue="16"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="time_text_size"
             android:title="@string/pref_time_text_size"
             android:entries="@array/time_size_entries"
@@ -38,6 +44,7 @@
             android:defaultValue="11"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="list_density"
             android:title="@string/pref_list_density"
             android:entries="@array/density_entries"
@@ -45,6 +52,7 @@
             android:defaultValue="comfortable"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="ui_scale"
             android:title="@string/pref_ui_scale"
             android:entries="@array/scale_entries"
@@ -52,6 +60,7 @@
             android:defaultValue="1.0"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="focus_stroke"
             android:title="@string/pref_focus_stroke"
             android:entries="@array/stroke_entries"
@@ -59,6 +68,7 @@
             android:defaultValue="2"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="layout_direction"
             android:title="@string/pref_layout_direction"
             android:entries="@array/direction_entries"
@@ -69,17 +79,23 @@
 
     <PreferenceCategory android:title="@string/settings_behavior">
         <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
             android:key="show_search_bar"
-            android:title="@string/pref_show_search"
+            android:title="@string/pref_show_search_short"
             android:defaultValue="false" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_search"
             android:title="@string/open_search_pref" />
         <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
             android:key="delivery_reports"
             android:title="@string/pref_delivery_reports"
             android:defaultValue="true" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="default_group_mode"
             android:title="@string/pref_default_group_mode"
             android:entries="@array/group_mode_entries"
@@ -87,6 +103,7 @@
             android:defaultValue="broadcast"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="link_opening"
             android:title="@string/pref_link_opening"
             android:entries="@array/link_entries"
@@ -94,6 +111,7 @@
             android:defaultValue="ask"
             android:summary="%s" />
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="compose_max_lines"
             android:title="@string/pref_compose_max_lines"
             android:entries="@array/compose_lines_entries"
@@ -104,15 +122,18 @@
 
     <PreferenceCategory android:title="@string/settings_blocking">
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_keywords"
             android:title="@string/open_keywords_pref" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_blocked"
             android:title="@string/open_blocked_pref" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_data">
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="bin_retention"
             android:title="@string/pref_bin_retention"
             android:entries="@array/bin_entries"
@@ -120,21 +141,26 @@
             android:defaultValue="30"
             android:summary="%s" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_bin"
             android:title="@string/open_bin_pref" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_hidden"
             android:title="@string/open_hidden_pref" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="resync"
             android:title="@string/resync_pref" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="refresh_contacts"
             android:title="@string/refresh_contacts_pref" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_device">
         <ListPreference
+            app:iconSpaceReserved="false"
             android:key="softkey_mode"
             android:title="@string/pref_softkey_mode"
             android:entries="@array/softkey_entries"
@@ -142,6 +168,7 @@
             android:defaultValue="auto"
             android:summary="%s" />
         <Preference
+            app:iconSpaceReserved="false"
             android:key="open_softkeys"
             android:title="@string/open_softkey_config" />
     </PreferenceCategory>

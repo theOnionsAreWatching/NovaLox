@@ -45,6 +45,8 @@ class SearchActivity : BaseActivity() {
             )
         }
 
+        ThemeUtils.applyFocusHighlight(binding.btnBack, binding.searchInput)
+
         val initial = intent.getStringExtra("query").orEmpty()
         if (initial.isNotBlank()) {
             binding.searchInput.setText(initial)

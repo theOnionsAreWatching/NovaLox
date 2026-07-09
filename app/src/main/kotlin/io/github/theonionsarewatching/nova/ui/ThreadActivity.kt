@@ -12,6 +12,7 @@ import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.View
 import androidx.appcompat.app.AlertDialog
+import coil.load
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.theonionsarewatching.nova.R
@@ -51,6 +52,8 @@ class ThreadActivity : BaseActivity() {
     private var hasMoreNewer = false
     private var loading = false
     private var composeMode = true
+    /** staged attachment: (path, mime, displayName) — sent together with the next Send */
+    private var pendingAttachment: Triple<String, String, String>? = null
 
     private val draftHandler = Handler(Looper.getMainLooper())
     private var draftRunnable: Runnable? = null
@@ -72,7 +75,8 @@ class ThreadActivity : BaseActivity() {
             lineStepPx = { (prefs.msgTextSp * resources.displayMetrics.scaledDensity * 3).toInt() },
             onEdge = { down ->
                 if (down) { enterComposeMode(); true }
-                else { loadOlder(); true }
+                else if (hasMoreOlder) { loadOlder(); true }
+                else { binding.btnOverflow.requestFocus(); true }
             }
         )
 
@@ -80,6 +84,12 @@ class ThreadActivity : BaseActivity() {
         binding.btnOverflow.setOnClickListener { threadOptions() }
         binding.btnAttach.setOnClickListener { pickAttachment() }
         binding.btnSend.setOnClickListener { send() }
+        binding.attachmentRow.setOnClickListener { confirmRemoveAttachment() }
+        binding.attachClear.setOnClickListener { confirmRemoveAttachment() }
+        ThemeUtils.applyFocusHighlight(
+            binding.btnBack, binding.btnOverflow, binding.btnAttach, binding.btnSend,
+            binding.composeInput, binding.attachmentRow
+        )
 
         binding.composeInput.maxLines = prefs.composeMaxLines
         binding.composeInput.addTextChangedListener(object : TextWatcher {
@@ -136,6 +146,10 @@ class ThreadActivity : BaseActivity() {
         super.onResume()
         visibleConvoId = convoId
         NotificationHelper.cancel(this, convoId)
+        val barShown = softkeys?.shouldShow() == true
+        binding.btnAttach.visibility = if (barShown) View.GONE else View.VISIBLE
+        binding.btnSend.visibility = if (barShown) View.GONE else View.VISIBLE
+        updateSoftkeys()
         markRead()
     }
 
@@ -328,8 +342,27 @@ class ThreadActivity : BaseActivity() {
             binding.composeInput.text?.contains('\n') == true
         binding.moreIndicator.visibility = if (multiline) View.VISIBLE else View.GONE
         binding.msgList.requestFocus()
-        scroller?.focusPosition(focusPos.coerceIn(0, rows.size - 1))
+        val target = focusPos.coerceIn(0, rows.size - 1)
+        if (target == rows.size - 1) focusBottomPinned() else scroller?.focusPosition(target)
         updateSoftkeys()
+    }
+
+    /** Focus the newest message but keep the list scrolled to the very bottom —
+     *  a tall last message stays bottom-aligned until the next D-pad up sub-scrolls it. */
+    private fun focusBottomPinned() {
+        val pos = rows.size - 1
+        if (pos < 0) return
+        binding.msgList.scrollToPosition(pos)
+        binding.msgList.post {
+            val vh = binding.msgList.findViewHolderForAdapterPosition(pos) ?: return@post
+            vh.itemView.requestFocus()
+            binding.msgList.post {
+                val v = binding.msgList.findViewHolderForAdapterPosition(pos)?.itemView ?: return@post
+                val viewBottom = binding.msgList.height - binding.msgList.paddingBottom
+                val delta = v.bottom - viewBottom
+                if (delta != 0) binding.msgList.scrollBy(0, delta)
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -342,8 +375,18 @@ class ThreadActivity : BaseActivity() {
             val sel = binding.composeInput.selectionStart.coerceAtLeast(0)
             val line = if (layout != null) layout.getLineForOffset(sel) else 0
             if (line == 0) {
-                enterScrollMode()
+                if (binding.attachmentRow.visibility == View.VISIBLE) {
+                    binding.attachmentRow.requestFocus()
+                } else {
+                    enterScrollMode()
+                }
                 return true
+            }
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && binding.attachmentRow.hasFocus()) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> { enterScrollMode(); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { enterComposeMode(); return true }
             }
         }
 
@@ -376,13 +419,54 @@ class ThreadActivity : BaseActivity() {
 
     private fun send() {
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
-        if (text.isEmpty()) return
+        val attachment = pendingAttachment
+        if (text.isEmpty() && attachment == null) return
         binding.composeInput.setText("")
+        clearAttachment(deleteFile = false)
         lifecycleScope.launch {
             repo.db.conversations().setDraft(convoId, "")
-            repo.sendText(convoId, text)
+            if (attachment != null) {
+                val (path, mime, name) = attachment
+                repo.sendAttachment(convoId, text, path, mime, name)
+            } else {
+                repo.sendText(convoId, text)
+            }
         }
         enterComposeMode()
+    }
+
+    private fun setAttachment(path: String, mime: String, name: String) {
+        // replacing a previously staged file: clean the old one up
+        pendingAttachment?.let { runCatching { File(it.first).delete() } }
+        pendingAttachment = Triple(path, mime, name)
+        binding.attachmentRow.visibility = View.VISIBLE
+        binding.attachmentName.text = getString(R.string.attached_label, name)
+        if (mime.startsWith("image/") || mime.startsWith("video/")) {
+            binding.attachThumb.visibility = View.VISIBLE
+            binding.attachThumb.load(File(path)) { size(96, 96) }
+        } else {
+            binding.attachThumb.visibility = View.GONE
+        }
+        enterComposeMode()
+    }
+
+    private fun confirmRemoveAttachment() {
+        if (pendingAttachment == null) return
+        AlertDialog.Builder(this)
+            .setMessage(R.string.remove_attachment_confirm)
+            .setPositiveButton(R.string.remove) { _, _ ->
+                clearAttachment(deleteFile = true)
+                enterComposeMode()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun clearAttachment(deleteFile: Boolean) {
+        if (deleteFile) pendingAttachment?.let { runCatching { File(it.first).delete() } }
+        pendingAttachment = null
+        binding.attachmentRow.visibility = View.GONE
+        binding.attachThumb.setImageDrawable(null)
     }
 
     private fun pickAttachment() {
@@ -401,8 +485,6 @@ class ThreadActivity : BaseActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 201 && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
-            val text = binding.composeInput.text?.toString()?.trim().orEmpty()
-            binding.composeInput.setText("")
             lifecycleScope.launch {
                 try {
                     val mime = contentResolver.getType(uri) ?: "application/octet-stream"
@@ -418,8 +500,8 @@ class ThreadActivity : BaseActivity() {
                         out.outputStream().use { output -> input.copyTo(output) }
                     }
                     if (out.exists() && out.length() > 0) {
-                        repo.db.conversations().setDraft(convoId, "")
-                        repo.sendAttachment(convoId, text, out.absolutePath, mime, out.name)
+                        // staged, not sent — it goes out with the next Send press
+                        setAttachment(out.absolutePath, mime, out.name)
                     }
                 } catch (_: Exception) {}
             }

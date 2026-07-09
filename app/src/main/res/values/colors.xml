@@ -11,6 +11,7 @@
     <color name="accent_purple">#6A1B9A</color>
     <color name="accent_pink">#AD1457</color>
     <color name="accent_gray">#546E7A</color>
-    <color name="divider">#1F000000</color>
+    <color name="divider">#38000000</color>
     <color name="compose_pill">#0D000000</color>
+    <color name="focus_fill">#2E000000</color>
 </resources>
