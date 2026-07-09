@@ -4,6 +4,8 @@ import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import coil.load
+import coil.transform.CircleCropTransformation
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
 import io.github.theonionsarewatching.nova.databinding.ItemConversationBinding
@@ -42,12 +44,37 @@ class ConversationAdapter(
         val ctx = holder.itemView.context
         val prefs = Prefs.get(ctx)
 
+        // ---- avatar: contact photo, or colored letter circle ----
+        val title = c.displayTitle()
+        if (c.cachedPhotoUri.isNotBlank()) {
+            holder.b.convoAvatar.visibility = android.view.View.VISIBLE
+            holder.b.avatarLetter.visibility = android.view.View.GONE
+            holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri)) {
+                transformations(CircleCropTransformation())
+            }
+        } else {
+            holder.b.convoAvatar.visibility = android.view.View.GONE
+            holder.b.avatarLetter.visibility = android.view.View.VISIBLE
+            val letter = title.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar() ?: '#'
+            holder.b.avatarLetter.text = letter.toString()
+            val palette = intArrayOf(
+                0xFF1565C0.toInt(), 0xFF00796B.toInt(), 0xFF2E7D32.toInt(), 0xFFE65100.toInt(),
+                0xFFC62828.toInt(), 0xFF6A1B9A.toInt(), 0xFFAD1457.toInt(), 0xFF546E7A.toInt()
+            )
+            val color = palette[kotlin.math.abs(c.convoKey.hashCode()) % palette.size]
+            val bg = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(color)
+            }
+            holder.b.avatarLetter.background = bg
+        }
+
         val markers = buildString {
             if (c.pinned) append("\u2605 ")        // ★ pinned
             if (c.notifBlocked) append("\u2298 ")  // ⊘ notifications blocked
             else if (c.muted) append("(m) ")       // muted (silent)
         }
-        holder.b.convoTitle.text = markers + c.displayTitle()
+        holder.b.convoTitle.text = markers + title
         holder.b.convoTitle.textSize = prefs.msgTextSp
         holder.b.convoTitle.setTypeface(null, if (c.unreadCount > 0) Typeface.BOLD else Typeface.NORMAL)
 

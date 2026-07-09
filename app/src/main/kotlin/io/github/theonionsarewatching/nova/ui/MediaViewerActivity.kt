@@ -1,6 +1,5 @@
 package io.github.theonionsarewatching.nova.ui
 
-import android.media.MediaPlayer
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -28,7 +27,6 @@ class MediaViewerActivity : BaseActivity() {
     private lateinit var binding: ActivityMediaBinding
     private lateinit var repo: Repo
     private var parts: List<PartEntity> = emptyList()
-    private var player: MediaPlayer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,37 +75,21 @@ class MediaViewerActivity : BaseActivity() {
 
     private fun playCurrent() {
         val p = currentPart() ?: return
-        if (p.isVideo()) {
-            val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: return
-            if (vv.isPlaying) { vv.stopPlayback(); return }
-            try {
-                vv.setVideoPath(p.filePath)
-                vv.setOnCompletionListener { }
-                vv.start()
-            } catch (_: Exception) {}
-            return
-        }
-        if (p.isAudio()) {
-            if (player?.isPlaying == true) { stopPlayback(); return }
-            try {
-                player = MediaPlayer().apply {
-                    setDataSource(p.filePath)
-                    prepare()
-                    start()
-                    setOnCompletionListener { stopPlayback() }
-                }
-            } catch (_: Exception) {
-                stopPlayback()
-            }
-        }
+        if (!p.isVideo()) return
+        val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: return
+        if (vv.isPlaying) { vv.stopPlayback(); return }
+        try {
+            vv.setVideoPath(p.filePath)
+            vv.start()
+        } catch (_: Exception) {}
     }
 
     private fun stopPlayback() {
-        try {
-            player?.stop()
-            player?.release()
-        } catch (_: Exception) {}
-        player = null
+        // stop whichever page's VideoView is playing
+        for (p in parts) {
+            val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: continue
+            if (vv.isPlaying) try { vv.stopPlayback() } catch (_: Exception) {}
+        }
     }
 
     private fun saveCurrent() {

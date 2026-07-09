@@ -223,4 +223,14 @@
     <string name="softkey_current">Current codes — left: %1$d, right: %2$d</string>
 
     <string name="nothing_here">Nothing here</string>
+
+    <!-- v0.2 additions -->
+    <string name="open_in_player">Open in music player</string>
+    <string name="no_app_for_file">No app on this phone can open that file type</string>
+    <string name="skip">Skip</string>
+    <string name="start_over">Start over</string>
+    <string name="softkey_captured_both">Captured! Left key code: %1$d, right key code: %2$d.\nPress Save to use them.</string>
+    <string name="softkeys_saved">Softkeys saved</string>
+    <string name="not_a_softkey">That looks like a regular key — press the softkey under the screen label</string>
+    <string name="same_key_twice">That\'s the same key as the left softkey — press the other one</string>
 </resources>

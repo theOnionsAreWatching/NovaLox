@@ -36,7 +36,15 @@ object ThemeUtils {
         else -> R.style.Accent_Blue
     }
 
-    fun accentColor(context: Context): Int = ContextCompat.getColor(
+    fun accentColor(context: Context): Int {
+        if (Prefs.get(context).accent == "system") {
+            val tv = android.util.TypedValue()
+            if (context.theme.resolveAttribute(
+                    com.google.android.material.R.attr.colorPrimary, tv, true
+                )
+            ) return tv.data
+        }
+        return ContextCompat.getColor(
         context, when (Prefs.get(context).accent) {
             "teal" -> R.color.accent_teal
             "green" -> R.color.accent_green
@@ -48,6 +56,7 @@ object ThemeUtils {
             else -> R.color.accent_blue
         }
     )
+    }
 
     fun dp(context: Context, v: Int): Int =
         (v * context.resources.displayMetrics.density).toInt()
@@ -89,8 +98,15 @@ abstract class BaseActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs.get(this)
         ThemeUtils.applyNightMode(this)
-        theme.applyStyle(ThemeUtils.accentOverlay(this), true)
+        val accent = prefs.accent
+        if (accent != "system") {
+            theme.applyStyle(ThemeUtils.accentOverlay(this), true)
+        }
         super.onCreate(savedInstanceState)
+        if (accent == "system" && android.os.Build.VERSION.SDK_INT >= 31) {
+            // Material You: wallpaper-derived palette
+            com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
+        }
     }
 
     override fun setContentView(layoutResID: Int) {
@@ -137,9 +153,9 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
         "always" -> true
         "never" -> false
         else -> {
+            // keypad phone heuristic: 12-key keyboard, or no touchscreen at all
             val cfg = activity.resources.configuration
-            cfg.navigation == Configuration.NAVIGATION_DPAD ||
-                cfg.keyboard == Configuration.KEYBOARD_12KEY ||
+            cfg.keyboard == Configuration.KEYBOARD_12KEY ||
                 !activity.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TOUCHSCREEN)
         }
     }

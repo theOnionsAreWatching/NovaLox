@@ -49,6 +49,8 @@ data class ConversationEntity(
     val addresses: String,
     // cached contact display names joined with "|" ("" where unresolved)
     val cachedNames: String = "",
+    // cached contact photo URI for 1:1 conversations ("" when none)
+    val cachedPhotoUri: String = "",
     val isGroup: Boolean = false,
     val groupMode: Int = GroupMode.BROADCAST,
     val snippet: String = "",
@@ -215,8 +217,8 @@ interface ConversationDao {
     @Query("UPDATE conversations SET groupMode = :mode WHERE id = :id")
     suspend fun setGroupMode(id: Long, mode: Int)
 
-    @Query("UPDATE conversations SET cachedNames = :names WHERE id = :id")
-    suspend fun setCachedNames(id: Long, names: String)
+    @Query("UPDATE conversations SET cachedNames = :names, cachedPhotoUri = :photo WHERE id = :id")
+    suspend fun setCachedNames(id: Long, names: String, photo: String)
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: Long)
@@ -358,11 +360,12 @@ interface PartDao {
     @Query("SELECT * FROM parts WHERE messageId IN (:ids)")
     suspend fun byMessages(ids: List<Long>): List<PartEntity>
 
+    // visual media only, newest first (viewer: right = older, left = newer)
     @Query(
         """SELECT p.* FROM parts p JOIN messages m ON p.messageId = m.id
            WHERE m.convoId = :convoId AND m.deletedAt IS NULL
-           AND (p.mimeType LIKE 'image/%' OR p.mimeType LIKE 'video/%' OR p.mimeType LIKE 'audio/%')
-           ORDER BY m.date ASC, p.id ASC"""
+           AND (p.mimeType LIKE 'image/%' OR p.mimeType LIKE 'video/%')
+           ORDER BY m.date DESC, p.id DESC"""
     )
     suspend fun mediaForConvo(convoId: Long): List<PartEntity>
 
@@ -416,7 +419,7 @@ interface ContactNameDao {
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -431,6 +434,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
+                .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }
     }

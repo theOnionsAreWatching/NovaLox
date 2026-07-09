@@ -47,6 +47,12 @@ class MainActivity : BaseActivity() {
         )
         binding.convoList.layoutManager = LinearLayoutManager(this)
         binding.convoList.adapter = adapter
+        val divider = androidx.recyclerview.widget.DividerItemDecoration(
+            this, androidx.recyclerview.widget.DividerItemDecoration.VERTICAL
+        )
+        androidx.core.content.ContextCompat.getDrawable(this, R.drawable.divider_hairline)
+            ?.let { divider.setDrawable(it) }
+        binding.convoList.addItemDecoration(divider)
         binding.convoList.isFocusable = true
         scroller = DpadScroller(binding.convoList, subScrollTallItems = false, lineStepPx = { 60 })
 
@@ -90,7 +96,7 @@ class MainActivity : BaseActivity() {
         binding.contentView.visibility = if (isDefault) View.VISIBLE else View.GONE
         if (isDefault) {
             askFirstRunPermissions()
-            maybeImport()
+            runOnboardingChain()
             loadConversations()
             repo.cleanRecycleBin()
             repo.refreshContactNames()
@@ -148,30 +154,53 @@ class MainActivity : BaseActivity() {
         if (requestCode == 102) repo.refreshContactNames(force = true)
     }
 
-    private fun maybeBatteryPrompt() {
-        if (prefs.batteryPromptShown) return
-        prefs.batteryPromptShown = true
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(packageName)) return
-        AlertDialog.Builder(this)
-            .setTitle(R.string.battery_title)
-            .setMessage(R.string.battery_message)
-            .setPositiveButton(R.string.allow) { _, _ ->
-                try {
-                    startActivity(
-                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                            .setData(Uri.parse("package:$packageName"))
-                    )
-                } catch (_: Exception) {}
+    /** First-run order: battery optimization prompt -> softkey setup (skippable) -> import. */
+    private fun runOnboardingChain() {
+        if (!prefs.batteryPromptShown) {
+            prefs.batteryPromptShown = true
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.battery_title)
+                    .setMessage(R.string.battery_message)
+                    .setCancelable(false)
+                    .setPositiveButton(R.string.allow) { _, _ ->
+                        try {
+                            startActivity(
+                                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                    .setData(Uri.parse("package:$packageName"))
+                            )
+                        } catch (_: Exception) {}
+                    }
+                    .setNegativeButton(R.string.later) { _, _ -> runOnboardingChain() }
+                    .show()
+                return
             }
-            .setNegativeButton(R.string.later, null)
-            .show()
+        }
+        if (!prefs.softkeySetupDone) {
+            startActivity(
+                Intent(this, io.github.theonionsarewatching.nova.ui.settings.SoftkeyConfigActivity::class.java)
+                    .putExtra(io.github.theonionsarewatching.nova.ui.settings.SoftkeyConfigActivity.EXTRA_ONBOARDING, true)
+            )
+            return
+        }
+        maybeImport()
     }
 
     // ============================== first import ==============================
 
     private fun maybeImport() {
-        if (prefs.importDone || importing) return
+        if (importing) return
+        if (prefs.importDone) {
+            // DB may have been recreated (schema upgrade): re-import if it's empty
+            lifecycleScope.launch {
+                if (repo.db.messages().count() == 0) {
+                    prefs.importDone = false
+                    maybeImport()
+                }
+            }
+            return
+        }
         importing = true
         val view = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -198,7 +227,6 @@ class MainActivity : BaseActivity() {
                 importing = false
                 runCatching { dialog.dismiss() }
                 loadConversations()
-                maybeBatteryPrompt()
             }
         }
     }

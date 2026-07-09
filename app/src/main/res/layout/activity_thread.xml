@@ -9,14 +9,15 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:minHeight="44dp">
+        android:minHeight="36dp">
 
         <ImageButton
             android:id="@+id/btnBack"
-            android:layout_width="40dp"
-            android:layout_height="44dp"
-            android:background="?attr/selectableItemBackground"
+            android:layout_width="34dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/back"
+            android:scaleType="centerInside"
             android:src="@drawable/ic_back" />
 
         <LinearLayout
@@ -31,7 +32,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -40,20 +41,26 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textSize="11sp" />
+                android:alpha="0.7"
+                android:textSize="10sp" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/btnOverflow"
-            android:layout_width="40dp"
-            android:layout_height="44dp"
-            android:background="?attr/selectableItemBackground"
+            android:layout_width="34dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:gravity="center"
             android:focusable="true"
             android:text="@string/overflow_glyph"
-            android:textSize="20sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -76,14 +83,20 @@
             android:visibility="gone" />
     </FrameLayout>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
+
     <TextView
         android:id="@+id/moreIndicator"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
         android:text="@string/draft_continues"
         android:textSize="10sp"
+        android:alpha="0.7"
         android:visibility="gone" />
 
     <LinearLayout
@@ -92,35 +105,43 @@
         android:orientation="horizontal"
         android:gravity="bottom"
         android:paddingStart="4dp"
-        android:paddingEnd="4dp">
+        android:paddingEnd="4dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
 
-        <Button
+        <ImageButton
             android:id="@+id/btnAttach"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:text="@string/softkey_attach"
-            android:textSize="12sp" />
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/softkey_attach"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_add" />
 
         <EditText
             android:id="@+id/composeInput"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:background="@drawable/bg_compose_pill"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp"
             android:hint="@string/compose_hint"
             android:inputType="textCapSentences|textMultiLine"
             android:importantForAutofill="no" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btnSend"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:text="@string/softkey_send"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/softkey_send"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_send" />
     </LinearLayout>
 
     <include

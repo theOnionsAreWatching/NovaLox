@@ -50,10 +50,12 @@ class Repo private constructor(private val context: Context) {
         val defaultMode =
             if (Prefs.get(context).defaultGroupMode == "group_mms") GroupMode.GROUP_MMS else GroupMode.BROADCAST
         val names = clean.map { ContactsHelper.lookupName(context, it) ?: "" }
+        val photo = if (!isGroup) ContactsHelper.lookupPhoto(context, clean.first()) ?: "" else ""
         val c = ConversationEntity(
             convoKey = key,
             addresses = clean.joinToString("|"),
             cachedNames = names.joinToString("|"),
+            cachedPhotoUri = photo,
             isGroup = isGroup,
             groupMode = defaultMode
         )
@@ -569,14 +571,22 @@ class Repo private constructor(private val context: Context) {
             if (!ContactsHelper.hasPermission(context)) return@launch
             prefs.contactsRefreshedAt = now
             val contacts = ContactsHelper.loadAll(context)
-            val byKey = HashMap<String, String>()
-            contacts.forEach { byKey[PhoneUtils.normalize(it.number)] = it.name }
+            val nameByKey = HashMap<String, String>()
+            val photoByKey = HashMap<String, String>()
+            contacts.forEach {
+                val k = PhoneUtils.normalize(it.number)
+                nameByKey[k] = it.name
+                if (it.photoUri.isNotBlank()) photoByKey[k] = it.photoUri
+            }
             var changed = false
             db.conversations().all().forEach { convo ->
-                val names = convo.addressList().map { byKey[PhoneUtils.normalize(it)] ?: "" }
+                val names = convo.addressList().map { nameByKey[PhoneUtils.normalize(it)] ?: "" }
                 val joined = names.joinToString("|")
-                if (joined != convo.cachedNames) {
-                    db.conversations().setCachedNames(convo.id, joined)
+                val photo = if (!convo.isGroup)
+                    photoByKey[PhoneUtils.normalize(convo.addressList().firstOrNull() ?: "")] ?: ""
+                else ""
+                if (joined != convo.cachedNames || photo != convo.cachedPhotoUri) {
+                    db.conversations().setCachedNames(convo.id, joined, photo)
                     changed = true
                 }
             }

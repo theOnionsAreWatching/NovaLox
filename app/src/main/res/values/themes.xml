@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DSMS" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="colorAccent">@color/accent_blue</item>
+    <style name="Theme.DSMS" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/accent_blue</item>
-        <item name="colorPrimaryDark">@color/accent_blue</item>
+        <item name="colorAccent">@color/accent_blue</item>
         <item name="android:textColorLink">@color/accent_blue</item>
     </style>
 

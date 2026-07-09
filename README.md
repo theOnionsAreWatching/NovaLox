@@ -68,7 +68,8 @@ physical softkeys are first-class citizens.
   to that exact message. The main-screen search bar is off by default (toggle in settings).
 
 **Appearance**
-- Light/dark/system theme, 8 accent colors
+- Material 3 look; on Android 12+ an optional "System" accent follows your wallpaper (Material You)
+- Light/dark/system theme, 8 fixed accent colors
 - Three message styles: bubbles, full-width accent-bar rows, or plain indent
 - Independent sizes for message text and timestamps, list density, overall text scale,
   focus outline thickness
@@ -95,12 +96,13 @@ secrets at build time.
 
 ## First run on a device
 
-1. Open D-SMS → it asks to become the **default SMS app** (required by Android to send/receive).
+1. Open the app → it asks to become the **default SMS app** (required by Android to send/receive).
 2. Grant Contacts / Phone / Notifications permissions.
-3. One-time import copies your existing messages in (progress bar).
-4. Optional: allow ignoring battery optimizations so notifications are instant.
-5. Keypad phones: if the softkey bar doesn't react to your softkeys,
-   Settings → Softkey key capture, and press each softkey once.
+3. Battery-optimization prompt (so notifications are instant).
+4. Softkey setup — press your phone's left softkey, then its right softkey, then Save
+   (regular keys like the D-pad and number keys are rejected automatically). Skippable;
+   rerun any time from Settings.
+5. One-time import copies your existing messages in (progress bar).
 
 ## Architecture notes
 

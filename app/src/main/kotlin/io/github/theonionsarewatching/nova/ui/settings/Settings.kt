@@ -338,56 +338,149 @@ class BlockedMessagesActivity : SimpleListActivity() {
 
 // ============================== Softkey capture ==============================
 
+/**
+ * D-Mail-style sequential setup: press LEFT, press RIGHT, then Save.
+ * Regular keys (D-pad, numbers, letters, call keys, volume...) are rejected so a
+ * mis-press can't hijack normal navigation. Shown once on first run (skippable)
+ * and available any time from Settings.
+ */
 class SoftkeyConfigActivity : BaseActivity() {
 
-    private var capturing: Int = 0 // 0 = none, 1 = left, 2 = right
+    companion object {
+        const val EXTRA_ONBOARDING = "onboarding"
+
+        // keycodes that must never be mapped as softkeys
+        private val BLOCKED_KEYS: Set<Int> = buildSet {
+            addAll(
+                listOf(
+                    KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_CALL, KeyEvent.KEYCODE_ENDCALL,
+                    KeyEvent.KEYCODE_STAR, KeyEvent.KEYCODE_POUND,
+                    KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN,
+                    KeyEvent.KEYCODE_POWER, KeyEvent.KEYCODE_CAMERA,
+                    KeyEvent.KEYCODE_CLEAR, KeyEvent.KEYCODE_DEL,
+                    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE,
+                    KeyEvent.KEYCODE_TAB, KeyEvent.KEYCODE_SYM,
+                    KeyEvent.KEYCODE_HEADSETHOOK,
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_COMMA, KeyEvent.KEYCODE_PERIOD,
+                    KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT,
+                    KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT
+                )
+            )
+            addAll(KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9)   // number pad
+            addAll(KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z)   // letters
+        }
+    }
+
+    private enum class Step { LEFT, RIGHT, CONFIRM }
+
+    private var step = Step.LEFT
+    private var capturedLeft = -1
+    private var capturedRight = -1
+    private var onboarding = false
     private lateinit var binding: ActivityListBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityListBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboarding = intent.getBooleanExtra(EXTRA_ONBOARDING, false)
         binding.listTitle.setText(R.string.softkey_config_title)
-        binding.btnBack.setOnClickListener { finish() }
+        binding.btnBack.setOnClickListener { finishFlow(save = false) }
         binding.list.visibility = View.GONE
+        binding.emptyLabel.visibility = View.VISIBLE
         binding.btnAction.visibility = View.VISIBLE
-        binding.btnAction.setText(R.string.capture_left)
-        binding.btnAction.setOnClickListener { startCapture(1) }
         binding.btnAction2.visibility = View.VISIBLE
-        binding.btnAction2.setText(R.string.capture_right)
-        binding.btnAction2.setOnClickListener { startCapture(2) }
-        updateLabel()
+        render()
     }
 
-    private fun startCapture(which: Int) {
-        capturing = which
-        binding.emptyLabel.visibility = View.VISIBLE
-        binding.emptyLabel.setText(
-            if (which == 1) R.string.press_left_softkey else R.string.press_right_softkey
-        )
+    private fun render() {
+        when (step) {
+            Step.LEFT -> {
+                binding.emptyLabel.setText(R.string.press_left_softkey)
+                binding.btnAction.setText(R.string.skip)
+                binding.btnAction.setOnClickListener { finishFlow(save = false) }
+                binding.btnAction2.visibility = View.GONE
+            }
+            Step.RIGHT -> {
+                binding.emptyLabel.setText(R.string.press_right_softkey)
+                binding.btnAction.setText(R.string.start_over)
+                binding.btnAction.setOnClickListener { restart() }
+                binding.btnAction2.visibility = View.GONE
+            }
+            Step.CONFIRM -> {
+                binding.emptyLabel.text =
+                    getString(R.string.softkey_captured_both, capturedLeft, capturedRight)
+                binding.btnAction.setText(R.string.save)
+                binding.btnAction.setOnClickListener { finishFlow(save = true) }
+                binding.btnAction2.visibility = View.VISIBLE
+                binding.btnAction2.setText(R.string.start_over)
+                binding.btnAction2.setOnClickListener { restart() }
+                binding.btnAction.requestFocus()
+            }
+        }
     }
 
-    private fun updateLabel() {
-        binding.emptyLabel.visibility = View.VISIBLE
-        binding.emptyLabel.text = getString(
-            R.string.softkey_current, prefs.softkeyLeftCode, prefs.softkeyRightCode
-        )
+    private fun restart() {
+        capturedLeft = -1
+        capturedRight = -1
+        step = Step.LEFT
+        render()
+    }
+
+    private fun finishFlow(save: Boolean) {
+        if (save && capturedLeft > 0 && capturedRight > 0) {
+            prefs.softkeyLeftCode = capturedLeft
+            prefs.softkeyRightCode = capturedRight
+            Toast.makeText(this, R.string.softkeys_saved, Toast.LENGTH_SHORT).show()
+        }
+        if (onboarding) prefs.softkeySetupDone = true
+        finish()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (capturing != 0 && event.action == KeyEvent.ACTION_DOWN) {
-            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-                capturing = 0
-                updateLabel()
-                return true
-            }
-            if (capturing == 1) prefs.softkeyLeftCode = event.keyCode
-            else prefs.softkeyRightCode = event.keyCode
-            capturing = 0
-            Toast.makeText(this, getString(R.string.captured_code, event.keyCode), Toast.LENGTH_SHORT).show()
-            updateLabel()
+        if (step == Step.CONFIRM) return super.dispatchKeyEvent(event)
+        if (event.action != KeyEvent.ACTION_DOWN) {
+            // swallow the UP of a captured key
+            return if (event.keyCode == capturedLeft || event.keyCode == capturedRight)
+                true else super.dispatchKeyEvent(event)
+        }
+        val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_BACK) {
+            finishFlow(save = false)
             return true
         }
-        return super.dispatchKeyEvent(event)
+        // let the D-pad still reach the Skip button; block it from being captured
+        if (code in BLOCKED_KEYS) {
+            if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
+                code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT ||
+                code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+            ) {
+                return super.dispatchKeyEvent(event)
+            }
+            Toast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
+            return true
+        }
+        when (step) {
+            Step.LEFT -> {
+                capturedLeft = code
+                step = Step.RIGHT
+                render()
+            }
+            Step.RIGHT -> {
+                if (code == capturedLeft) {
+                    Toast.makeText(this, R.string.same_key_twice, Toast.LENGTH_SHORT).show()
+                } else {
+                    capturedRight = code
+                    step = Step.CONFIRM
+                    render()
+                }
+            }
+            else -> {}
+        }
+        return true
     }
 }

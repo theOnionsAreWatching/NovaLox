@@ -51,8 +51,16 @@ object Formatters {
 // ============================== Element extraction ==============================
 object ElementExtractor {
 
+    // scheme:// links, www. links, and bare domains with a known TLD (so "file.txt" doesn't match)
+    private const val TLDS =
+        "com|org|net|edu|gov|mil|int|io|co|me|info|biz|app|dev|xyz|tv|online|site|store|link|ly|gg|to|fm|" +
+            "us|uk|ca|au|de|fr|il|nl|ru|in|es|it|ch|be|at|pl|se|no|dk|fi|br|mx|jp|cn|kr|ie|nz|za|ar|cl|tr|gr|pt|cz|hu|ro|ua"
     private val urlRegex = Regex(
-        "(?i)\\b((?:https?://|www\\.)[\\w\\-]+(?:\\.[\\w\\-]+)+(?:[/?#][^\\s]*)?)"
+        "(?i)\\b(" +
+            "https?://[^\\s]+" +
+            "|www\\.[\\w\\-]+(?:\\.[\\w\\-]+)+(?:[/?#][^\\s]*)?" +
+            "|[a-z0-9][a-z0-9\\-]*(?:\\.[a-z0-9\\-]+)*\\.(?:$TLDS)(?:/[^\\s]*)?" +
+            ")"
     )
     private val emailRegex = Regex(
         "(?i)\\b[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}\\b"
@@ -74,12 +82,16 @@ object ElementExtractor {
             for (i in range) if (i < masked.length) masked.setCharAt(i, '\u0000')
         }
 
-        urlRegex.findAll(body).forEach {
-            out += ElementEntity(messageId = messageId, type = ElementType.URL, value = it.value)
-            mask(it.range)
-        }
+        // emails first, so "user@gmail.com" isn't half-eaten by the bare-domain link matcher
         emailRegex.findAll(masked.toString()).forEach {
             out += ElementEntity(messageId = messageId, type = ElementType.EMAIL, value = it.value)
+            mask(it.range)
+        }
+        urlRegex.findAll(masked.toString()).forEach {
+            val cleaned = it.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '"', '\'')
+            if (cleaned.length > 3) {
+                out += ElementEntity(messageId = messageId, type = ElementType.URL, value = cleaned)
+            }
             mask(it.range)
         }
         addressRegex.findAll(masked.toString()).forEach {
@@ -99,19 +111,20 @@ object ElementExtractor {
 // ============================== Contacts ==============================
 object ContactsHelper {
 
-    data class Contact(val name: String, val number: String)
+    data class Contact(val name: String, val number: String, val photoUri: String = "")
 
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Full phone contact list (name + number), used for auto-suggest and name cache. */
+    /** Full phone contact list (name + number + photo), used for auto-suggest and caches. */
     fun loadAll(context: Context): List<Contact> {
         if (!hasPermission(context)) return emptyList()
         val out = ArrayList<Contact>()
         val proj = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI
         )
         try {
             context.contentResolver.query(
@@ -121,7 +134,8 @@ object ContactsHelper {
                 while (c.moveToNext()) {
                     val name = c.getString(0) ?: continue
                     val number = c.getString(1) ?: continue
-                    out += Contact(name, number)
+                    val photo = c.getString(2) ?: ""
+                    out += Contact(name, number, photo)
                 }
             }
         } catch (_: Exception) {
@@ -137,6 +151,20 @@ object ContactsHelper {
             )
             context.contentResolver.query(
                 uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun lookupPhoto(context: Context, address: String): String? {
+        if (!hasPermission(context) || address.isBlank() || address.contains("@")) return null
+        return try {
+            val uri = android.net.Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(address)
+            )
+            context.contentResolver.query(
+                uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI), null, null, null
             )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         } catch (_: Exception) {
             null

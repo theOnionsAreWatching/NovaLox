@@ -17,6 +17,9 @@ class Prefs(context: Context) {
     var batteryPromptShown: Boolean
         get() = sp.getBoolean("battery_prompt_shown", false)
         set(v) = sp.edit().putBoolean("battery_prompt_shown", v).apply()
+    var softkeySetupDone: Boolean
+        get() = sp.getBoolean("softkey_setup_done", false)
+        set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
 
     // ---- appearance ----
     // system / light / dark

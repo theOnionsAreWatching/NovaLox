@@ -12,6 +12,7 @@
     </string-array>
 
     <string-array name="accent_entries">
+        <item>System (Material You, Android 12+)</item>
         <item>Blue</item>
         <item>Teal</item>
         <item>Green</item>
@@ -22,6 +23,7 @@
         <item>Gray</item>
     </string-array>
     <string-array name="accent_values">
+        <item>system</item>
         <item>blue</item>
         <item>teal</item>
         <item>green</item>

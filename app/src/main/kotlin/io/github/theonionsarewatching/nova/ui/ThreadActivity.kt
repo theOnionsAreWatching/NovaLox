@@ -93,19 +93,12 @@ class ThreadActivity : BaseActivity() {
             }
         })
 
-        softkeys = Softkeys(this, binding.softkeyBar).also {
-            it.set(
-                getString(R.string.softkey_attach), getString(R.string.softkey_select), getString(R.string.softkey_send),
-                onLeft = { pickAttachment() },
-                onCenter = { binding.msgList.focusedChild?.performClick() },
-                onRight = { send() },
-                onMenu = { threadOptions() }
-            )
-        }
+        softkeys = Softkeys(this, binding.softkeyBar)
         if (softkeys?.shouldShow() == true) {
             binding.btnAttach.visibility = View.GONE
             binding.btnSend.visibility = View.GONE
         }
+        updateSoftkeys()
 
         lifecycleScope.launch {
             convo = repo.db.conversations().byId(convoId)
@@ -297,12 +290,34 @@ class ThreadActivity : BaseActivity() {
 
     // ============================== compose <-> scroll boundary ==============================
 
+    /** Compose mode: Attach | Send on the softkeys. Scroll mode: Options | Select | Compose. */
+    private fun updateSoftkeys() {
+        if (composeMode) {
+            softkeys?.set(
+                getString(R.string.softkey_attach), null, getString(R.string.softkey_send),
+                onLeft = { pickAttachment() },
+                onCenter = null,
+                onRight = { send() },
+                onMenu = { threadOptions() }
+            )
+        } else {
+            softkeys?.set(
+                getString(R.string.softkey_options), getString(R.string.softkey_select), getString(R.string.softkey_compose),
+                onLeft = { threadOptions() },
+                onCenter = { binding.msgList.focusedChild?.performClick() },
+                onRight = { enterComposeMode() },
+                onMenu = { threadOptions() }
+            )
+        }
+    }
+
     private fun enterComposeMode() {
         composeMode = true
         binding.composeInput.maxLines = prefs.composeMaxLines
         binding.moreIndicator.visibility = View.GONE
         binding.composeInput.requestFocus()
         binding.composeInput.setSelection(binding.composeInput.text?.length ?: 0)
+        updateSoftkeys()
     }
 
     private fun enterScrollMode(focusPos: Int = rows.size - 1) {
@@ -314,6 +329,7 @@ class ThreadActivity : BaseActivity() {
         binding.moreIndicator.visibility = if (multiline) View.VISIBLE else View.GONE
         binding.msgList.requestFocus()
         scroller?.focusPosition(focusPos.coerceIn(0, rows.size - 1))
+        updateSoftkeys()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -463,29 +479,39 @@ class ThreadActivity : BaseActivity() {
 
     private fun openAttachment(row: MessageRow, index: Int) {
         val part = row.parts.getOrNull(index) ?: return
-        if (part.isVCard()) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.attach_vcard)
-                .setItems(arrayOf(getString(R.string.open_in_contacts), getString(R.string.save))) { _, which ->
-                    when (which) {
-                        0 -> try {
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                this, "$packageName.fileprovider", File(part.filePath)
-                            )
-                            startActivity(Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "text/x-vcard")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            })
-                        } catch (_: Exception) {}
-                        1 -> savePart(part)
-                    }
-                }.show()
+        if (part.isImage() || part.isVideo()) {
+            startActivity(Intent(this, MediaViewerActivity::class.java).apply {
+                putExtra(MediaViewerActivity.EXTRA_CONVO_ID, convoId)
+                putExtra(MediaViewerActivity.EXTRA_PART_ID, part.id)
+            })
             return
         }
-        startActivity(Intent(this, MediaViewerActivity::class.java).apply {
-            putExtra(MediaViewerActivity.EXTRA_CONVO_ID, convoId)
-            putExtra(MediaViewerActivity.EXTRA_PART_ID, part.id)
-        })
+        // audio, vCards and other files: hand off to the system app for that type
+        val mime = if (part.isVCard()) "text/x-vcard" else part.mimeType
+        val openLabel = when {
+            part.isVCard() -> getString(R.string.open_in_contacts)
+            part.isAudio() -> getString(R.string.open_in_player)
+            else -> getString(R.string.open)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(part.fileName)
+            .setItems(arrayOf(openLabel, getString(R.string.save))) { _, which ->
+                when (which) {
+                    0 -> try {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            this, "$packageName.fileprovider", File(part.filePath)
+                        )
+                        startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mime)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        })
+                    } catch (_: Exception) {
+                        android.widget.Toast.makeText(this, R.string.no_app_for_file,
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    1 -> savePart(part)
+                }
+            }.show()
     }
 
     private fun holdMessage(row: MessageRow) {
