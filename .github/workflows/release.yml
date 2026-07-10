@@ -25,9 +25,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Decode keystore
+      - name: Decode and verify keystore
         if: env.HAS_SIGNING == 'true'
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          # strip any whitespace/newlines/quotes the paste may have picked up
+          CLEAN=$(printf '%s' "$KS_B64" | tr -d '[:space:]"'"'")
+          printf '%s' "$CLEAN" | base64 -d > keystore.jks 2>/dev/null \
+            || printf '%s' "$CLEAN" | base64 -di > keystore.jks
+          # verify it is a real keystore and the password opens it —
+          # fails HERE with a clear message instead of mid-build
+          keytool -list -keystore keystore.jks -storepass "$KS_PASS" > /dev/null
+          echo "Keystore decoded and verified OK"
 
       - name: Build release APK
         env:
