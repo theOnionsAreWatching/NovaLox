@@ -14,23 +14,87 @@ import io.github.theonionsarewatching.nova.data.ConversationEntity
 import io.github.theonionsarewatching.nova.data.MessageEntity
 import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.ui.ThreadActivity
+import io.github.theonionsarewatching.nova.util.Prefs
 import kotlinx.coroutines.launch
 
 object NotificationHelper {
 
-    const val CHANNEL_MESSAGES = "messages"
+    private const val DEFAULT_PREFIX = "messages_"
+    private const val CONVO_PREFIX = "msg_"
 
-    fun createChannels(context: Context) {
+    /** Effective settings after applying the per-conversation override, if any.
+     *  tone: "" = system default sound, "silent" = none, else a sound URI. */
+    private fun effectiveTone(context: Context, convo: ConversationEntity?): String {
+        val perConvo = convo?.customTone.orEmpty()
+        return if (perConvo.isNotBlank()) perConvo
+        else Prefs.get(context).defaultTone
+    }
+
+    private fun effectiveVibrate(context: Context, convo: ConversationEntity?): Boolean =
+        when (convo?.vibrateMode ?: 0) {
+            1 -> true
+            2 -> false
+            else -> Prefs.get(context).vibrate
+        }
+
+    private fun soundUri(tone: String): android.net.Uri? = when (tone) {
+        "silent" -> null
+        "" -> android.media.RingtoneManager.getDefaultUri(
+            android.media.RingtoneManager.TYPE_NOTIFICATION)
+        else -> android.net.Uri.parse(tone)
+    }
+
+    /** Channels are immutable once created, so the id embeds the settings —
+     *  changing tone or vibration simply produces a fresh channel. */
+    private fun ensureChannel(context: Context, convo: ConversationEntity?): String {
+        val tone = effectiveTone(context, convo)
+        val vibrate = effectiveVibrate(context, convo)
+        val overridden = convo != null &&
+            (convo.customTone.isNotBlank() || convo.vibrateMode != 0)
+        val key = (tone + "|" + vibrate).hashCode()
+        val id = if (overridden) "$CONVO_PREFIX${convo!!.id}_$key" else "$DEFAULT_PREFIX$key"
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val ch = NotificationChannel(
-                CHANNEL_MESSAGES,
-                context.getString(R.string.channel_messages),
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            ch.enableVibration(true)
-            nm.createNotificationChannel(ch)
+            if (nm.getNotificationChannel(id) == null) {
+                val name = if (overridden) convo!!.displayTitle()
+                else context.getString(R.string.channel_messages)
+                val ch = NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH)
+                ch.enableVibration(vibrate)
+                if (!vibrate) ch.vibrationPattern = null
+                val attrs = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                ch.setSound(soundUri(tone), attrs)
+                nm.createNotificationChannel(ch)
+            }
         }
+        return id
+    }
+
+    fun createChannels(context: Context) {
+        if (Build.VERSION.SDK_INT >= 26) ensureChannel(context, null)
+    }
+
+    /** Drop a conversation's channels when its sound settings change. */
+    fun refreshConvoChannels(context: Context, convoId: Long) {
+        if (Build.VERSION.SDK_INT < 26) return
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notificationChannels
+            .filter { it.id.startsWith("$CONVO_PREFIX${convoId}_") }
+            .forEach { nm.deleteNotificationChannel(it.id) }
+    }
+
+    /** Drop everything when the APP-LEVEL defaults change (per-conversation channels
+     *  can embed the app default vibrate/tone, so they're stale too). */
+    fun refreshAllChannels(context: Context) {
+        if (Build.VERSION.SDK_INT < 26) return
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notificationChannels
+            .filter { it.id.startsWith(DEFAULT_PREFIX) || it.id.startsWith(CONVO_PREFIX) ||
+                it.id == "messages" }
+            .forEach { nm.deleteNotificationChannel(it.id) }
+        ensureChannel(context, null)
     }
 
     /** Mute ladder: hidden / notifBlocked -> nothing; muted -> silent; else full alert. */
@@ -55,7 +119,7 @@ object NotificationHelper {
             context, (convo.id + 100_000).toInt(), markRead, flags
         )
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+        val builder = NotificationCompat.Builder(context, ensureChannel(context, convo))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
@@ -65,6 +129,13 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, context.getString(R.string.action_mark_read), markReadPi)
+        if (Build.VERSION.SDK_INT < 26) {
+            builder.setSound(soundUri(effectiveTone(context, convo)))
+            builder.setVibrate(
+                if (effectiveVibrate(context, convo)) longArrayOf(0, 250, 150, 250)
+                else longArrayOf(0)
+            )
+        }
         if (convo.muted) builder.setSilent(true)
 
         try {

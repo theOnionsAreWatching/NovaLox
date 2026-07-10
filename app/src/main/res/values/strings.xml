@@ -285,4 +285,22 @@
     <string name="accent_purple_name">Purple</string>
     <string name="accent_pink_name">Pink</string>
     <string name="accent_gray_name">Gray</string>
+
+    <!-- v0.7: sound settings -->
+    <string name="settings_sound">Sound</string>
+    <string name="pref_default_tone">Notification tone</string>
+    <string name="pref_vibrate">Vibrate</string>
+    <string name="pref_vibrate_summary">Vibrate for incoming messages</string>
+    <string name="sound_and_vibration">Sound &amp; vibration…</string>
+    <string name="sound_and_vibration_title">Sound &amp; vibration</string>
+    <string name="tone_title">Notification tone</string>
+    <string name="tone_row">Tone: %1$s</string>
+    <string name="vibration_row">Vibration: %1$s</string>
+    <string name="vibration_title">Vibration</string>
+    <string name="tone_app_default">App default</string>
+    <string name="tone_system_default">System default</string>
+    <string name="tone_silent">Silent</string>
+    <string name="vib_on">On</string>
+    <string name="vib_off">Off</string>
+    <string name="tone_saved">Saved</string>
 </resources>

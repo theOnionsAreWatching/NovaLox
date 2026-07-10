@@ -380,6 +380,7 @@ class MainActivity : BaseActivity() {
         items += (if (c.notifBlocked) getString(R.string.unblock_notifications) else getString(R.string.block_notifications)) to {
             lifecycleScope.launch { repo.db.conversations().setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
         }
+        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         items += getString(R.string.hide_conversation) to {
             AlertDialog.Builder(this)
                 .setMessage(R.string.hide_confirm)

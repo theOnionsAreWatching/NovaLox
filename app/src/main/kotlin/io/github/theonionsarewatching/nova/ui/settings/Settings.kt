@@ -57,6 +57,26 @@ class SettingsActivity : BaseActivity() {
             find("open_softkeys") { startActivity(Intent(requireContext(), SoftkeyConfigActivity::class.java)) }
             find("open_sizes") { startActivity(Intent(requireContext(), SizeSettingsActivity::class.java)) }
             find("accent_picker") { showAccentPicker() }
+            find("default_tone") {
+                val act = requireActivity() as BaseActivity
+                val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(act)
+                io.github.theonionsarewatching.nova.ui.TonePicker.pick(
+                    act, prefs.defaultTone, R.string.tone_system_default
+                ) { tone ->
+                    prefs.defaultTone = tone
+                    io.github.theonionsarewatching.nova.notify.NotificationHelper.refreshAllChannels(act)
+                    updateToneSummary()
+                }
+            }
+            findPreference<androidx.preference.SwitchPreferenceCompat>("vibrate")
+                ?.setOnPreferenceChangeListener { _, _ ->
+                    // channels embed the vibrate flag; rebuild them after the pref lands
+                    view?.post {
+                        io.github.theonionsarewatching.nova.notify.NotificationHelper
+                            .refreshAllChannels(requireContext())
+                    }
+                    true
+                }
             find("open_search") {
                 startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SearchActivity::class.java))
             }
@@ -122,6 +142,16 @@ class SettingsActivity : BaseActivity() {
         override fun onResume() {
             super.onResume()
             updateAccentSummary()
+            updateToneSummary()
+        }
+
+        private fun updateToneSummary() {
+            val act = activity as? BaseActivity ?: return
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(act)
+            findPreference<Preference>("default_tone")?.summary =
+                io.github.theonionsarewatching.nova.ui.TonePicker.toneName(
+                    act, prefs.defaultTone, R.string.tone_system_default
+                )
         }
 
         private fun accentOptions(): List<Triple<String, String, Int>> {

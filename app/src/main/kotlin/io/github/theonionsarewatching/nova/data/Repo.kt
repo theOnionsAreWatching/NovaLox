@@ -534,6 +534,20 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
+    /** Per-conversation notification tone ("" = follow app default, "silent" = no sound). */
+    suspend fun setConversationTone(convoId: Long, tone: String) {
+        db.conversations().setCustomTone(convoId, tone)
+        io.github.theonionsarewatching.nova.notify.NotificationHelper.refreshConvoChannels(context, convoId)
+        ChangeBus.ping()
+    }
+
+    /** Per-conversation vibration: 0 follow app, 1 on, 2 off. */
+    suspend fun setConversationVibrate(convoId: Long, mode: Int) {
+        db.conversations().setVibrateMode(convoId, mode)
+        io.github.theonionsarewatching.nova.notify.NotificationHelper.refreshConvoChannels(context, convoId)
+        ChangeBus.ping()
+    }
+
     suspend fun deleteMessages(ids: Collection<Long>, includeLocked: Boolean) {
         var convoId = -1L
         val now = System.currentTimeMillis()

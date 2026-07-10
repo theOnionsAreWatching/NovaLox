@@ -62,7 +62,11 @@ data class ConversationEntity(
     val muted: Boolean = false,          // notification still shown, but silent
     val notifBlocked: Boolean = false,   // no notification at all
     val hidden: Boolean = false,         // not in the list; settings > hidden conversations
-    val draft: String = ""
+    val draft: String = "",
+    // per-conversation notification sound URI ("" = app default, "silent" = no sound)
+    val customTone: String = "",
+    // 0 = follow app setting, 1 = vibrate on, 2 = vibrate off
+    val vibrateMode: Int = 0
 ) {
     fun addressList(): List<String> = addresses.split("|").filter { it.isNotBlank() }
     fun nameList(): List<String> = cachedNames.split("|")
@@ -219,6 +223,12 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET cachedNames = :names, cachedPhotoUri = :photo WHERE id = :id")
     suspend fun setCachedNames(id: Long, names: String, photo: String)
+
+    @Query("UPDATE conversations SET customTone = :tone WHERE id = :id")
+    suspend fun setCustomTone(id: Long, tone: String)
+
+    @Query("UPDATE conversations SET vibrateMode = :mode WHERE id = :id")
+    suspend fun setVibrateMode(id: Long, mode: Int)
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: Long)
@@ -438,12 +448,19 @@ interface ContactNameDao {
 
 // ============================== Database ==============================
 
+val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE conversations ADD COLUMN customTone TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE conversations ADD COLUMN vibrateMode INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities = [
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -458,6 +475,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }

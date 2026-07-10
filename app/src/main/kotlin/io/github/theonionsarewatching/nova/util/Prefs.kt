@@ -20,6 +20,11 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    var defaultTone: String
+        get() = sp.getString("default_tone", "") ?: ""
+        set(v) = sp.edit().putString("default_tone", v).apply()
+    val vibrate: Boolean
+        get() = sp.getBoolean("vibrate", true)
     var softkeysMapped: Boolean
         get() = sp.getBoolean("softkeys_mapped", false)
         set(v) = sp.edit().putBoolean("softkeys_mapped", v).apply()

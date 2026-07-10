@@ -38,6 +38,20 @@
             android:summary="%s" />
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="@string/settings_sound">
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="default_tone"
+            android:title="@string/pref_default_tone" />
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="vibrate"
+            android:title="@string/pref_vibrate"
+            android:summary="@string/pref_vibrate_summary"
+            android:defaultValue="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/settings_behavior">
         <SwitchPreferenceCompat
             app:singleLineTitle="false"

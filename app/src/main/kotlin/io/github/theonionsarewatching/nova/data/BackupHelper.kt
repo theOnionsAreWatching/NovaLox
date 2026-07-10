@@ -155,6 +155,8 @@ object BackupHelper {
                         w.name("notifBlocked").value(c.notifBlocked)
                         w.name("hidden").value(c.hidden)
                         w.name("draft").value(c.draft)
+                        w.name("customTone").value(c.customTone)
+                        w.name("vibrateMode").value(c.vibrateMode)
                         w.endObject()
                         tick()
                     }
@@ -277,6 +279,7 @@ object BackupHelper {
                                             var snippet = ""; var sDate = 0L; var sMine = false; var unread = 0
                                             var pinned = false; var archived = false; var muted = false
                                             var nBlocked = false; var hidden = false; var draft = ""
+                                            var tone = ""; var vibMode = 0
                                             r.beginObject()
                                             while (r.hasNext()) when (r.nextName()) {
                                                 "id" -> id = r.nextLong()
@@ -296,6 +299,8 @@ object BackupHelper {
                                                 "notifBlocked" -> nBlocked = r.nextBoolean()
                                                 "hidden" -> hidden = r.nextBoolean()
                                                 "draft" -> draft = r.nextString()
+                                                "customTone" -> tone = r.nextString()
+                                                "vibrateMode" -> vibMode = r.nextInt()
                                                 else -> r.skipValue()
                                             }
                                             r.endObject()
@@ -304,7 +309,8 @@ object BackupHelper {
                                                 cachedPhotoUri = photo, isGroup = isGroup, groupMode = mode,
                                                 snippet = snippet, snippetDate = sDate, snippetIsMine = sMine,
                                                 unreadCount = unread, pinned = pinned, archived = archived,
-                                                muted = muted, notifBlocked = nBlocked, hidden = hidden, draft = draft
+                                                muted = muted, notifBlocked = nBlocked, hidden = hidden, draft = draft,
+                                                customTone = tone, vibrateMode = vibMode
                                             )))
                                         }
                                         r.endArray()

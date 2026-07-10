@@ -903,6 +903,7 @@ class ThreadActivity : BaseActivity() {
                 finish()
             }
         }
+        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
