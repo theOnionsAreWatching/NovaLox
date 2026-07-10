@@ -75,7 +75,7 @@
             android:title="@string/pref_default_group_mode"
             android:entries="@array/group_mode_entries"
             android:entryValues="@array/group_mode_values"
-            android:defaultValue="broadcast"
+            android:defaultValue="group_mms"
             android:summary="%s" />
         <ListPreference
             app:iconSpaceReserved="false"
@@ -146,5 +146,9 @@
             app:iconSpaceReserved="false"
             android:key="open_softkeys"
             android:title="@string/open_softkey_config" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:selectable="false"
+            android:summary="@string/softkey_trouble_hint" />
     </PreferenceCategory>
 </PreferenceScreen>

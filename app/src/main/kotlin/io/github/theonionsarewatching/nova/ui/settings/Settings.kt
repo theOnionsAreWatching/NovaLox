@@ -683,7 +683,8 @@ class SoftkeyConfigActivity : BaseActivity() {
     private fun render() {
         when (step) {
             Step.LEFT -> {
-                binding.emptyLabel.setText(R.string.press_left_softkey)
+                binding.emptyLabel.text = getString(R.string.press_left_softkey) +
+                    "\n\n" + getString(R.string.softkey_trouble_hint)
                 binding.btnAction.setText(R.string.skip)
                 binding.btnAction.setOnClickListener { finishFlow(save = false) }
                 binding.btnAction2.visibility = View.GONE

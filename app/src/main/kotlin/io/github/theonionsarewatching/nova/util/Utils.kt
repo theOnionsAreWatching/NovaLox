@@ -32,19 +32,41 @@ object PhoneUtils {
 
 // ============================== Date formatting ==============================
 object Formatters {
-    private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-    private val dayFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
-    private val fullFmt = SimpleDateFormat("EEE, d MMM yyyy HH:mm", Locale.getDefault())
+    // All formatting follows the SYSTEM settings: 12/24-hour clock and the
+    // locale's date order (day/month vs month/day) come from the phone.
+    private lateinit var appContext: android.content.Context
 
-    fun time(ts: Long): String = timeFmt.format(Date(ts))
-    fun full(ts: Long): String = fullFmt.format(Date(ts))
+    fun init(context: android.content.Context) {
+        appContext = context.applicationContext
+    }
+
+    fun time(ts: Long): String =
+        android.text.format.DateFormat.getTimeFormat(appContext).format(Date(ts))
+
+    fun full(ts: Long): String = android.text.format.DateUtils.formatDateTime(
+        appContext, ts,
+        android.text.format.DateUtils.FORMAT_SHOW_DATE or
+            android.text.format.DateUtils.FORMAT_SHOW_YEAR or
+            android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+            android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+            android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY or
+            android.text.format.DateUtils.FORMAT_SHOW_TIME
+    )
 
     fun listStamp(ts: Long): String {
         val now = Calendar.getInstance()
         val then = Calendar.getInstance().apply { timeInMillis = ts }
-        return if (now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
+        val sameDay = now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
             now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
-        ) timeFmt.format(Date(ts)) else dayFmt.format(Date(ts))
+        return if (sameDay) time(ts)
+        else android.text.format.DateUtils.formatDateTime(
+            appContext, ts,
+            android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+                android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+                android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY
+            // DateUtils adds the year automatically when it isn't the current year
+        )
     }
 }
 

@@ -76,12 +76,13 @@ class ConversationAdapter(
             holder.b.avatarLetter.background = bg
         }
 
-        val markers = buildString {
-            if (c.pinned) append("\u2605 ")        // ★ pinned
-            if (c.notifBlocked) append("\u2298 ")  // ⊘ notifications blocked
-            else if (c.muted) append("(m) ")       // muted (silent)
-        }
-        holder.b.convoTitle.text = markers + title
+        holder.b.convoTitle.text = title
+        holder.b.iconPin.visibility =
+            if (c.pinned) android.view.View.VISIBLE else android.view.View.GONE
+        holder.b.iconBlocked.visibility =
+            if (c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
+        holder.b.iconMuted.visibility =
+            if (c.muted && !c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.convoTitle.textSize = prefs.msgTextSp
         holder.b.convoTitle.setTypeface(null, if (c.unreadCount > 0) Typeface.BOLD else Typeface.NORMAL)
 

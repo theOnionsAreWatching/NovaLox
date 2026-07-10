@@ -76,7 +76,7 @@ class MessageAdapter(
             holder.b.senderName.visibility = View.GONE
             holder.b.thumb.visibility = View.GONE
             holder.b.attachLabel.visibility = View.GONE
-            holder.b.metaLine.visibility = View.GONE
+            holder.b.metaRow.visibility = View.GONE
             holder.b.accentBar.visibility = View.GONE
             holder.b.bubbleBox.background = null
             val lp = holder.b.bubbleBox.layoutParams as LinearLayout.LayoutParams
@@ -181,7 +181,10 @@ class MessageAdapter(
         }
 
         // ---- meta line: time + status ----
-        holder.b.metaLine.visibility = View.VISIBLE
+        holder.b.metaRow.visibility = View.VISIBLE
+        holder.b.iconLock.visibility = if (m.locked) View.VISIBLE else View.GONE
+        holder.b.iconScheduled.visibility =
+            if (m.status == MsgStatus.SCHEDULED) View.VISIBLE else View.GONE
         holder.b.metaLine.textSize = prefs.timeTextSp
         val time = if (m.status == MsgStatus.SCHEDULED && m.scheduledAt != null)
             ctx.getString(R.string.scheduled_for, Formatters.full(m.scheduledAt))
@@ -194,7 +197,7 @@ class MessageAdapter(
                 else -> Color.GRAY
             }
         )
-        holder.b.metaLine.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
+        holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
         // bulk-selection tint (solid row) vs normal focus shade (behind content only)
         if (isSelected(m.id)) {

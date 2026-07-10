@@ -303,4 +303,7 @@
     <string name="vib_on">On</string>
     <string name="vib_off">Off</string>
     <string name="tone_saved">Saved</string>
+
+    <!-- v0.8 additions -->
+    <string name="softkey_trouble_hint">If a softkey doesn\'t respond even after setup (this happens on some phones), turn the softkey bar off: Settings → Softkey bar → Never. On-screen buttons appear instead, and they work with the D-pad.</string>
 </resources>

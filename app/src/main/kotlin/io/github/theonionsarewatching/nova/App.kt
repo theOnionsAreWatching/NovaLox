@@ -19,6 +19,7 @@ class App : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        io.github.theonionsarewatching.nova.util.Formatters.init(this)
         NotificationHelper.createChannels(this)
 
         val repo = Repo.get(this)

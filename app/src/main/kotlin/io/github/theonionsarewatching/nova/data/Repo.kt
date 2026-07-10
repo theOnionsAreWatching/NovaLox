@@ -149,6 +149,33 @@ class Repo private constructor(private val context: Context) {
         return ingestMms(mmsId, date, msgBox)
     }
 
+    /** MMS subject, charset-decoded. Many senders put the actual message text here. */
+    private fun mmsSubject(mmsId: Long): String {
+        return try {
+            context.contentResolver.query(
+                Uri.parse("content://mms"), arrayOf("sub", "sub_cs"),
+                "_id = ?", arrayOf(mmsId.toString()), null
+            )?.use { c ->
+                if (!c.moveToFirst()) return ""
+                val raw = c.getString(0) ?: return ""
+                if (raw.isBlank()) return ""
+                val cs = c.getInt(1)
+                val decoded = try {
+                    com.google.android.mms.pdu_alt.EncodedStringValue(
+                        cs, raw.toByteArray(Charsets.ISO_8859_1)
+                    ).string
+                } catch (_: Throwable) {
+                    raw
+                }
+                val cleaned = decoded.trim()
+                if (cleaned.lowercase() in setOf("no subject", "(no subject)", "nosubject")) ""
+                else cleaned
+            } ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
     @SuppressLint("Range")
     suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? {
         val resolver = context.contentResolver
@@ -208,6 +235,13 @@ class Repo private constructor(private val context: Context) {
                 }
             }
         } catch (_: Exception) {}
+
+        // messages sent as "subject only" (or subject + attachment) showed up blank:
+        // fold the subject into the body text
+        val subject = mmsSubject(mmsId)
+        if (subject.isNotBlank() && !bodyText.contains(subject)) {
+            bodyText = if (bodyText.isBlank()) subject else subject + "\n" + bodyText
+        }
 
         val convo = getOrCreateConversation(participants)
         val blocked = !isMine && matchesKeyword(bodyText)

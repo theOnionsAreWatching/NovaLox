@@ -49,6 +49,33 @@
                 android:ellipsize="end"
                 android:maxLines="1" />
 
+            <ImageView
+                android:id="@+id/iconPin"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_pin"
+                android:visibility="gone"
+                android:contentDescription="@string/pin" />
+
+            <ImageView
+                android:id="@+id/iconMuted"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_muted"
+                android:visibility="gone"
+                android:contentDescription="@string/mute" />
+
+            <ImageView
+                android:id="@+id/iconBlocked"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_blocked"
+                android:visibility="gone"
+                android:contentDescription="@string/block_notifications" />
+
             <TextView
                 android:id="@+id/convoUnread"
                 android:layout_width="wrap_content"

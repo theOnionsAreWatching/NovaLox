@@ -48,7 +48,7 @@ class Prefs(context: Context) {
     val showSearchBar: Boolean get() = sp.getBoolean("show_search_bar", false)
     val deliveryReports: Boolean get() = sp.getBoolean("delivery_reports", true)
     // broadcast / group_mms : default for NEW group conversations
-    val defaultGroupMode: String get() = sp.getString("default_group_mode", "broadcast") ?: "broadcast"
+    val defaultGroupMode: String get() = sp.getString("default_group_mode", "group_mms") ?: "group_mms"
     // auto / ask / never
     val linkOpening: String get() = sp.getString("link_opening", "ask") ?: "ask"
     val composeMaxLines: Int get() = (sp.getString("compose_max_lines", "4") ?: "4").toIntOrNull() ?: 4

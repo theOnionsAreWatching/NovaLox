@@ -54,8 +54,34 @@
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/metaLine"
+    <LinearLayout
+        android:id="@+id/metaRow"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/metaLine"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+        <ImageView
+            android:id="@+id/iconLock"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_marginStart="5dp"
+            android:src="@drawable/ic_lock"
+            android:visibility="gone"
+            android:contentDescription="@string/lock" />
+
+        <ImageView
+            android:id="@+id/iconScheduled"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_marginStart="5dp"
+            android:src="@drawable/ic_clock"
+            android:visibility="gone"
+            android:contentDescription="@string/schedule_send" />
+    </LinearLayout>
 </LinearLayout>
