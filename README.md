@@ -1,16 +1,9 @@
 # NovaLox (D-SMS)
 
-A D-pad first SMS/MMS messenger for Android keypad phones (kosher phones, flip phones,
-feature-phone style devices) — and it works fine on touch phones too.
+A D-pad first SMS/MMS messenger for Android keypad phones and it works fine on touch phones too.
 
 Package: `io.github.theonionsarewatching.nova` · minSdk 23 (Android 6) · targetSdk 34
 
-## Why
-
-Stock and mainstream SMS apps assume a touchscreen. D-SMS assumes a D-pad:
-every screen is reachable with up/down/left/right/OK, all menus are dialogs
-(natively D-pad friendly), the focused item always has a visible outline, and
-physical softkeys are first-class citizens.
 
 ## Feature summary
 
@@ -84,15 +77,6 @@ physical softkeys are first-class citizens.
 - Contact names are cached in the DB, refreshed by a contacts ContentObserver and throttled
   periodic checks — the list never waits on the contacts provider
 
-## Building
-
-Everything builds on GitHub Actions — no local Android SDK needed. Every push to `main`
-runs **Build debug APK**; grab `Nova-debug` from the run's artifacts. Tagging a release
-(`git tag v0.1.0 && git push --tags`) runs **Release** and attaches an APK to a GitHub Release.
-
-Full build, local-build, and release-signing instructions are in **[BUILDING.md](BUILDING.md)**.
-No credentials are stored in this repo — release signing reads entirely from GitHub Actions
-secrets at build time.
 
 ## First run on a device
 
@@ -118,27 +102,3 @@ secrets at build time.
   video thumbnails via `VideoFrameDecoder`.
 - UI is Android Views (no Compose), all menus are `AlertDialog`s, focus visuals are
   programmatic stroke drawables so the thickness setting applies everywhere.
-
-## Known limits / roadmap (v0.1)
-
-- Built-in D-pad file picker fallback for devices whose system picker is unusable
-  (per-device profile flag) — planned; current attach flow uses the system picker
-- Dual-SIM per-message SIM selection — planned (sends use the default SIM today)
-- Forwarding sends the first attachment only
-- Bulk select currently supports delete (forward-many is planned)
-- MMS behavior varies by carrier; test on a real SIM (see below)
-
-## Real-device test checklist
-
-- [ ] Default-app prompt appears and sticks after reboot
-- [ ] Send/receive plain SMS both directions; multipart (long) SMS arrives as one message
-- [ ] Send a photo (MMS) on mobile data; receive a photo; group MMS both modes
-- [ ] Delivery report shows Delivered (carrier-dependent)
-- [ ] Attach flow round-trips through your device's file picker
-- [ ] Softkeys drive the bar after key capture; MENU/CALL keys behave
-- [ ] Scheduled message fires after a reboot
-
-## License
-
-Choose one before publishing (MIT/Apache-2.0 recommended). The MMS engine dependency
-(`android-smsmms`) is Apache-2.0.
