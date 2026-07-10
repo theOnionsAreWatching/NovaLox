@@ -56,12 +56,9 @@ class MainActivity : BaseActivity() {
         binding.convoList.isFocusable = true
         scroller = DpadScroller(
             binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
-            onEdge = { down, fresh ->
-                when {
-                    down -> true // bottom: stay put
-                    fresh -> false // deliberate press at the top: focus moves to the header
-                    else -> true // holding never leaves the list
-                }
+            onEdge = { down ->
+                if (down) true // bottom: stay put
+                else false // top: let focus move to the header
             }
         )
 
@@ -291,7 +288,7 @@ class MainActivity : BaseActivity() {
             getString(R.string.menu_settings)
         )
         AlertDialog.Builder(this)
-            .setTitle(R.string.softkey_options)
+            .setCustomTitle(Dialogs.title(this, getString(R.string.softkey_options)))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, SearchActivity::class.java))
@@ -421,7 +418,7 @@ class MainActivity : BaseActivity() {
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
-            .setTitle(c.displayTitle())
+            .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
     }

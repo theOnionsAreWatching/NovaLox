@@ -55,6 +55,8 @@ class SettingsActivity : BaseActivity() {
             find("open_bin") { startActivity(Intent(requireContext(), RecycleBinActivity::class.java)) }
             find("open_hidden") { startActivity(Intent(requireContext(), HiddenConversationsActivity::class.java)) }
             find("open_softkeys") { startActivity(Intent(requireContext(), SoftkeyConfigActivity::class.java)) }
+            find("open_sizes") { startActivity(Intent(requireContext(), SizeSettingsActivity::class.java)) }
+            find("accent_picker") { showAccentPicker() }
             find("open_search") {
                 startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SearchActivity::class.java))
             }
@@ -105,7 +107,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             // restart-sensitive prefs: recreate the settings screen so the change is visible
-            for (key in listOf("theme", "accent", "ui_scale", "layout_direction")) {
+            for (key in listOf("theme", "layout_direction")) {
                 findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
                     requireActivity().recreate()
                     true
@@ -115,6 +117,80 @@ class SettingsActivity : BaseActivity() {
 
         private fun find(key: String, action: () -> Unit) {
             findPreference<Preference>(key)?.setOnPreferenceClickListener { action(); true }
+        }
+
+        override fun onResume() {
+            super.onResume()
+            updateAccentSummary()
+        }
+
+        private fun accentOptions(): List<Triple<String, String, Int>> {
+            val ctx = requireContext()
+            fun c(res: Int) = androidx.core.content.ContextCompat.getColor(ctx, res)
+            return listOf(
+                Triple("system", getString(R.string.accent_system),
+                    io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(ctx)),
+                Triple("blue", getString(R.string.accent_blue_name), c(R.color.accent_blue)),
+                Triple("teal", getString(R.string.accent_teal_name), c(R.color.accent_teal)),
+                Triple("green", getString(R.string.accent_green_name), c(R.color.accent_green)),
+                Triple("orange", getString(R.string.accent_orange_name), c(R.color.accent_orange)),
+                Triple("red", getString(R.string.accent_red_name), c(R.color.accent_red)),
+                Triple("purple", getString(R.string.accent_purple_name), c(R.color.accent_purple)),
+                Triple("pink", getString(R.string.accent_pink_name), c(R.color.accent_pink)),
+                Triple("gray", getString(R.string.accent_gray_name), c(R.color.accent_gray))
+            )
+        }
+
+        private fun updateAccentSummary() {
+            val current = io.github.theonionsarewatching.nova.util.Prefs.get(requireContext()).accent
+            findPreference<Preference>("accent_picker")?.summary =
+                accentOptions().firstOrNull { it.first == current }?.second ?: current
+        }
+
+        /** Accent picker with a color swatch beside each name. */
+        private fun showAccentPicker() {
+            val ctx = requireContext()
+            val options = accentOptions()
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+            val checked = options.indexOfFirst { it.first == prefs.accent }.coerceAtLeast(0)
+            val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+
+            val adapter = object : android.widget.ArrayAdapter<Triple<String, String, Int>>(
+                ctx, 0, options
+            ) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val item = options[position]
+                    val row = (convertView as? android.widget.LinearLayout)
+                        ?: android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            setPadding(dp(20), dp(12), dp(20), dp(12))
+                            addView(View(ctx).apply {
+                                layoutParams = android.widget.LinearLayout.LayoutParams(dp(22), dp(22))
+                                    .apply { marginEnd = dp(16) }
+                            })
+                            addView(android.widget.TextView(ctx).apply { textSize = 15f })
+                        }
+                    val swatch = row.getChildAt(0)
+                    val label = row.getChildAt(1) as android.widget.TextView
+                    swatch.background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(item.third)
+                    }
+                    label.text = if (position == checked) "${item.second}  \u2713" else item.second
+                    return row
+                }
+            }
+
+            AlertDialog.Builder(ctx)
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs.title(
+                    requireActivity(), getString(R.string.pref_accent)))
+                .setAdapter(adapter) { _, which ->
+                    prefs.sp.edit().putString("accent", options[which].first).apply()
+                    requireActivity().recreate()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
 
         @Deprecated("Deprecated in Java")
@@ -128,15 +204,55 @@ class SettingsActivity : BaseActivity() {
             }
         }
 
+        /** Progress dialog with a determinate bar + a small detail line. */
+        private class ProgressUi(ctx: android.content.Context, titleRes: Int) {
+            val bar = android.widget.ProgressBar(
+                ctx, null, android.R.attr.progressBarStyleHorizontal
+            ).apply { max = 100; isIndeterminate = true }
+            val detail = android.widget.TextView(ctx).apply {
+                textSize = 11f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            }
+            val dialog: AlertDialog = AlertDialog.Builder(ctx)
+                .setTitle(titleRes)
+                .setView(android.widget.LinearLayout(ctx).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    val pad = (18 * ctx.resources.displayMetrics.density).toInt()
+                    setPadding(pad, pad / 2, pad, 0)
+                    addView(bar)
+                    addView(detail)
+                })
+                .setCancelable(false)
+                .show()
+
+            fun update(percent: Int, text: String?) {
+                if (percent < 0) {
+                    bar.isIndeterminate = true
+                } else {
+                    bar.isIndeterminate = false
+                    bar.progress = percent
+                }
+                if (text != null) detail.text = text
+            }
+
+            fun dismiss() = runCatching { dialog.dismiss() }
+        }
+
+        private fun progressReporter(ui: ProgressUi) =
+            io.github.theonionsarewatching.nova.data.BackupHelper.Progress { pct, det ->
+                ui.bar.post { ui.update(pct, det) }
+            }
+
         private fun backupToDownloads() {
             val ctx = requireContext()
-            val dialog = AlertDialog.Builder(ctx)
-                .setMessage(R.string.backing_up).setCancelable(false).show()
+            val ui = ProgressUi(ctx, R.string.backing_up)
             viewLifecycleOwner.lifecycleScope.launch {
                 val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    io.github.theonionsarewatching.nova.data.BackupHelper.exportToDownloads(ctx)
+                    io.github.theonionsarewatching.nova.data.BackupHelper
+                        .exportToDownloads(ctx, progressReporter(ui))
                 }
-                runCatching { dialog.dismiss() }
+                ui.dismiss()
                 Toast.makeText(
                     ctx,
                     if (name != null) getString(R.string.backup_saved_to, name)
@@ -164,16 +280,14 @@ class SettingsActivity : BaseActivity() {
 
         private fun runBackupTask(exporting: Boolean, uri: android.net.Uri) {
             val ctx = requireContext()
-            val dialog = AlertDialog.Builder(ctx)
-                .setMessage(if (exporting) R.string.backing_up else R.string.restoring)
-                .setCancelable(false)
-                .show()
+            val ui = ProgressUi(ctx, if (exporting) R.string.backing_up else R.string.restoring)
             viewLifecycleOwner.lifecycleScope.launch {
+                val reporter = progressReporter(ui)
                 val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx, uri)
-                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx, uri)
+                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx, uri, reporter)
+                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx, uri, reporter)
                 }
-                runCatching { dialog.dismiss() }
+                ui.dismiss()
                 Toast.makeText(
                     ctx,
                     when {
@@ -184,6 +298,33 @@ class SettingsActivity : BaseActivity() {
                     },
                     Toast.LENGTH_LONG
                 ).show()
+            }
+        }
+    }
+}
+
+// ============================== Size sub-settings ==============================
+
+class SizeSettingsActivity : BaseActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(R.id.settings_container, SizeFragment())
+                .commit()
+        }
+    }
+
+    class SizeFragment : PreferenceFragmentCompat() {
+        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+            setPreferencesFromResource(R.xml.preferences_size, rootKey)
+            // recreate so scale / outline changes are visible immediately
+            for (key in listOf("ui_scale", "focus_stroke")) {
+                findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
+                    requireActivity().recreate()
+                    true
+                }
             }
         }
     }

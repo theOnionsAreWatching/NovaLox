@@ -113,6 +113,19 @@
         android:clickable="true"
         android:visibility="gone" />
 
+    <TextView
+        android:id="@+id/attachChip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:textSize="12sp"
+        android:focusable="true"
+        android:clickable="true"
+        android:visibility="gone" />
+
     <EditText
         android:id="@+id/bodyInput"
         android:layout_width="match_parent"
@@ -130,13 +143,32 @@
         android:inputType="textCapSentences|textMultiLine"
         android:importantForAutofill="no" />
 
-    <Button
-        android:id="@+id/btnStart"
+    <LinearLayout
+        android:id="@+id/sendRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
-        android:text="@string/softkey_start" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="8dp">
+
+        <ImageButton
+            android:id="@+id/btnComposeAttach"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/softkey_attach"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_add" />
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:text="@string/softkey_send" />
+    </LinearLayout>
 
     <include
         android:id="@+id/softkeyBar"

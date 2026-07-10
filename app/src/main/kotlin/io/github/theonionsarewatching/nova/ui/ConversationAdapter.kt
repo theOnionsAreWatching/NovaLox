@@ -17,7 +17,13 @@ class ConversationAdapter(
     private val onOptions: (ConversationEntity) -> Unit
 ) : RecyclerView.Adapter<ConversationAdapter.VH>() {
 
+    init {
+        setHasStableIds(true)
+    }
+
     var items: List<ConversationEntity> = emptyList()
+
+    override fun getItemId(position: Int): Long = items[position].id
 
     fun submit(list: List<ConversationEntity>) {
         items = list

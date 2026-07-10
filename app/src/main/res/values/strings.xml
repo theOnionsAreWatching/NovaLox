@@ -266,4 +266,23 @@
     <string name="group_mode_line">Group mode: %1$s — press to change</string>
     <string name="mode_broadcast_short">Broadcast</string>
     <string name="mode_group_mms_short">Group MMS</string>
+
+    <!-- v0.6 additions -->
+    <string name="pref_sizes">Text and size options</string>
+    <string name="pref_sizes_summary">Message size, timestamps, density, overall scale, focus outline</string>
+    <string name="desc_msg_text_size">Size of the message text in conversations and the thread list</string>
+    <string name="desc_time_text_size">Size of timestamps, statuses and other small labels</string>
+    <string name="desc_list_density">Vertical spacing between rows — compact fits more on screen</string>
+    <string name="desc_ui_scale">Scales all text in the app at once, on top of the sizes above</string>
+    <string name="desc_focus_stroke">Thickness of the colored outline around the focused item</string>
+    <string name="desc_compose_max_lines">How tall the typing box grows before it scrolls inside</string>
+    <string name="accent_system">System (Material You, Android 12+)</string>
+    <string name="accent_blue_name">Blue</string>
+    <string name="accent_teal_name">Teal</string>
+    <string name="accent_green_name">Green</string>
+    <string name="accent_orange_name">Orange</string>
+    <string name="accent_red_name">Red</string>
+    <string name="accent_purple_name">Purple</string>
+    <string name="accent_pink_name">Pink</string>
+    <string name="accent_gray_name">Gray</string>
 </resources>

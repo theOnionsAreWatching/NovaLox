@@ -74,6 +74,7 @@ object ThemeUtils {
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), ring)
             addState(intArrayOf(android.R.attr.state_selected), ring)
+            addState(intArrayOf(android.R.attr.state_pressed), ring)
             addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
         }
     }
@@ -89,6 +90,7 @@ object ThemeUtils {
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), fill)
             addState(intArrayOf(android.R.attr.state_selected), fill)
+            addState(intArrayOf(android.R.attr.state_pressed), fill)
             addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
         }
     }
@@ -107,6 +109,7 @@ object ThemeUtils {
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
             addState(intArrayOf(android.R.attr.state_selected), focused)
+            addState(intArrayOf(android.R.attr.state_pressed), focused)
             addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
         }
     }
@@ -125,9 +128,13 @@ object ThemeUtils {
         for (v in views) v.foreground = focusForeground(v.context)
     }
 
-    /** Circular highlight for round icon buttons. */
+    /** Circular highlight for round icon buttons. The platform ripple's own
+     *  focus-darkening is removed so the shape can't mismatch our ring. */
     fun applyFocusHighlightRound(vararg views: android.view.View) {
-        for (v in views) v.foreground = focusForeground(v.context, oval = true)
+        for (v in views) {
+            v.background = null
+            v.foreground = focusForeground(v.context, oval = true)
+        }
     }
 
     /** Pill highlight for pill-shaped inputs (bounds == the pill). */
@@ -141,6 +148,12 @@ object ThemeUtils {
         for (v in views) {
             val inner = focusForeground(v.context, radiusDp = 20)
             v.foreground = android.graphics.drawable.InsetDrawable(inner, 0, dp(v.context, 6), 0, dp(v.context, 6))
+            // stop the button's own ripple from ALSO darkening on focus — keep press only
+            (v as? com.google.android.material.button.MaterialButton)?.rippleColor =
+                android.content.res.ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
+                    intArrayOf(Color.argb(48, 255, 255, 255), Color.TRANSPARENT)
+                )
         }
     }
     fun densityPad(context: Context): Int = when (Prefs.get(context).listDensity) {

@@ -24,10 +24,15 @@ object BackupHelper {
 
     data class LocalBackup(val displayName: String, val uri: Uri)
 
-    suspend fun export(context: Context, uri: Uri): Boolean {
+    /** percent 0..100 for determinate progress, -1 for "working, size unknown". */
+    fun interface Progress {
+        fun report(percent: Int, detail: String?)
+    }
+
+    suspend fun export(context: Context, uri: Uri, progress: Progress = Progress { _, _ -> }): Boolean {
         return try {
             context.contentResolver.openOutputStream(uri)?.use { out ->
-                exportToStream(context, out)
+                exportToStream(context, out, progress)
             } ?: false
         } catch (_: Exception) {
             false
@@ -36,7 +41,7 @@ object BackupHelper {
 
     /** Fallback for devices without a system file picker: write straight to Downloads/D-SMS.
      *  Returns the file's display name, or null on failure. */
-    suspend fun exportToDownloads(context: Context): String? {
+    suspend fun exportToDownloads(context: Context, progress: Progress = Progress { _, _ -> }): String? {
         val name = "nova-backup-" + java.text.SimpleDateFormat(
             "yyyyMMdd-HHmm", java.util.Locale.US
         ).format(java.util.Date()) + ".zip"
@@ -52,7 +57,7 @@ object BackupHelper {
                     android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
                 ) ?: return null
                 val ok = context.contentResolver.openOutputStream(uri)?.use { out ->
-                    exportToStream(context, out)
+                    exportToStream(context, out, progress)
                 } ?: false
                 if (ok) name else null
             } else {
@@ -61,7 +66,7 @@ object BackupHelper {
                     .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
                 val dir = File(downloads, "D-SMS").apply { mkdirs() }
                 val f = File(dir, name)
-                val ok = f.outputStream().use { out -> exportToStream(context, out) }
+                val ok = f.outputStream().use { out -> exportToStream(context, out, progress) }
                 if (ok) name else null
             }
         } catch (_: Exception) {
@@ -104,14 +109,23 @@ object BackupHelper {
         return out.distinctBy { it.displayName }
     }
 
-    private suspend fun exportToStream(context: Context, rawOut: java.io.OutputStream): Boolean {
+    private suspend fun exportToStream(
+        context: Context, rawOut: java.io.OutputStream, progress: Progress = Progress { _, _ -> }
+    ): Boolean {
         val repo = Repo.get(context)
         return try {
+            progress.report(-1, null)
             val convos = repo.db.conversations().all()
             val messages = repo.db.messages().allMessages()
             val parts = repo.db.parts().allParts()
             val elements = repo.db.elements().allElements()
             val keywords = repo.db.keywords().all()
+            val total = (convos.size + messages.size + parts.size * 2 + elements.size).coerceAtLeast(1)
+            var done = 0
+            fun tick(n: Int = 1) {
+                done += n
+                if (done % 50 == 0 || done >= total) progress.report(done * 100 / total, null)
+            }
 
             ZipOutputStream(rawOut.buffered()).let { zip ->
                 run {
@@ -142,6 +156,7 @@ object BackupHelper {
                         w.name("hidden").value(c.hidden)
                         w.name("draft").value(c.draft)
                         w.endObject()
+                        tick()
                     }
                     w.endArray()
 
@@ -167,6 +182,7 @@ object BackupHelper {
                         if (m.telephonyId != null) w.name("telephonyId").value(m.telephonyId)
                         w.name("telephonyIsMms").value(m.telephonyIsMms)
                         w.endObject()
+                        tick()
                     }
                     w.endArray()
 
@@ -179,6 +195,7 @@ object BackupHelper {
                         w.name("storedName").value(File(p.filePath).name)
                         w.name("size").value(p.size)
                         w.endObject()
+                        tick()
                     }
                     w.endArray()
 
@@ -189,6 +206,7 @@ object BackupHelper {
                         w.name("type").value(e.type)
                         w.name("value").value(e.value)
                         w.endObject()
+                        tick()
                     }
                     w.endArray()
 
@@ -203,8 +221,10 @@ object BackupHelper {
                     // ---- attachment files ----
                     val seen = HashSet<String>()
                     for (p in parts) {
+                        tick()
                         val f = File(p.filePath)
                         if (!f.exists() || !seen.add(f.name)) continue
+                        progress.report(done * 100 / total, f.name)
                         zip.putNextEntry(ZipEntry("parts/${f.name}"))
                         f.inputStream().use { it.copyTo(zip) }
                         zip.closeEntry()
@@ -219,9 +239,10 @@ object BackupHelper {
         }
     }
 
-    suspend fun restore(context: Context, uri: Uri): Boolean {
+    suspend fun restore(context: Context, uri: Uri, progress: Progress = Progress { _, _ -> }): Boolean {
         val repo = Repo.get(context)
         return try {
+            progress.report(-1, null)
             data class RConvo(val oldId: Long, val entity: ConversationEntity)
             data class RMsg(val oldId: Long, val oldConvoId: Long, val entity: MessageEntity)
             data class RPart(val oldMessageId: Long, val mime: String, val name: String, val storedName: String, val size: Long)
@@ -376,6 +397,7 @@ object BackupHelper {
                             r.endObject()
                         } else if (name.startsWith("parts/") && !entry.isDirectory) {
                             val safe = File(name).name // strip any path tricks
+                            progress.report(-1, safe)
                             val out = File(partsDir, safe)
                             out.outputStream().use { zip.copyTo(it) }
                         }
@@ -386,6 +408,14 @@ object BackupHelper {
             } ?: return false
 
             if (!sawData || convos.isEmpty() && messages.isEmpty()) return false
+
+            val insertTotal = (convos.size + messages.size + parts.size + elements.size).coerceAtLeast(1)
+            var inserted = 0
+            fun tick() {
+                inserted++
+                if (inserted % 50 == 0 || inserted >= insertTotal)
+                    progress.report(inserted * 100 / insertTotal, null)
+            }
 
             // wipe, then insert with id remapping
             repo.db.elements().deleteAll()
@@ -399,11 +429,13 @@ object BackupHelper {
                 val newId = repo.db.conversations().insert(c.entity)
                 convoMap[c.oldId] = if (newId > 0) newId
                 else repo.db.conversations().byKey(c.entity.convoKey)?.id ?: continue
+                tick()
             }
             val msgMap = HashMap<Long, Long>()
             for (m in messages) {
                 val cid = convoMap[m.oldConvoId] ?: continue
                 msgMap[m.oldId] = repo.db.messages().insert(m.entity.copy(convoId = cid))
+                tick()
             }
             for (p in parts) {
                 val mid = msgMap[p.oldMessageId] ?: continue
@@ -413,6 +445,7 @@ object BackupHelper {
                     messageId = mid, mimeType = p.mime, filePath = f.absolutePath,
                     fileName = p.name, size = if (p.size > 0) p.size else f.length()
                 ))
+                tick()
             }
             val elByMsg = elements.groupBy { it.oldMessageId }
             for ((oldMid, els) in elByMsg) {

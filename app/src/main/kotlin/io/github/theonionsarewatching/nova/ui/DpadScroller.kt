@@ -45,32 +45,17 @@ class BoundedLinearLayoutManager(
  * Optionally sub-scrolls items taller than the viewport line by line
  * before moving focus, so long messages are read in full.
  *
- * onEdge(down, fresh) fires when a press can't move further; `fresh` is true only
- * for a deliberate standalone press — NOT for key repeats, and NOT for the rapid
- * separate presses some keypad hardware emits while a key is held (detected by
- * timing). Return true to consume, false to let the event fall through
- * (e.g. so only a fresh press at the top can move focus to the header).
+ * onEdge(down) fires when a press can't move further; return true to consume,
+ * false to let the event fall through (e.g. so a press at the top can move focus
+ * to the header).
  */
 class DpadScroller(
     private val rv: RecyclerView,
     private val subScrollTallItems: Boolean,
     private val lineStepPx: () -> Int,
-    private val onEdge: ((down: Boolean, fresh: Boolean) -> Boolean)? = null
+    private val onEdge: ((down: Boolean) -> Boolean)? = null
 ) {
     private val maxStep = 6
-    private var lastNavDownAt = 0L
-    private var syntheticRepeat = 0
-
-    /** A press only counts as deliberate if the key wasn't just pressed a moment ago. */
-    private fun freshness(event: KeyEvent): Boolean {
-        val now = android.os.SystemClock.uptimeMillis()
-        val gap = now - lastNavDownAt
-        lastNavDownAt = now
-        // hardware repeats and hold-emitted rapid presses arrive well under this gap
-        val fresh = event.repeatCount == 0 && gap > 350
-        syntheticRepeat = if (fresh) 0 else syntheticRepeat + 1
-        return fresh
-    }
 
     fun onKey(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return false
@@ -80,9 +65,8 @@ class DpadScroller(
             else -> return false
         }
         if (!rv.hasFocus()) return false
-        val fresh = freshness(event)
         val count = rv.adapter?.itemCount ?: 0
-        if (count == 0) return onEdge?.invoke(down, fresh) == true
+        if (count == 0) return onEdge?.invoke(down) == true
 
         val focused = rv.focusedChild
         val pos = if (focused != null) rv.getChildAdapterPosition(focused) else RecyclerView.NO_POSITION
@@ -107,9 +91,8 @@ class DpadScroller(
             }
         }
 
-        // acceleration: faster the longer it's held, capped; slow near the edges.
-        // syntheticRepeat also covers hardware that repeats as separate presses.
-        var step = 1 + maxOf(event.repeatCount, syntheticRepeat) / 5
+        // acceleration: faster the longer it's held, capped; slow near the edges
+        var step = 1 + event.repeatCount / 5
         if (step > maxStep) step = maxStep
         val target = (if (down) pos + step else pos - step).coerceIn(0, count - 1)
         val nearEdge = target <= 1 || target >= count - 2
@@ -119,7 +102,7 @@ class DpadScroller(
 
         if (finalTarget == pos) {
             // at the boundary
-            return onEdge?.invoke(down, fresh) == true
+            return onEdge?.invoke(down) == true
         }
         focusPosition(finalTarget)
         return true

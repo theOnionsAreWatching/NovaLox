@@ -28,6 +28,7 @@ class ComposeActivity : BaseActivity() {
     private var contacts: List<ContactsHelper.Contact> = emptyList()
     private val recipients = ArrayList<String>()
     private var groupMode = GroupMode.BROADCAST
+    private val pendingAttachments = ArrayList<Triple<String, String, String>>()
     private lateinit var suggestionAdapter: SuggestionAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,6 +46,8 @@ class ComposeActivity : BaseActivity() {
         binding.btnAddRecipient.setOnClickListener { addTypedRecipient() }
         binding.btnGroupMode.setOnClickListener { pickGroupMode() }
         binding.btnStart.setOnClickListener { start() }
+        binding.btnComposeAttach.setOnClickListener { pickAttachment() }
+        binding.attachChip.setOnClickListener { manageAttachments() }
 
         binding.recipientInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -55,20 +58,22 @@ class ComposeActivity : BaseActivity() {
 
         softkeys = Softkeys(this, binding.softkeyBar).also {
             it.set(
-                getString(R.string.softkey_add), null, getString(R.string.softkey_start),
+                getString(R.string.softkey_add), getString(R.string.softkey_attach), getString(R.string.softkey_send),
                 onLeft = { addTypedRecipient() },
+                onCenter = { pickAttachment() },
                 onRight = { start() }
             )
         }
         if (softkeys?.shouldShow() == true) {
-            // softkeys carry Start; free the vertical space on small screens
-            binding.btnStart.visibility = View.GONE
+            // softkeys carry Attach + Send; free the vertical space on small screens
+            binding.sendRow.visibility = View.GONE
         }
 
-        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnAddRecipient)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnAddRecipient, binding.btnComposeAttach)
         ThemeUtils.applyButtonFocus(binding.btnStart)
         ThemeUtils.applyFocusHighlight(
-            binding.recipientInput, binding.bodyInput, binding.recipientChips, binding.btnGroupMode
+            binding.recipientInput, binding.bodyInput, binding.recipientChips,
+            binding.btnGroupMode, binding.attachChip
         )
 
         lifecycleScope.launch {
@@ -132,9 +137,15 @@ class ComposeActivity : BaseActivity() {
 
     private fun removeRecipientDialog() {
         if (recipients.isEmpty()) return
+        val labels = recipients.map { addr ->
+            val name = contacts.firstOrNull {
+                PhoneUtils.normalize(it.number) == PhoneUtils.normalize(addr)
+            }?.name
+            if (name != null) "$name  ($addr)" else addr
+        }
         AlertDialog.Builder(this)
             .setTitle(R.string.remove_recipient)
-            .setItems(recipients.toTypedArray()) { _, which ->
+            .setItems(labels.toTypedArray()) { _, which ->
                 recipients.removeAt(which)
                 updateRecipientLabel()
             }
@@ -157,6 +168,81 @@ class ComposeActivity : BaseActivity() {
                 else R.string.mode_broadcast_short
             )
         )
+    }
+
+    private fun pickAttachment() {
+        try {
+            val i = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*", "audio/*", "text/x-vcard"))
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 211)
+        } catch (_: Exception) {}
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 211 || resultCode != RESULT_OK) return
+        val uris = ArrayList<Uri>()
+        data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+        data?.data?.let { if (uris.isEmpty()) uris.add(it) }
+        if (uris.isEmpty()) return
+        lifecycleScope.launch {
+            for (uri in uris) {
+                try {
+                    val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                    val ext = when {
+                        mime.contains("jpeg") -> ".jpg"; mime.contains("png") -> ".png"
+                        mime.contains("gif") -> ".gif"; mime.contains("mp4") -> ".mp4"
+                        mime.contains("3gpp") -> ".3gp"; mime.contains("amr") -> ".amr"
+                        mime.contains("vcard") -> ".vcf"; else -> ".bin"
+                    }
+                    val dir = java.io.File(filesDir, "parts").apply { mkdirs() }
+                    val out = java.io.File(dir, "new_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        out.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (out.exists() && out.length() > 0) {
+                        pendingAttachments.add(Triple(out.absolutePath, mime, out.name))
+                    }
+                } catch (_: Exception) {}
+            }
+            updateAttachChip()
+        }
+    }
+
+    private fun updateAttachChip() {
+        if (pendingAttachments.isEmpty()) {
+            binding.attachChip.visibility = View.GONE
+            return
+        }
+        binding.attachChip.visibility = View.VISIBLE
+        binding.attachChip.text =
+            if (pendingAttachments.size == 1)
+                getString(R.string.attached_label, pendingAttachments[0].third)
+            else getString(R.string.attached_n, pendingAttachments.size)
+    }
+
+    private fun manageAttachments() {
+        if (pendingAttachments.isEmpty()) return
+        val labels = pendingAttachments.map { it.third } + getString(R.string.remove_all)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.attached_n, pendingAttachments.size))
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which < pendingAttachments.size) {
+                    runCatching { java.io.File(pendingAttachments[which].first).delete() }
+                    pendingAttachments.removeAt(which)
+                } else {
+                    pendingAttachments.forEach { runCatching { java.io.File(it.first).delete() } }
+                    pendingAttachments.clear()
+                }
+                updateAttachChip()
+            }
+            .show()
     }
 
     private fun pickGroupMode() {
@@ -184,7 +270,9 @@ class ComposeActivity : BaseActivity() {
             if (convo.isGroup && convo.groupMode != groupMode) {
                 repo.db.conversations().setGroupMode(convo.id, groupMode)
             }
-            if (body.isNotBlank()) {
+            if (pendingAttachments.isNotEmpty()) {
+                repo.sendAttachment(convo.id, body, pendingAttachments.toList())
+            } else if (body.isNotBlank()) {
                 repo.sendText(convo.id, body)
             } else {
                 repo.db.conversations().setDraft(convo.id, "")

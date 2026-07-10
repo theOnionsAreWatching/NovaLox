@@ -79,15 +79,10 @@ class ThreadActivity : BaseActivity() {
             binding.msgList,
             subScrollTallItems = true,
             lineStepPx = lineStep,
-            onEdge = { down, fresh ->
-                when {
-                    down -> { if (fresh) enterComposeMode(); true }
-                    hasMoreOlder -> { loadOlder(); true }
-                    // header only on a deliberate standalone press at the very top;
-                    // holding (real repeats OR rapid hardware presses) stays in the list
-                    fresh -> { binding.btnOverflow.requestFocus(); true }
-                    else -> true
-                }
+            onEdge = { down ->
+                if (down) { enterComposeMode(); true }
+                else if (hasMoreOlder) { loadOlder(); true }
+                else { binding.btnOverflow.requestFocus(); true }
             }
         )
 
@@ -316,11 +311,21 @@ class ThreadActivity : BaseActivity() {
             val older = repo.db.messages().olderThan(convoId, first.date, first.id, PAGE).reversed()
             hasMoreOlder = older.size >= PAGE
             if (older.isNotEmpty()) {
+                // keep the exact scroll position AND the focused view: capture the
+                // current anchor, insert above, then restore the anchor shifted by
+                // the insert count — the focused view instance survives untouched,
+                // so focus can never blip up to the header during the re-layout
+                val anchorView = binding.msgList.focusedChild ?: binding.msgList.getChildAt(0)
+                val anchorPos = anchorView?.let { binding.msgList.getChildAdapterPosition(it) } ?: -1
+                val anchorOffset = anchorView?.top ?: 0
                 val newRows = buildRows(older)
                 rows.addAll(0, newRows)
                 adapter.rows = rows
                 adapter.notifyItemRangeInserted(0, newRows.size)
-                scroller?.focusPosition(newRows.size) // keep focus on the same message
+                if (anchorPos >= 0) {
+                    (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
+                        ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
+                }
             }
             loading = false
         }
@@ -770,7 +775,7 @@ class ThreadActivity : BaseActivity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.message_options)
+            .setCustomTitle(Dialogs.title(this, getString(R.string.message_options)))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
     }
@@ -901,7 +906,7 @@ class ThreadActivity : BaseActivity() {
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
-            .setTitle(c.displayTitle())
+            .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
     }

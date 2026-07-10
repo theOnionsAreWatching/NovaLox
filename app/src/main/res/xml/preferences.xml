@@ -11,14 +11,15 @@
             android:entryValues="@array/theme_values"
             android:defaultValue="system"
             android:summary="%s" />
-        <ListPreference
+        <Preference
             app:iconSpaceReserved="false"
-            android:key="accent"
-            android:title="@string/pref_accent"
-            android:entries="@array/accent_entries"
-            android:entryValues="@array/accent_values"
-            android:defaultValue="blue"
-            android:summary="%s" />
+            android:key="accent_picker"
+            android:title="@string/pref_accent" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="open_sizes"
+            android:title="@string/pref_sizes"
+            android:summary="@string/pref_sizes_summary" />
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="message_style"
@@ -26,46 +27,6 @@
             android:entries="@array/style_entries"
             android:entryValues="@array/style_values"
             android:defaultValue="bubble"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="msg_text_size"
-            android:title="@string/pref_msg_text_size"
-            android:entries="@array/msg_size_entries"
-            android:entryValues="@array/msg_size_values"
-            android:defaultValue="16"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="time_text_size"
-            android:title="@string/pref_time_text_size"
-            android:entries="@array/time_size_entries"
-            android:entryValues="@array/time_size_values"
-            android:defaultValue="11"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="list_density"
-            android:title="@string/pref_list_density"
-            android:entries="@array/density_entries"
-            android:entryValues="@array/density_values"
-            android:defaultValue="comfortable"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="ui_scale"
-            android:title="@string/pref_ui_scale"
-            android:entries="@array/scale_entries"
-            android:entryValues="@array/scale_values"
-            android:defaultValue="1.0"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="focus_stroke"
-            android:title="@string/pref_focus_stroke"
-            android:entries="@array/stroke_entries"
-            android:entryValues="@array/stroke_values"
-            android:defaultValue="2"
             android:summary="%s" />
         <ListPreference
             app:iconSpaceReserved="false"
@@ -109,14 +70,6 @@
             android:entries="@array/link_entries"
             android:entryValues="@array/link_values"
             android:defaultValue="ask"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="compose_max_lines"
-            android:title="@string/pref_compose_max_lines"
-            android:entries="@array/compose_lines_entries"
-            android:entryValues="@array/compose_lines_values"
-            android:defaultValue="4"
             android:summary="%s" />
     </PreferenceCategory>
 

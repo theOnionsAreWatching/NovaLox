@@ -40,7 +40,13 @@ class MessageAdapter(
     private val isSelected: (Long) -> Boolean = { false }
 ) : androidx.recyclerview.widget.RecyclerView.Adapter<MessageAdapter.VH>() {
 
+    init {
+        setHasStableIds(true)
+    }
+
     var rows: List<MessageRow> = emptyList()
+
+    override fun getItemId(position: Int): Long = rows[position].msg.id
 
     class VH(val b: ItemMessageBinding) : androidx.recyclerview.widget.RecyclerView.ViewHolder(b.root)
 

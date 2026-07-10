@@ -32,30 +32,8 @@ object ElementActions {
     private fun canResolve(context: Context, intent: Intent): Boolean =
         intent.resolveActivity(context.packageManager) != null
 
-    /** Dialog title with a hairline underneath, separating it from the options list. */
-    private fun titleWithDivider(activity: Activity, text: String): android.view.View {
-        val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
-        val box = android.widget.LinearLayout(activity).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-        }
-        val title = android.widget.TextView(activity).apply {
-            setText(text)
-            textSize = 17f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(22), dp(18), dp(22), dp(12))
-        }
-        val line = android.view.View(activity).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(1)
-            )
-            setBackgroundColor(
-                androidx.core.content.ContextCompat.getColor(activity, R.color.divider)
-            )
-        }
-        box.addView(title)
-        box.addView(line)
-        return box
-    }
+    private fun titleWithDivider(activity: Activity, text: String): android.view.View =
+        Dialogs.title(activity, text)
 
     fun show(activity: Activity, e: ElementEntity, onMessageNumber: ((String) -> Unit)? = null) {
         val items = ArrayList<Pair<String, () -> Unit>>()
