@@ -82,7 +82,7 @@ class ThreadActivity : BaseActivity() {
             onEdge = { down ->
                 if (down) { enterComposeMode(); true }
                 else if (hasMoreOlder) { loadOlder(); true }
-                else { binding.btnOverflow.requestFocus(); true }
+                else { enterHeader(); true }
             }
         )
 
@@ -402,6 +402,27 @@ class ThreadActivity : BaseActivity() {
 
     // ============================== compose <-> scroll boundary ==============================
 
+    /** Header buttons are focusable ONLY while deliberately visited — the framework
+     *  can never auto-park focus on them during a list re-layout or page load. */
+    private fun setHeaderFocusable(on: Boolean) {
+        binding.btnBack.isFocusable = on
+        binding.btnOverflow.isFocusable = on
+    }
+
+    private fun enterHeader() {
+        setHeaderFocusable(true)
+        binding.btnOverflow.requestFocus()
+    }
+
+    private fun leaveHeader() {
+        setHeaderFocusable(false)
+        binding.msgList.requestFocus()
+        val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+        val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
+            ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
+        scroller?.focusPosition(first)
+    }
+
     /** Compose mode: Attach | Send on the softkeys. Scroll mode: Options | Select | Compose. */
     private fun updateSoftkeys() {
         if (selecting) { updateSelectionUi(); return }
@@ -495,6 +516,18 @@ class ThreadActivity : BaseActivity() {
             }
         }
 
+        if (binding.btnBack.hasFocus() || binding.btnOverflow.hasFocus()) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                leaveHeader()
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                return true // nothing above the header
+            }
+        } else if (binding.btnBack.isFocusable && !binding.btnBack.hasFocus() && !binding.btnOverflow.hasFocus()) {
+            // focus moved elsewhere by other means: relock the header
+            setHeaderFocusable(false)
+        }
         if (binding.msgList.hasFocus()) {
             if (scroller?.onKey(event) == true) {
                 // prefetch older pages as the focus climbs

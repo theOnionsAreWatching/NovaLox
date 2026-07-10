@@ -58,9 +58,9 @@ class ComposeActivity : BaseActivity() {
 
         softkeys = Softkeys(this, binding.softkeyBar).also {
             it.set(
-                getString(R.string.softkey_add), getString(R.string.softkey_attach), getString(R.string.softkey_send),
-                onLeft = { addTypedRecipient() },
-                onCenter = { pickAttachment() },
+                getString(R.string.softkey_attach), null, getString(R.string.softkey_send),
+                onLeft = { pickAttachment() },
+                onCenter = null,
                 onRight = { start() }
             )
         }

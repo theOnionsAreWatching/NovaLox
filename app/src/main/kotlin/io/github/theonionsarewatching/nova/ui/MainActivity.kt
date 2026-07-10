@@ -58,7 +58,7 @@ class MainActivity : BaseActivity() {
             binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
             onEdge = { down ->
                 if (down) true // bottom: stay put
-                else false // top: let focus move to the header
+                else { enterHeader(); true } // top: deliberate press enters the header
             }
         )
 
@@ -277,6 +277,25 @@ class MainActivity : BaseActivity() {
     }
 
     // ============================== menus ==============================
+
+    private fun setHeaderFocusable(on: Boolean) {
+        binding.btnSettings.isFocusable = on
+        binding.btnCompose.isFocusable = on
+    }
+
+    private fun enterHeader() {
+        setHeaderFocusable(true)
+        binding.btnCompose.requestFocus()
+    }
+
+    private fun leaveHeader() {
+        setHeaderFocusable(false)
+        binding.convoList.requestFocus()
+        val lm = binding.convoList.layoutManager as? LinearLayoutManager
+        val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
+            ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
+        scroller?.focusPosition(first)
+    }
 
     private fun optionsMenu() {
         val items = arrayOf(
