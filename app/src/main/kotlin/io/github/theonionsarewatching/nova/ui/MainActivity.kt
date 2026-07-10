@@ -66,6 +66,11 @@ class MainActivity : BaseActivity() {
         binding.btnCompose.setOnClickListener { startActivity(Intent(this, ComposeActivity::class.java)) }
         binding.gateButton.setOnClickListener { requestDefaultSmsRole() }
 
+        binding.searchInput.setOnTouchListener { v, _ ->
+            v.isFocusable = true
+            (v as android.widget.EditText).isFocusableInTouchMode = true
+            false // let the tap proceed normally: focus + keyboard
+        }
         binding.searchInput.setOnEditorActionListener { v, _, _ ->
             val q = v.text?.toString()?.trim().orEmpty()
             if (q.isNotEmpty()) {
@@ -281,7 +286,13 @@ class MainActivity : BaseActivity() {
     private fun setHeaderFocusable(on: Boolean) {
         binding.btnSettings.isFocusable = on
         binding.btnCompose.isFocusable = on
+        binding.searchInput.isFocusable = on
+        binding.searchInput.isFocusableInTouchMode = on
     }
+
+    private fun headerHasFocus(): Boolean =
+        binding.btnSettings.hasFocus() || binding.btnCompose.hasFocus() ||
+            binding.searchInput.hasFocus()
 
     private fun enterHeader() {
         setHeaderFocusable(true)
@@ -474,6 +485,30 @@ class MainActivity : BaseActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (softkeys?.handleKey(event) == true) return true
+        if (headerHasFocus()) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        // buttons -> search bar (if shown) -> list
+                        return if (!binding.searchInput.hasFocus() &&
+                            binding.searchInput.visibility == View.VISIBLE
+                        ) {
+                            binding.searchInput.requestFocus(); true
+                        } else {
+                            leaveHeader(); true
+                        }
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        if (binding.searchInput.hasFocus()) binding.btnCompose.requestFocus()
+                        return true // nothing above the header
+                    }
+                }
+            }
+        } else if (binding.btnSettings.isFocusable) {
+            // focus left the header by other means (touch, dialogs): relock it,
+            // so a list refresh can never park focus up there
+            setHeaderFocusable(false)
+        }
         if (binding.contentView.visibility == View.VISIBLE && scroller?.onKey(event) == true) return true
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_CALL) {
             (binding.convoList.focusedChild)?.let { v ->

@@ -1,4 +1,4 @@
-# D-SMS
+# NovaLox (D-SMS)
 
 A D-pad first SMS/MMS messenger for Android keypad phones (kosher phones, flip phones,
 feature-phone style devices) — and it works fine on touch phones too.
