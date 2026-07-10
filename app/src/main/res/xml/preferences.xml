@@ -150,6 +150,14 @@
             android:title="@string/open_hidden_pref" />
         <Preference
             app:iconSpaceReserved="false"
+            android:key="backup_now"
+            android:title="@string/pref_backup" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="restore_backup"
+            android:title="@string/pref_restore" />
+        <Preference
+            app:iconSpaceReserved="false"
             android:key="resync"
             android:title="@string/resync_pref" />
         <Preference

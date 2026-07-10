@@ -1,20 +1,60 @@
 package io.github.theonionsarewatching.nova.ui
 
+import android.content.Context
+import android.graphics.Rect
 import android.view.KeyEvent
+import android.view.View
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+
+/**
+ * LinearLayoutManager whose focus-driven "bring child into view" scrolls are CLAMPED
+ * to a fixed step. Without this, focusing a tall message or a picture makes the list
+ * jump to reveal the whole item; with it, every press moves the list by at most one
+ * consistent step, and the DpadScroller's sub-scroll reads the rest gradually.
+ */
+class BoundedLinearLayoutManager(
+    context: Context,
+    private val maxStepPx: () -> Int
+) : LinearLayoutManager(context) {
+
+    override fun requestChildRectangleOnScreen(
+        parent: RecyclerView, child: View, rect: Rect, immediate: Boolean, focusedChildVisible: Boolean
+    ): Boolean {
+        val parentTop = parent.paddingTop
+        val parentBottom = parent.height - parent.paddingBottom
+        val childTop = child.top + rect.top
+        val childBottom = child.top + rect.bottom
+
+        // how far the default behavior would scroll
+        val offScreenTop = minOf(0, childTop - parentTop)
+        val offScreenBottom = maxOf(0, childBottom - parentBottom)
+        var dy = if (offScreenBottom != 0) offScreenBottom else offScreenTop
+        if (dy == 0) return false
+
+        val cap = maxStepPx().coerceAtLeast(24)
+        dy = dy.coerceIn(-cap, cap)
+        if (immediate) parent.scrollBy(0, dy) else parent.smoothScrollBy(0, dy)
+        return true
+    }
+}
 
 /**
  * One-at-a-time D-pad movement with hold acceleration:
  * step grows with key repeat, capped, and damps near the list edges.
  * Optionally sub-scrolls items taller than the viewport line by line
  * before moving focus, so long messages are read in full.
+ *
+ * onEdge(down, repeatCount) fires when a press can't move further;
+ * return true to consume, false to let the event fall through
+ * (e.g. so a fresh press at the top can move focus to the header,
+ * while a held repeat never leaves the list).
  */
 class DpadScroller(
     private val rv: RecyclerView,
     private val subScrollTallItems: Boolean,
     private val lineStepPx: () -> Int,
-    private val onEdge: ((down: Boolean) -> Boolean)? = null // return true = consumed at boundary
+    private val onEdge: ((down: Boolean, repeatCount: Int) -> Boolean)? = null
 ) {
     private val maxStep = 6
 
@@ -26,9 +66,8 @@ class DpadScroller(
             else -> return false
         }
         if (!rv.hasFocus()) return false
-        val lm = rv.layoutManager as? LinearLayoutManager ?: return false
         val count = rv.adapter?.itemCount ?: 0
-        if (count == 0) return onEdge?.invoke(down) == true
+        if (count == 0) return onEdge?.invoke(down, event.repeatCount) == true
 
         val focused = rv.focusedChild
         val pos = if (focused != null) rv.getChildAdapterPosition(focused) else RecyclerView.NO_POSITION
@@ -64,7 +103,7 @@ class DpadScroller(
 
         if (finalTarget == pos) {
             // at the boundary
-            return onEdge?.invoke(down) == true
+            return onEdge?.invoke(down, event.repeatCount) == true
         }
         focusPosition(finalTarget)
         return true
@@ -74,14 +113,8 @@ class DpadScroller(
         val lm = rv.layoutManager as? LinearLayoutManager ?: return
         val existing = rv.findViewHolderForAdapterPosition(position)
         if (existing != null) {
+            // the (bounded) layout manager handles keeping it in view
             existing.itemView.requestFocus()
-            // keep it fully on screen
-            rv.post {
-                val v = existing.itemView
-                val viewBottom = rv.height - rv.paddingBottom
-                if (v.bottom > viewBottom) rv.scrollBy(0, minOf(v.bottom - viewBottom, v.height))
-                if (v.top < rv.paddingTop) rv.scrollBy(0, -minOf(rv.paddingTop - v.top, v.height))
-            }
         } else {
             lm.scrollToPositionWithOffset(position, 0)
             rv.post {

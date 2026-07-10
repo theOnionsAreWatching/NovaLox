@@ -52,11 +52,15 @@ class ThreadActivity : BaseActivity() {
     private var hasMoreNewer = false
     private var loading = false
     private var composeMode = true
-    /** staged attachment: (path, mime, displayName) — sent together with the next Send */
-    private var pendingAttachment: Triple<String, String, String>? = null
+    /** staged attachments: (path, mime, displayName) — sent together with the next Send */
+    private val pendingAttachments = ArrayList<Triple<String, String, String>>()
+    private var selecting = false
+    private val selectedIds = HashSet<Long>()
 
     private val draftHandler = Handler(Looper.getMainLooper())
     private var draftRunnable: Runnable? = null
+    private val bubbleHandler = Handler(Looper.getMainLooper())
+    private val hideBubble = Runnable { binding.dateBubble.visibility = View.GONE }
     private val changeListener: () -> Unit = { onDataChanged() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,16 +71,23 @@ class ThreadActivity : BaseActivity() {
         convoId = intent.getLongExtra(EXTRA_CONVO_ID, -1L)
         if (convoId <= 0) { finish(); return }
 
-        binding.msgList.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
+        val lineStep = { (prefs.msgTextSp * resources.displayMetrics.scaledDensity * 3).toInt() }
+        binding.msgList.layoutManager =
+            BoundedLinearLayoutManager(this, maxStepPx = lineStep).apply { stackFromEnd = true }
         binding.msgList.isFocusable = true
         scroller = DpadScroller(
             binding.msgList,
             subScrollTallItems = true,
-            lineStepPx = { (prefs.msgTextSp * resources.displayMetrics.scaledDensity * 3).toInt() },
-            onEdge = { down ->
-                if (down) { enterComposeMode(); true }
-                else if (hasMoreOlder) { loadOlder(); true }
-                else { binding.btnOverflow.requestFocus(); true }
+            lineStepPx = lineStep,
+            onEdge = { down, repeat ->
+                when {
+                    down -> { if (repeat == 0) enterComposeMode(); true }
+                    hasMoreOlder -> { loadOlder(); true }
+                    // header only on a deliberate fresh press at the very top; a held
+                    // repeat stays in the list
+                    repeat == 0 -> { binding.btnOverflow.requestFocus(); true }
+                    else -> true
+                }
             }
         )
 
@@ -84,12 +95,13 @@ class ThreadActivity : BaseActivity() {
         binding.btnOverflow.setOnClickListener { threadOptions() }
         binding.btnAttach.setOnClickListener { pickAttachment() }
         binding.btnSend.setOnClickListener { send() }
-        binding.attachmentRow.setOnClickListener { confirmRemoveAttachment() }
-        binding.attachClear.setOnClickListener { confirmRemoveAttachment() }
-        ThemeUtils.applyFocusHighlight(
-            binding.btnBack, binding.btnOverflow, binding.btnAttach, binding.btnSend,
-            binding.composeInput, binding.attachmentRow
+        binding.attachmentRow.setOnClickListener { manageAttachments() }
+        binding.attachClear.setOnClickListener { manageAttachments() }
+        ThemeUtils.applyFocusHighlightRound(
+            binding.btnBack, binding.btnOverflow, binding.btnAttach, binding.btnSend
         )
+        ThemeUtils.applyFocusHighlightPill(binding.composeInput)
+        ThemeUtils.applyFocusHighlight(binding.attachmentRow)
 
         binding.composeInput.maxLines = prefs.composeMaxLines
         binding.composeInput.addTextChangedListener(object : TextWatcher {
@@ -120,7 +132,8 @@ class ThreadActivity : BaseActivity() {
             adapter = MessageAdapter(
                 isGroup = c.isGroup,
                 onPress = { pressMessage(it) },
-                onHold = { holdMessage(it) }
+                onHold = { holdMessage(it) },
+                isSelected = { id -> selecting && id in selectedIds }
             )
             binding.msgList.adapter = adapter
             binding.composeInput.setText(c.draft)
@@ -157,6 +170,86 @@ class ThreadActivity : BaseActivity() {
         super.onPause()
         visibleConvoId = -1L
         saveDraft()
+    }
+
+    /** Floating date label shown while fast-scrolling with a held D-pad. */
+    private fun showDateBubble() {
+        val v = binding.msgList.focusedChild ?: return
+        val pos = binding.msgList.getChildAdapterPosition(v)
+        val row = rows.getOrNull(pos) ?: return
+        binding.dateBubble.text = Formatters.listStamp(row.msg.date)
+        binding.dateBubble.visibility = View.VISIBLE
+        bubbleHandler.removeCallbacks(hideBubble)
+        bubbleHandler.postDelayed(hideBubble, 700)
+    }
+
+    // ============================== bulk selection ==============================
+
+    private fun enterSelection(first: MessageRow) {
+        selecting = true
+        selectedIds.clear()
+        selectedIds.add(first.msg.id)
+        adapter.notifyDataSetChanged()
+        updateSelectionUi()
+    }
+
+    private fun toggleSelected(row: MessageRow) {
+        val id = row.msg.id
+        if (!selectedIds.remove(id)) selectedIds.add(id)
+        val pos = rows.indexOfFirst { it.msg.id == id }
+        if (pos >= 0) adapter.notifyItemChanged(pos)
+        updateSelectionUi()
+    }
+
+    private fun exitSelection() {
+        selecting = false
+        selectedIds.clear()
+        adapter.notifyDataSetChanged()
+        binding.threadSubtitle.text = convo?.let { c ->
+            if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
+            else c.addressList().firstOrNull() ?: ""
+        } ?: ""
+        updateSoftkeys()
+    }
+
+    private fun updateSelectionUi() {
+        binding.threadSubtitle.text = getString(R.string.n_selected, selectedIds.size)
+        softkeys?.set(
+            getString(R.string.softkey_cancel), getString(R.string.softkey_select),
+            getString(R.string.delete),
+            onLeft = { exitSelection() },
+            onCenter = { binding.msgList.focusedChild?.performClick() },
+            onRight = { deleteSelected() },
+            onMenu = { exitSelection() }
+        )
+    }
+
+    private fun deleteSelected() {
+        if (selectedIds.isEmpty()) { exitSelection(); return }
+        lifecycleScope.launch {
+            val lockedCount = selectedIds.count { id -> rows.firstOrNull { it.msg.id == id }?.msg?.locked == true }
+            val ids = selectedIds.toList()
+            if (lockedCount > 0) {
+                AlertDialog.Builder(this@ThreadActivity)
+                    .setMessage(getString(R.string.delete_selected_locked, ids.size, lockedCount))
+                    .setPositiveButton(R.string.delete_all) { _, _ ->
+                        lifecycleScope.launch { repo.deleteMessages(ids, includeLocked = true); exitSelection() }
+                    }
+                    .setNeutralButton(R.string.keep_locked) { _, _ ->
+                        lifecycleScope.launch { repo.deleteMessages(ids, includeLocked = false); exitSelection() }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            } else {
+                AlertDialog.Builder(this@ThreadActivity)
+                    .setMessage(getString(R.string.delete_selected_confirm, ids.size))
+                    .setPositiveButton(R.string.delete) { _, _ ->
+                        lifecycleScope.launch { repo.deleteMessages(ids, includeLocked = true); exitSelection() }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
     }
 
     private fun markRead() {
@@ -306,6 +399,7 @@ class ThreadActivity : BaseActivity() {
 
     /** Compose mode: Attach | Send on the softkeys. Scroll mode: Options | Select | Compose. */
     private fun updateSoftkeys() {
+        if (selecting) { updateSelectionUi(); return }
         if (composeMode) {
             softkeys?.set(
                 getString(R.string.softkey_attach), null, getString(R.string.softkey_send),
@@ -366,6 +460,12 @@ class ThreadActivity : BaseActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (selecting && event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_BACK
+        ) {
+            exitSelection()
+            return true
+        }
         if (softkeys?.handleKey(event) == true) return true
 
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
@@ -398,6 +498,7 @@ class ThreadActivity : BaseActivity() {
                 if (v != null && hasMoreNewer &&
                     binding.msgList.getChildAdapterPosition(v) > rows.size - 5
                 ) loadNewer()
+                if (event.repeatCount >= 3) showDateBubble()
                 return true
             }
         }
@@ -419,15 +520,14 @@ class ThreadActivity : BaseActivity() {
 
     private fun send() {
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
-        val attachment = pendingAttachment
-        if (text.isEmpty() && attachment == null) return
+        val attachments = pendingAttachments.toList()
+        if (text.isEmpty() && attachments.isEmpty()) return
         binding.composeInput.setText("")
-        clearAttachment(deleteFile = false)
+        clearAttachments(deleteFiles = false)
         lifecycleScope.launch {
             repo.db.conversations().setDraft(convoId, "")
-            if (attachment != null) {
-                val (path, mime, name) = attachment
-                repo.sendAttachment(convoId, text, path, mime, name)
+            if (attachments.isNotEmpty()) {
+                repo.sendAttachment(convoId, text, attachments)
             } else {
                 repo.sendText(convoId, text)
             }
@@ -435,36 +535,64 @@ class ThreadActivity : BaseActivity() {
         enterComposeMode()
     }
 
-    private fun setAttachment(path: String, mime: String, name: String) {
-        // replacing a previously staged file: clean the old one up
-        pendingAttachment?.let { runCatching { File(it.first).delete() } }
-        pendingAttachment = Triple(path, mime, name)
-        binding.attachmentRow.visibility = View.VISIBLE
-        binding.attachmentName.text = getString(R.string.attached_label, name)
-        if (mime.startsWith("image/") || mime.startsWith("video/")) {
-            binding.attachThumb.visibility = View.VISIBLE
-            binding.attachThumb.load(File(path)) { size(96, 96) }
-        } else {
-            binding.attachThumb.visibility = View.GONE
-        }
+    private fun addAttachment(path: String, mime: String, name: String) {
+        pendingAttachments.add(Triple(path, mime, name))
+        updateAttachmentChip()
         enterComposeMode()
     }
 
-    private fun confirmRemoveAttachment() {
-        if (pendingAttachment == null) return
+    private fun updateAttachmentChip() {
+        if (pendingAttachments.isEmpty()) {
+            binding.attachmentRow.visibility = View.GONE
+            binding.attachThumb.setImageDrawable(null)
+            return
+        }
+        binding.attachmentRow.visibility = View.VISIBLE
+        binding.attachmentName.text =
+            if (pendingAttachments.size == 1)
+                getString(R.string.attached_label, pendingAttachments[0].third)
+            else getString(R.string.attached_n, pendingAttachments.size)
+        val visual = pendingAttachments.firstOrNull {
+            it.second.startsWith("image/") || it.second.startsWith("video/")
+        }
+        if (visual != null) {
+            binding.attachThumb.visibility = View.VISIBLE
+            binding.attachThumb.load(File(visual.first)) { size(96, 96) }
+        } else {
+            binding.attachThumb.visibility = View.GONE
+        }
+    }
+
+    /** OK on the chip: list every staged file — pick one to remove, or remove all. */
+    private fun manageAttachments() {
+        if (pendingAttachments.isEmpty()) return
+        val labels = pendingAttachments.map { it.third } + getString(R.string.remove_all)
         AlertDialog.Builder(this)
-            .setMessage(R.string.remove_attachment_confirm)
-            .setPositiveButton(R.string.remove) { _, _ ->
-                clearAttachment(deleteFile = true)
-                enterComposeMode()
+            .setTitle(getString(R.string.attached_n, pendingAttachments.size))
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which < pendingAttachments.size) {
+                    val item = pendingAttachments[which]
+                    AlertDialog.Builder(this)
+                        .setMessage(getString(R.string.remove_one_confirm, item.third))
+                        .setPositiveButton(R.string.remove) { _, _ ->
+                            runCatching { File(item.first).delete() }
+                            pendingAttachments.removeAt(which)
+                            updateAttachmentChip()
+                            enterComposeMode()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                } else {
+                    clearAttachments(deleteFiles = true)
+                    enterComposeMode()
+                }
             }
-            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun clearAttachment(deleteFile: Boolean) {
-        if (deleteFile) pendingAttachment?.let { runCatching { File(it.first).delete() } }
-        pendingAttachment = null
+    private fun clearAttachments(deleteFiles: Boolean) {
+        if (deleteFiles) pendingAttachments.forEach { runCatching { File(it.first).delete() } }
+        pendingAttachments.clear()
         binding.attachmentRow.visibility = View.GONE
         binding.attachThumb.setImageDrawable(null)
     }
@@ -474,6 +602,7 @@ class ThreadActivity : BaseActivity() {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "*/*"
                 putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*", "audio/*", "text/x-vcard"))
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addCategory(Intent.CATEGORY_OPENABLE)
             }
             startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 201)
@@ -484,26 +613,31 @@ class ThreadActivity : BaseActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 201 && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
+            val uris = ArrayList<android.net.Uri>()
+            data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+            data?.data?.let { if (uris.isEmpty()) uris.add(it) }
+            if (uris.isEmpty()) return
             lifecycleScope.launch {
-                try {
-                    val mime = contentResolver.getType(uri) ?: "application/octet-stream"
-                    val ext = when {
-                        mime.contains("jpeg") -> ".jpg"; mime.contains("png") -> ".png"
-                        mime.contains("gif") -> ".gif"; mime.contains("mp4") -> ".mp4"
-                        mime.contains("3gpp") -> ".3gp"; mime.contains("amr") -> ".amr"
-                        mime.contains("vcard") -> ".vcf"; else -> ".bin"
-                    }
-                    val dir = File(filesDir, "parts").apply { mkdirs() }
-                    val out = File(dir, "out_${System.currentTimeMillis()}$ext")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        out.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    if (out.exists() && out.length() > 0) {
-                        // staged, not sent — it goes out with the next Send press
-                        setAttachment(out.absolutePath, mime, out.name)
-                    }
-                } catch (_: Exception) {}
+                for (uri in uris) {
+                    try {
+                        val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                        val ext = when {
+                            mime.contains("jpeg") -> ".jpg"; mime.contains("png") -> ".png"
+                            mime.contains("gif") -> ".gif"; mime.contains("mp4") -> ".mp4"
+                            mime.contains("3gpp") -> ".3gp"; mime.contains("amr") -> ".amr"
+                            mime.contains("vcard") -> ".vcf"; else -> ".bin"
+                        }
+                        val dir = File(filesDir, "parts").apply { mkdirs() }
+                        val out = File(dir, "out_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            out.outputStream().use { output -> input.copyTo(output) }
+                        }
+                        if (out.exists() && out.length() > 0) {
+                            // staged, not sent — goes out with the next Send press
+                            addAttachment(out.absolutePath, mime, out.name)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -512,6 +646,7 @@ class ThreadActivity : BaseActivity() {
 
     private fun pressMessage(row: MessageRow) {
         if (row.isSystemLine) return
+        if (selecting) { toggleSelected(row); return }
         val m = row.msg
         when (m.status) {
             MsgStatus.FAILED -> {
@@ -598,8 +733,10 @@ class ThreadActivity : BaseActivity() {
 
     private fun holdMessage(row: MessageRow) {
         if (row.isSystemLine) return
+        if (selecting) { toggleSelected(row); return }
         val m = row.msg
         val items = ArrayList<Pair<String, () -> Unit>>()
+        items += getString(R.string.select_messages) to { enterSelection(row) }
 
         when (m.status) {
             MsgStatus.FAILED -> items += getString(R.string.retry) to { lifecycleScope.launch { repo.retry(m.id) } }
@@ -713,7 +850,8 @@ class ThreadActivity : BaseActivity() {
                 val dir = File(filesDir, "parts").apply { mkdirs() }
                 val copy = File(dir, "fwd_${System.currentTimeMillis()}_${part.fileName}")
                 src.copyTo(copy, overwrite = true)
-                repo.sendAttachment(destConvoId, row.msg.body, copy.absolutePath, part.mimeType, part.fileName)
+                repo.sendAttachment(destConvoId, row.msg.body,
+                    listOf(Triple(copy.absolutePath, part.mimeType, part.fileName)))
             } catch (_: Exception) {}
         } else if (row.msg.body.isNotBlank()) {
             repo.sendText(destConvoId, row.msg.body)

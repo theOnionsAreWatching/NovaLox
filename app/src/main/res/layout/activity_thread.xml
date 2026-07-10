@@ -82,6 +82,22 @@
             android:layout_gravity="center"
             android:text="@string/no_messages"
             android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/dateBubble"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_date_bubble"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:textColor="@android:color/white"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
     </FrameLayout>
 
     <View

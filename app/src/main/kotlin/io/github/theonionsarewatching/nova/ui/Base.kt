@@ -62,15 +62,18 @@ object ThemeUtils {
         (v * context.resources.displayMetrics.density).toInt()
 
     /** Focus indicator: accent outline PLUS a translucent accent fill so the focused
-     *  item is unmistakable even on low-contrast screens. Thickness user-configurable. */
-    fun focusForeground(context: Context): StateListDrawable {
+     *  item is unmistakable even on low-contrast screens. Thickness user-configurable.
+     *  Shape follows the control: default rounded square, pill for pill controls,
+     *  oval for round icon buttons — so outline and shade always match. */
+    fun focusForeground(context: Context, radiusDp: Int = 8, oval: Boolean = false): StateListDrawable {
         val stroke = dp(context, Prefs.get(context).focusStrokeDp)
         val accent = accentColor(context)
         val fill = Color.argb(40, Color.red(accent), Color.green(accent), Color.blue(accent))
         val focused = GradientDrawable().apply {
+            if (oval) shape = GradientDrawable.OVAL
             setColor(fill)
             setStroke(stroke, accent)
-            cornerRadius = dp(context, 8).toFloat()
+            if (!oval) cornerRadius = dp(context, radiusDp).toFloat()
         }
         return StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
@@ -79,9 +82,19 @@ object ThemeUtils {
         }
     }
 
-    /** Give buttons / inputs the same visible focus highlight as list items. */
+    /** Rounded-square highlight for rows and boxy fields. */
     fun applyFocusHighlight(vararg views: android.view.View) {
         for (v in views) v.foreground = focusForeground(v.context)
+    }
+
+    /** Circular highlight for round icon buttons. */
+    fun applyFocusHighlightRound(vararg views: android.view.View) {
+        for (v in views) v.foreground = focusForeground(v.context, oval = true)
+    }
+
+    /** Pill highlight for pill-shaped buttons and inputs. */
+    fun applyFocusHighlightPill(vararg views: android.view.View) {
+        for (v in views) v.foreground = focusForeground(v.context, radiusDp = 20)
     }
 
     fun densityPad(context: Context): Int = when (Prefs.get(context).listDensity) {

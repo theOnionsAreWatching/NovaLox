@@ -36,7 +36,8 @@ data class MessageRow(
 class MessageAdapter(
     private val isGroup: Boolean,
     private val onPress: (MessageRow) -> Unit,
-    private val onHold: (MessageRow) -> Unit
+    private val onHold: (MessageRow) -> Unit,
+    private val isSelected: (Long) -> Boolean = { false }
 ) : androidx.recyclerview.widget.RecyclerView.Adapter<MessageAdapter.VH>() {
 
     var rows: List<MessageRow> = emptyList()
@@ -188,6 +189,16 @@ class MessageAdapter(
             }
         )
         holder.b.metaLine.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
+
+        // bulk-selection tint
+        if (isSelected(m.id)) {
+            val accent2 = ThemeUtils.accentColor(ctx)
+            holder.b.root.setBackgroundColor(
+                Color.argb(56, Color.red(accent2), Color.green(accent2), Color.blue(accent2))
+            )
+        } else {
+            holder.b.root.setBackgroundColor(Color.TRANSPARENT)
+        }
 
         holder.itemView.setOnClickListener { onPress(row) }
         holder.itemView.setOnLongClickListener { onHold(row); true }

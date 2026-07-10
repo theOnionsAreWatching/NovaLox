@@ -9,6 +9,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
+        android:background="?attr/colorSurfaceContainer"
         android:minHeight="44dp">
 
         <ImageButton
@@ -32,6 +33,11 @@
             android:layout_width="40dp"
             android:layout_height="44dp" />
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
 
     <FrameLayout
         android:layout_width="match_parent"

@@ -222,6 +222,9 @@ interface ConversationDao {
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM conversations")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -347,6 +350,12 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM messages")
+    suspend fun allMessages(): List<MessageEntity>
+
+    @Query("DELETE FROM messages")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -371,6 +380,12 @@ interface PartDao {
 
     @Query("DELETE FROM parts WHERE messageId = :messageId")
     suspend fun deleteByMessage(messageId: Long)
+
+    @Query("SELECT * FROM parts")
+    suspend fun allParts(): List<PartEntity>
+
+    @Query("DELETE FROM parts")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -386,6 +401,12 @@ interface ElementDao {
 
     @Query("DELETE FROM elements WHERE messageId = :messageId")
     suspend fun deleteByMessage(messageId: Long)
+
+    @Query("SELECT * FROM elements")
+    suspend fun allElements(): List<ElementEntity>
+
+    @Query("DELETE FROM elements")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -398,6 +419,9 @@ interface KeywordDao {
 
     @Query("DELETE FROM keywords WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM keywords")
+    suspend fun deleteAll()
 }
 
 @Dao

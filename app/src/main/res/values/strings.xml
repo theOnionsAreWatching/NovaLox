@@ -240,4 +240,24 @@
     <string name="clear_glyph" translatable="false">\u2715</string>
     <string name="softkey_new_message">New msg</string>
     <string name="pref_show_search_short">Search bar on main screen</string>
+
+    <!-- v0.4 additions -->
+    <string name="attached_n">Attached: %1$d files</string>
+    <string name="remove_all">Remove all</string>
+    <string name="remove_one_confirm">Remove \"%1$s\"?</string>
+    <string name="select_messages">Select messages…</string>
+    <string name="n_selected">%1$d selected</string>
+    <string name="softkey_cancel">Cancel</string>
+    <string name="delete_selected_confirm">Delete %1$d selected messages? They move to the recycle bin.</string>
+    <string name="delete_selected_locked">%1$d selected, including %2$d locked. Delete the locked ones too?</string>
+    <string name="pref_backup">Back up messages…</string>
+    <string name="pref_restore">Restore from backup…</string>
+    <string name="restore_title">Restore backup</string>
+    <string name="restore_warning">Restoring replaces everything currently in Nova (messages, conversations, keywords) with the backup\'s contents. Continue?</string>
+    <string name="backing_up">Backing up…</string>
+    <string name="restoring">Restoring…</string>
+    <string name="backup_done">Backup saved</string>
+    <string name="backup_failed">Backup failed</string>
+    <string name="restore_done">Restore complete</string>
+    <string name="restore_failed">Restore failed — is that a Nova backup zip?</string>
 </resources>

@@ -334,25 +334,29 @@ class Repo private constructor(private val context: Context) {
         return id
     }
 
-    /** Send an MMS with an attachment (single recipient or group-MMS). */
-    suspend fun sendAttachment(convoId: Long, text: String, filePath: String, mimeType: String, fileName: String): Long? {
+    /** Send an MMS with one or more attachments (single recipient or group-MMS). */
+    suspend fun sendAttachment(
+        convoId: Long, text: String, attachments: List<Triple<String, String, String>>
+    ): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
         val addresses = convo.addressList()
-        if (addresses.isEmpty()) return null
+        if (addresses.isEmpty() || attachments.isEmpty()) return null
         val now = System.currentTimeMillis()
         val msg = MessageEntity(
             convoId = convoId, address = addresses.joinToString("|"), body = text, date = now,
             isMine = true, status = MsgStatus.SENDING, isMms = true
         )
         val id = db.messages().insert(msg)
-        db.parts().insert(
-            PartEntity(messageId = id, mimeType = mimeType, filePath = filePath,
-                fileName = fileName, size = File(filePath).length())
-        )
+        for ((path, mime, name) in attachments) {
+            db.parts().insert(
+                PartEntity(messageId = id, mimeType = mime, filePath = path,
+                    fileName = name, size = File(path).length())
+            )
+        }
         if (text.isNotBlank()) extractElements(id, text)
         refreshConversation(convoId)
         ChangeBus.ping()
-        Sender.sendMms(context, id, text, addresses, listOf(Triple(filePath, mimeType, fileName)))
+        Sender.sendMms(context, id, text, addresses, attachments)
         return id
     }
 
@@ -528,6 +532,18 @@ class Repo private constructor(private val context: Context) {
         val m = db.messages().byId(messageId) ?: return
         db.messages().softDelete(messageId, System.currentTimeMillis())
         refreshAndPing(m.convoId)
+    }
+
+    suspend fun deleteMessages(ids: Collection<Long>, includeLocked: Boolean) {
+        var convoId = -1L
+        val now = System.currentTimeMillis()
+        for (id in ids) {
+            val m = db.messages().byId(id) ?: continue
+            if (m.locked && !includeLocked) continue
+            db.messages().softDelete(id, now)
+            convoId = m.convoId
+        }
+        if (convoId > 0) refreshAndPing(convoId)
     }
 
     suspend fun deleteThread(convoId: Long, includeLocked: Boolean) {

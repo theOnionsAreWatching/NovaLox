@@ -121,13 +121,11 @@ secrets at build time.
 
 ## Known limits / roadmap (v0.1)
 
-- Bulk select (delete/forward several messages at once) — planned
-- Backup & restore of the D-SMS database — planned
 - Built-in D-pad file picker fallback for devices whose system picker is unusable
   (per-device profile flag) — planned; current attach flow uses the system picker
-- Fast-scroll date bubble while flying through long threads — planned
 - Dual-SIM per-message SIM selection — planned (sends use the default SIM today)
 - Forwarding sends the first attachment only
+- Bulk select currently supports delete (forward-many is planned)
 - MMS behavior varies by carrier; test on a real SIM (see below)
 
 ## Real-device test checklist

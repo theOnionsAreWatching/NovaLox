@@ -8,6 +8,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
+        android:background="?attr/colorSurfaceContainer"
         android:gravity="center_vertical">
 
         <ImageButton

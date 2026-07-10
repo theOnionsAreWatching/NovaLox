@@ -54,7 +54,16 @@ class MainActivity : BaseActivity() {
             ?.let { divider.setDrawable(it) }
         binding.convoList.addItemDecoration(divider)
         binding.convoList.isFocusable = true
-        scroller = DpadScroller(binding.convoList, subScrollTallItems = false, lineStepPx = { 60 })
+        scroller = DpadScroller(
+            binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
+            onEdge = { down, repeat ->
+                when {
+                    down -> true // bottom: stay put
+                    repeat == 0 -> false // fresh press at the top: let focus move to the header
+                    else -> true // held scroll never leaves the list
+                }
+            }
+        )
 
         binding.btnSettings.setOnClickListener { optionsMenu() }
         binding.btnCompose.setOnClickListener { startActivity(Intent(this, ComposeActivity::class.java)) }
@@ -77,9 +86,9 @@ class MainActivity : BaseActivity() {
                 onMenu = { optionsMenu() }
             )
         }
-        ThemeUtils.applyFocusHighlight(
-            binding.btnSettings, binding.btnCompose, binding.gateButton, binding.searchInput
-        )
+        ThemeUtils.applyFocusHighlightRound(binding.btnSettings, binding.btnCompose)
+        ThemeUtils.applyFocusHighlightPill(binding.gateButton)
+        ThemeUtils.applyFocusHighlight(binding.searchInput)
     }
 
     override fun onStart() {

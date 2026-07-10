@@ -61,10 +61,9 @@ class ComposeActivity : BaseActivity() {
             )
         }
 
-        ThemeUtils.applyFocusHighlight(
-            binding.btnBack, binding.btnAddRecipient, binding.btnGroupMode, binding.btnStart,
-            binding.recipientInput, binding.bodyInput, binding.recipientChips
-        )
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack)
+        ThemeUtils.applyFocusHighlightPill(binding.btnAddRecipient, binding.btnGroupMode, binding.btnStart)
+        ThemeUtils.applyFocusHighlight(binding.recipientInput, binding.bodyInput, binding.recipientChips)
 
         lifecycleScope.launch {
             contacts = withContext(Dispatchers.IO) { ContactsHelper.loadAll(this@ComposeActivity) }

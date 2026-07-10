@@ -58,6 +58,33 @@ class SettingsActivity : BaseActivity() {
             find("open_search") {
                 startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SearchActivity::class.java))
             }
+            find("backup_now") {
+                val name = "nova-backup-" + java.text.SimpleDateFormat(
+                    "yyyyMMdd-HHmm", java.util.Locale.US
+                ).format(java.util.Date()) + ".zip"
+                val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_TITLE, name)
+                }
+                @Suppress("DEPRECATION")
+                startActivityForResult(i, 301)
+            }
+            find("restore_backup") {
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.restore_title)
+                    .setMessage(R.string.restore_warning)
+                    .setPositiveButton(R.string.restore) { _, _ ->
+                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/zip"
+                        }
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(i, 302)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
             find("resync") {
                 Repo.get(requireContext()).syncRecentFromTelephony()
                 Toast.makeText(requireContext(), R.string.resync_started, Toast.LENGTH_SHORT).show()
@@ -79,6 +106,42 @@ class SettingsActivity : BaseActivity() {
         private fun find(key: String, action: () -> Unit) {
             findPreference<Preference>(key)?.setOnPreferenceClickListener { action(); true }
         }
+
+        @Deprecated("Deprecated in Java")
+        override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+            super.onActivityResult(requestCode, resultCode, data)
+            val uri = data?.data ?: return
+            if (resultCode != android.app.Activity.RESULT_OK) return
+            when (requestCode) {
+                301 -> runBackupTask(exporting = true, uri = uri)
+                302 -> runBackupTask(exporting = false, uri = uri)
+            }
+        }
+
+        private fun runBackupTask(exporting: Boolean, uri: android.net.Uri) {
+            val ctx = requireContext()
+            val dialog = AlertDialog.Builder(ctx)
+                .setMessage(if (exporting) R.string.backing_up else R.string.restoring)
+                .setCancelable(false)
+                .show()
+            viewLifecycleOwner.lifecycleScope.launch {
+                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx, uri)
+                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx, uri)
+                }
+                runCatching { dialog.dismiss() }
+                Toast.makeText(
+                    ctx,
+                    when {
+                        exporting && ok -> R.string.backup_done
+                        exporting -> R.string.backup_failed
+                        ok -> R.string.restore_done
+                        else -> R.string.restore_failed
+                    },
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 }
 
@@ -98,7 +161,8 @@ abstract class SimpleListActivity : BaseActivity() {
         setContentView(binding.root)
         binding.listTitle.setText(titleRes())
         binding.btnBack.setOnClickListener { finish() }
-        ThemeUtils.applyFocusHighlight(binding.btnBack, binding.btnAction, binding.btnAction2)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack)
+        ThemeUtils.applyFocusHighlightPill(binding.btnAction, binding.btnAction2)
         binding.list.layoutManager = LinearLayoutManager(this)
     }
 
@@ -391,7 +455,8 @@ class SoftkeyConfigActivity : BaseActivity() {
         onboarding = intent.getBooleanExtra(EXTRA_ONBOARDING, false)
         binding.listTitle.setText(R.string.softkey_config_title)
         binding.btnBack.setOnClickListener { finishFlow(save = false) }
-        ThemeUtils.applyFocusHighlight(binding.btnBack, binding.btnAction, binding.btnAction2)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack)
+        ThemeUtils.applyFocusHighlightPill(binding.btnAction, binding.btnAction2)
         binding.list.visibility = View.GONE
         binding.emptyLabel.visibility = View.VISIBLE
         binding.btnAction.visibility = View.VISIBLE
