@@ -56,11 +56,11 @@ class MainActivity : BaseActivity() {
         binding.convoList.isFocusable = true
         scroller = DpadScroller(
             binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
-            onEdge = { down, repeat ->
+            onEdge = { down, fresh ->
                 when {
                     down -> true // bottom: stay put
-                    repeat == 0 -> false // fresh press at the top: let focus move to the header
-                    else -> true // held scroll never leaves the list
+                    fresh -> false // deliberate press at the top: focus moves to the header
+                    else -> true // holding never leaves the list
                 }
             }
         )
@@ -87,7 +87,7 @@ class MainActivity : BaseActivity() {
             )
         }
         ThemeUtils.applyFocusHighlightRound(binding.btnSettings, binding.btnCompose)
-        ThemeUtils.applyFocusHighlightPill(binding.gateButton)
+        ThemeUtils.applyButtonFocus(binding.gateButton)
         ThemeUtils.applyFocusHighlight(binding.searchInput)
     }
 

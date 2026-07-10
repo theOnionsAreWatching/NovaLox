@@ -108,7 +108,8 @@ class SearchActivity : BaseActivity() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val b = ItemSuggestionBinding.inflate(LayoutInflater.from(parent.context), parent, false)
             b.root.isFocusable = true
-            b.root.foreground = ThemeUtils.focusForeground(parent.context)
+            b.root.background = ThemeUtils.focusFill(parent.context)
+            b.root.foreground = ThemeUtils.focusStroke(parent.context)
             return VH(b)
         }
 

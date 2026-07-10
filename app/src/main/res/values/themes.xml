@@ -11,7 +11,7 @@
         <item name="buttonBarPositiveButtonStyle">@style/DSMS.DialogButton</item>
         <item name="buttonBarNegativeButtonStyle">@style/DSMS.DialogButton</item>
         <item name="buttonBarNeutralButtonStyle">@style/DSMS.DialogButton</item>
-        <item name="android:listChoiceBackgroundIndicator">@drawable/bg_focus_pill</item>
+        <item name="android:listChoiceBackgroundIndicator">@drawable/bg_focus_row</item>
     </style>
 
     <style name="DSMS.DialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">

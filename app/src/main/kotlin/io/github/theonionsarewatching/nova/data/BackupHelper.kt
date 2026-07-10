@@ -22,7 +22,89 @@ object BackupHelper {
 
     const val VERSION = 1
 
+    data class LocalBackup(val displayName: String, val uri: Uri)
+
     suspend fun export(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                exportToStream(context, out)
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Fallback for devices without a system file picker: write straight to Downloads/D-SMS.
+     *  Returns the file's display name, or null on failure. */
+    suspend fun exportToDownloads(context: Context): String? {
+        val name = "nova-backup-" + java.text.SimpleDateFormat(
+            "yyyyMMdd-HHmm", java.util.Locale.US
+        ).format(java.util.Date()) + ".zip"
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_DOWNLOADS + "/D-SMS")
+                }
+                val uri = context.contentResolver.insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+                ) ?: return null
+                val ok = context.contentResolver.openOutputStream(uri)?.use { out ->
+                    exportToStream(context, out)
+                } ?: false
+                if (ok) name else null
+            } else {
+                @Suppress("DEPRECATION")
+                val downloads = android.os.Environment
+                    .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val dir = File(downloads, "D-SMS").apply { mkdirs() }
+                val f = File(dir, name)
+                val ok = f.outputStream().use { out -> exportToStream(context, out) }
+                if (ok) name else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Backups reachable without a file picker: Downloads/D-SMS (this app's own
+     *  MediaStore entries on Android 10+, plain files on 9 and below). */
+    fun findLocalBackups(context: Context): List<LocalBackup> {
+        val out = ArrayList<LocalBackup>()
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                context.contentResolver.query(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    arrayOf(android.provider.MediaStore.Downloads._ID,
+                        android.provider.MediaStore.Downloads.DISPLAY_NAME),
+                    android.provider.MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                    arrayOf("nova-backup-%.zip"),
+                    android.provider.MediaStore.Downloads.DATE_ADDED + " DESC"
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getLong(0)
+                        val name = c.getString(1) ?: continue
+                        out.add(LocalBackup(name, android.content.ContentUris.withAppendedId(
+                            android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)))
+                    }
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloads = android.os.Environment
+                    .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                for (dir in listOf(File(downloads, "D-SMS"), downloads)) {
+                    dir.listFiles { f -> f.name.startsWith("nova-backup-") && f.name.endsWith(".zip") }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?.forEach { out.add(LocalBackup(it.name, Uri.fromFile(it))) }
+                }
+            }
+        } catch (_: Exception) {}
+        return out.distinctBy { it.displayName }
+    }
+
+    private suspend fun exportToStream(context: Context, rawOut: java.io.OutputStream): Boolean {
         val repo = Repo.get(context)
         return try {
             val convos = repo.db.conversations().all()
@@ -31,8 +113,8 @@ object BackupHelper {
             val elements = repo.db.elements().allElements()
             val keywords = repo.db.keywords().all()
 
-            context.contentResolver.openOutputStream(uri)?.use { raw ->
-                ZipOutputStream(raw.buffered()).use { zip ->
+            ZipOutputStream(rawOut.buffered()).let { zip ->
+                run {
                     // ---- data.json ----
                     zip.putNextEntry(ZipEntry("data.json"))
                     val w = JsonWriter(OutputStreamWriter(NonClosingOutputStream(zip), Charsets.UTF_8))
@@ -128,7 +210,9 @@ object BackupHelper {
                         zip.closeEntry()
                     }
                 }
-            } ?: return false
+                zip.finish()
+                zip.flush()
+            }
             true
         } catch (_: Exception) {
             false

@@ -67,8 +67,14 @@ class SettingsActivity : BaseActivity() {
                     type = "application/zip"
                     putExtra(Intent.EXTRA_TITLE, name)
                 }
-                @Suppress("DEPRECATION")
-                startActivityForResult(i, 301)
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(i, 301)
+                } catch (_: Exception) {
+                    // no system file picker on this device (common on stripped ROMs):
+                    // write straight to Downloads/D-SMS instead
+                    backupToDownloads()
+                }
             }
             find("restore_backup") {
                 AlertDialog.Builder(requireContext())
@@ -79,8 +85,12 @@ class SettingsActivity : BaseActivity() {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "application/zip"
                         }
-                        @Suppress("DEPRECATION")
-                        startActivityForResult(i, 302)
+                        try {
+                            @Suppress("DEPRECATION")
+                            startActivityForResult(i, 302)
+                        } catch (_: Exception) {
+                            restoreFromDownloads()
+                        }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
@@ -116,6 +126,40 @@ class SettingsActivity : BaseActivity() {
                 301 -> runBackupTask(exporting = true, uri = uri)
                 302 -> runBackupTask(exporting = false, uri = uri)
             }
+        }
+
+        private fun backupToDownloads() {
+            val ctx = requireContext()
+            val dialog = AlertDialog.Builder(ctx)
+                .setMessage(R.string.backing_up).setCancelable(false).show()
+            viewLifecycleOwner.lifecycleScope.launch {
+                val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    io.github.theonionsarewatching.nova.data.BackupHelper.exportToDownloads(ctx)
+                }
+                runCatching { dialog.dismiss() }
+                Toast.makeText(
+                    ctx,
+                    if (name != null) getString(R.string.backup_saved_to, name)
+                    else getString(R.string.backup_failed),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        private fun restoreFromDownloads() {
+            val ctx = requireContext()
+            val backups = io.github.theonionsarewatching.nova.data.BackupHelper.findLocalBackups(ctx)
+            if (backups.isEmpty()) {
+                Toast.makeText(ctx, R.string.no_backups_found, Toast.LENGTH_LONG).show()
+                return
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle(R.string.restore_title)
+                .setItems(backups.map { it.displayName }.toTypedArray()) { _, which ->
+                    runBackupTask(exporting = false, uri = backups[which].uri)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
 
         private fun runBackupTask(exporting: Boolean, uri: android.net.Uri) {
@@ -162,7 +206,7 @@ abstract class SimpleListActivity : BaseActivity() {
         binding.listTitle.setText(titleRes())
         binding.btnBack.setOnClickListener { finish() }
         ThemeUtils.applyFocusHighlightRound(binding.btnBack)
-        ThemeUtils.applyFocusHighlightPill(binding.btnAction, binding.btnAction2)
+        ThemeUtils.applyButtonFocus(binding.btnAction, binding.btnAction2)
         binding.list.layoutManager = LinearLayoutManager(this)
     }
 
@@ -192,7 +236,8 @@ class RowAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val b = ItemSuggestionBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         b.root.isFocusable = true
-        b.root.foreground = ThemeUtils.focusForeground(parent.context)
+        b.root.background = ThemeUtils.focusFill(parent.context)
+        b.root.foreground = ThemeUtils.focusStroke(parent.context)
         return VH(b)
     }
 
@@ -456,7 +501,7 @@ class SoftkeyConfigActivity : BaseActivity() {
         binding.listTitle.setText(R.string.softkey_config_title)
         binding.btnBack.setOnClickListener { finishFlow(save = false) }
         ThemeUtils.applyFocusHighlightRound(binding.btnBack)
-        ThemeUtils.applyFocusHighlightPill(binding.btnAction, binding.btnAction2)
+        ThemeUtils.applyButtonFocus(binding.btnAction, binding.btnAction2)
         binding.list.visibility = View.GONE
         binding.emptyLabel.visibility = View.VISIBLE
         binding.btnAction.visibility = View.VISIBLE

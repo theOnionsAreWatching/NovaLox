@@ -48,7 +48,7 @@ class MessageAdapter(
         val b = ItemMessageBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         b.root.isFocusable = true
         b.root.isFocusableInTouchMode = false
-        b.root.foreground = ThemeUtils.focusForeground(parent.context)
+        b.root.foreground = ThemeUtils.focusStroke(parent.context)
         return VH(b)
     }
 
@@ -190,14 +190,14 @@ class MessageAdapter(
         )
         holder.b.metaLine.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
-        // bulk-selection tint
+        // bulk-selection tint (solid row) vs normal focus shade (behind content only)
         if (isSelected(m.id)) {
             val accent2 = ThemeUtils.accentColor(ctx)
             holder.b.root.setBackgroundColor(
                 Color.argb(56, Color.red(accent2), Color.green(accent2), Color.blue(accent2))
             )
         } else {
-            holder.b.root.setBackgroundColor(Color.TRANSPARENT)
+            holder.b.root.background = ThemeUtils.focusFill(ctx)
         }
 
         holder.itemView.setOnClickListener { onPress(row) }

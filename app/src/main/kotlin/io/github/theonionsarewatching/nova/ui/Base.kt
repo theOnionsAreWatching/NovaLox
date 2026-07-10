@@ -61,14 +61,43 @@ object ThemeUtils {
     fun dp(context: Context, v: Int): Int =
         (v * context.resources.displayMetrics.density).toInt()
 
-    /** Focus indicator: accent outline PLUS a translucent accent fill so the focused
-     *  item is unmistakable even on low-contrast screens. Thickness user-configurable.
-     *  Shape follows the control: default rounded square, pill for pill controls,
-     *  oval for round icon buttons — so outline and shade always match. */
+    /** Stroke-only focus ring (drawn OVER the item, sits at the perimeter). */
+    fun focusStroke(context: Context, radiusDp: Int = 8, oval: Boolean = false): StateListDrawable {
+        val stroke = dp(context, Prefs.get(context).focusStrokeDp)
+        val accent = accentColor(context)
+        val ring = GradientDrawable().apply {
+            if (oval) shape = GradientDrawable.OVAL
+            setColor(Color.TRANSPARENT)
+            setStroke(stroke, accent)
+            if (!oval) cornerRadius = dp(context, radiusDp).toFloat()
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), ring)
+            addState(intArrayOf(android.R.attr.state_selected), ring)
+            addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+        }
+    }
+
+    /** Fill-only focus shade (used as BACKGROUND so it shows around the content —
+     *  message bubbles, photos and avatars sit on top of it, untinted). */
+    fun focusFill(context: Context, radiusDp: Int = 8, alpha: Int = 70): StateListDrawable {
+        val accent = accentColor(context)
+        val fill = GradientDrawable().apply {
+            setColor(Color.argb(alpha, Color.red(accent), Color.green(accent), Color.blue(accent)))
+            cornerRadius = dp(context, radiusDp).toFloat()
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), fill)
+            addState(intArrayOf(android.R.attr.state_selected), fill)
+            addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+        }
+    }
+
+    /** Combined stroke + fill overlay, for controls without imagery (inputs, icons). */
     fun focusForeground(context: Context, radiusDp: Int = 8, oval: Boolean = false): StateListDrawable {
         val stroke = dp(context, Prefs.get(context).focusStrokeDp)
         val accent = accentColor(context)
-        val fill = Color.argb(40, Color.red(accent), Color.green(accent), Color.blue(accent))
+        val fill = Color.argb(56, Color.red(accent), Color.green(accent), Color.blue(accent))
         val focused = GradientDrawable().apply {
             if (oval) shape = GradientDrawable.OVAL
             setColor(fill)
@@ -82,7 +111,16 @@ object ThemeUtils {
         }
     }
 
-    /** Rounded-square highlight for rows and boxy fields. */
+    /** List rows and boxes that CONTAIN content (photos, message bubbles):
+     *  shade behind the content, ring around it — content itself stays clean. */
+    fun applyRowFocus(vararg views: android.view.View) {
+        for (v in views) {
+            v.background = focusFill(v.context)
+            v.foreground = focusStroke(v.context)
+        }
+    }
+
+    /** Rounded-square highlight for plain fields. */
     fun applyFocusHighlight(vararg views: android.view.View) {
         for (v in views) v.foreground = focusForeground(v.context)
     }
@@ -92,11 +130,19 @@ object ThemeUtils {
         for (v in views) v.foreground = focusForeground(v.context, oval = true)
     }
 
-    /** Pill highlight for pill-shaped buttons and inputs. */
+    /** Pill highlight for pill-shaped inputs (bounds == the pill). */
     fun applyFocusHighlightPill(vararg views: android.view.View) {
         for (v in views) v.foreground = focusForeground(v.context, radiusDp = 20)
     }
 
+    /** MaterialButtons draw their pill INSET 6dp from the view bounds — match it,
+     *  so the ring and shade hug the actual button instead of floating around it. */
+    fun applyButtonFocus(vararg views: android.view.View) {
+        for (v in views) {
+            val inner = focusForeground(v.context, radiusDp = 20)
+            v.foreground = android.graphics.drawable.InsetDrawable(inner, 0, dp(v.context, 6), 0, dp(v.context, 6))
+        }
+    }
     fun densityPad(context: Context): Int = when (Prefs.get(context).listDensity) {
         "compact" -> dp(context, 4)
         "spacious" -> dp(context, 14)

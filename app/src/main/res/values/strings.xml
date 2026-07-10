@@ -260,4 +260,10 @@
     <string name="backup_failed">Backup failed</string>
     <string name="restore_done">Restore complete</string>
     <string name="restore_failed">Restore failed — is that a Nova backup zip?</string>
+
+    <string name="backup_saved_to">Backup saved to Downloads/D-SMS/%1$s</string>
+    <string name="no_backups_found">No Nova backups found in Downloads/D-SMS</string>
+    <string name="group_mode_line">Group mode: %1$s — press to change</string>
+    <string name="mode_broadcast_short">Broadcast</string>
+    <string name="mode_group_mms_short">Group MMS</string>
 </resources>

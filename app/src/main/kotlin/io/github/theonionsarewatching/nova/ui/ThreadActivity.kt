@@ -79,13 +79,13 @@ class ThreadActivity : BaseActivity() {
             binding.msgList,
             subScrollTallItems = true,
             lineStepPx = lineStep,
-            onEdge = { down, repeat ->
+            onEdge = { down, fresh ->
                 when {
-                    down -> { if (repeat == 0) enterComposeMode(); true }
+                    down -> { if (fresh) enterComposeMode(); true }
                     hasMoreOlder -> { loadOlder(); true }
-                    // header only on a deliberate fresh press at the very top; a held
-                    // repeat stays in the list
-                    repeat == 0 -> { binding.btnOverflow.requestFocus(); true }
+                    // header only on a deliberate standalone press at the very top;
+                    // holding (real repeats OR rapid hardware presses) stays in the list
+                    fresh -> { binding.btnOverflow.requestFocus(); true }
                     else -> true
                 }
             }
@@ -101,7 +101,7 @@ class ThreadActivity : BaseActivity() {
             binding.btnBack, binding.btnOverflow, binding.btnAttach, binding.btnSend
         )
         ThemeUtils.applyFocusHighlightPill(binding.composeInput)
-        ThemeUtils.applyFocusHighlight(binding.attachmentRow)
+        ThemeUtils.applyRowFocus(binding.attachmentRow)
 
         binding.composeInput.maxLines = prefs.composeMaxLines
         binding.composeInput.addTextChangedListener(object : TextWatcher {

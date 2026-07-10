@@ -60,10 +60,16 @@ class ComposeActivity : BaseActivity() {
                 onRight = { start() }
             )
         }
+        if (softkeys?.shouldShow() == true) {
+            // softkeys carry Start; free the vertical space on small screens
+            binding.btnStart.visibility = View.GONE
+        }
 
-        ThemeUtils.applyFocusHighlightRound(binding.btnBack)
-        ThemeUtils.applyFocusHighlightPill(binding.btnAddRecipient, binding.btnGroupMode, binding.btnStart)
-        ThemeUtils.applyFocusHighlight(binding.recipientInput, binding.bodyInput, binding.recipientChips)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnAddRecipient)
+        ThemeUtils.applyButtonFocus(binding.btnStart)
+        ThemeUtils.applyFocusHighlight(
+            binding.recipientInput, binding.bodyInput, binding.recipientChips, binding.btnGroupMode
+        )
 
         lifecycleScope.launch {
             contacts = withContext(Dispatchers.IO) { ContactsHelper.loadAll(this@ComposeActivity) }
@@ -98,7 +104,7 @@ class ComposeActivity : BaseActivity() {
         val matches = contacts.filter { c ->
             c.name.lowercase().contains(lower) ||
                 (qDigits.length >= 2 && c.number.filter { it.isDigit() }.contains(qDigits))
-        }.take(6)
+        }.take(4)
         suggestionAdapter.submit(matches)
         binding.suggestionList.visibility = if (matches.isEmpty()) View.GONE else View.VISIBLE
     }
@@ -143,9 +149,13 @@ class ComposeActivity : BaseActivity() {
             if (names.isEmpty()) getString(R.string.no_recipients)
             else names.joinToString(", ")
         binding.recipientChips.setOnClickListener { removeRecipientDialog() }
-        binding.groupRow.visibility = if (recipients.size > 1) View.VISIBLE else View.GONE
+        binding.btnGroupMode.visibility = if (recipients.size > 1) View.VISIBLE else View.GONE
         binding.btnGroupMode.text = getString(
-            if (groupMode == GroupMode.GROUP_MMS) R.string.mode_group_mms else R.string.mode_broadcast
+            R.string.group_mode_line,
+            getString(
+                if (groupMode == GroupMode.GROUP_MMS) R.string.mode_group_mms_short
+                else R.string.mode_broadcast_short
+            )
         )
     }
 
@@ -203,7 +213,8 @@ class ComposeActivity : BaseActivity() {
                 android.view.LayoutInflater.from(parent.context), parent, false
             )
             b.root.isFocusable = true
-            b.root.foreground = ThemeUtils.focusForeground(parent.context)
+            b.root.background = ThemeUtils.focusFill(parent.context)
+            b.root.foreground = ThemeUtils.focusStroke(parent.context)
             return VH(b)
         }
 

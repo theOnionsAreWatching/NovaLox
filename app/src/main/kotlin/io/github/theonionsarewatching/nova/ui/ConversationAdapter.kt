@@ -31,7 +31,8 @@ class ConversationAdapter(
         val ctx = parent.context
         b.root.isFocusable = true
         b.root.isFocusableInTouchMode = false
-        b.root.foreground = ThemeUtils.focusForeground(ctx)
+        b.root.background = ThemeUtils.focusFill(ctx)
+        b.root.foreground = ThemeUtils.focusStroke(ctx)
         val pad = ThemeUtils.densityPad(ctx)
         b.root.setPadding(b.root.paddingLeft, pad, b.root.paddingRight, pad)
         return VH(b)
