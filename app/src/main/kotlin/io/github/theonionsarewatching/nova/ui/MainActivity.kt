@@ -296,16 +296,25 @@ class MainActivity : BaseActivity() {
 
     private fun enterHeader() {
         setHeaderFocusable(true)
-        binding.btnCompose.requestFocus()
+        if (!binding.btnCompose.requestFocus() && !binding.btnSettings.requestFocus()) {
+            // couldn't take focus: revert instead of leaving a half-open header
+            setHeaderFocusable(false)
+        }
     }
 
     private fun leaveHeader() {
-        setHeaderFocusable(false)
+        // ORDER MATTERS: move focus to the list FIRST, and only then lock the
+        // header. Disabling the currently-focused view triggers the framework's
+        // own emergency focus reassignment, which can fight our hand-off.
         binding.convoList.requestFocus()
-        val lm = binding.convoList.layoutManager as? LinearLayoutManager
-        val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
-            ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
-        scroller?.focusPosition(first)
+        setHeaderFocusable(false)
+        binding.convoList.post {
+            if (!binding.convoList.hasFocus()) binding.convoList.requestFocus()
+            val lm = binding.convoList.layoutManager as? LinearLayoutManager
+            val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
+                ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
+            scroller?.focusPosition(first)
+        }
     }
 
     private fun optionsMenu() {
@@ -489,18 +498,24 @@ class MainActivity : BaseActivity() {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_DPAD_DOWN -> {
-                        // buttons -> search bar (if shown) -> list
-                        return if (!binding.searchInput.hasFocus() &&
-                            binding.searchInput.visibility == View.VISIBLE
-                        ) {
-                            binding.searchInput.requestFocus(); true
-                        } else {
-                            leaveHeader(); true
-                        }
+                        // buttons -> search bar (only if it's actually on screen AND
+                        // takes focus) -> otherwise straight to the list. isShown checks
+                        // parent visibility too; requestFocus() result is the final word,
+                        // so this can never get stuck.
+                        if (!binding.searchInput.hasFocus() && binding.searchInput.isShown &&
+                            binding.searchInput.requestFocus()
+                        ) return true
+                        leaveHeader()
+                        return true
                     }
                     KeyEvent.KEYCODE_DPAD_UP -> {
                         if (binding.searchInput.hasFocus()) binding.btnCompose.requestFocus()
                         return true // nothing above the header
+                    }
+                    KeyEvent.KEYCODE_BACK -> {
+                        // escape hatch: Back always drops from the header to the list
+                        leaveHeader()
+                        return true
                     }
                 }
             }

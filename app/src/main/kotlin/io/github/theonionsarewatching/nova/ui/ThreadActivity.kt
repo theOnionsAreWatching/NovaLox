@@ -411,16 +411,22 @@ class ThreadActivity : BaseActivity() {
 
     private fun enterHeader() {
         setHeaderFocusable(true)
-        binding.btnOverflow.requestFocus()
+        if (!binding.btnOverflow.requestFocus() && !binding.btnBack.requestFocus()) {
+            setHeaderFocusable(false)
+        }
     }
 
     private fun leaveHeader() {
-        setHeaderFocusable(false)
+        // move focus to the list FIRST, then lock the header (see MainActivity)
         binding.msgList.requestFocus()
-        val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
-        val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
-            ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
-        scroller?.focusPosition(first)
+        setHeaderFocusable(false)
+        binding.msgList.post {
+            if (!binding.msgList.hasFocus()) binding.msgList.requestFocus()
+            val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            val first = lm?.findFirstCompletelyVisibleItemPosition()?.takeIf { it >= 0 }
+                ?: lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 } ?: 0
+            scroller?.focusPosition(first)
+        }
     }
 
     /** Compose mode: Attach | Send on the softkeys. Scroll mode: Options | Select | Compose. */
@@ -523,6 +529,10 @@ class ThreadActivity : BaseActivity() {
             }
             if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
                 return true // nothing above the header
+            }
+            if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_BACK) {
+                leaveHeader()
+                return true
             }
         } else if (binding.btnBack.isFocusable && !binding.btnBack.hasFocus() && !binding.btnOverflow.hasFocus()) {
             // focus moved elsewhere by other means: relock the header
