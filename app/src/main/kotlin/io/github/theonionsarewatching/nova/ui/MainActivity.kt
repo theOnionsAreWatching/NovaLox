@@ -293,9 +293,10 @@ class MainActivity : BaseActivity() {
             val current = try {
                 packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
             } catch (_: Exception) { "0" }
-            val release = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                io.github.theonionsarewatching.nova.util.UpdateChecker.checkLatest(current)
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.github.theonionsarewatching.nova.util.UpdateChecker.check(current)
             }
+            val release = (result as? io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpdateAvailable)?.release
             if (release != null && !isFinishing) {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(getString(R.string.update_available, release.tag))

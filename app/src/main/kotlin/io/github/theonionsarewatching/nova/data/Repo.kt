@@ -275,17 +275,26 @@ class Repo private constructor(private val context: Context) {
             }
         } catch (_: Exception) {}
 
-        // DETERMINISTIC participant set: the old heuristic dropped a random "to"
-        // entry (guessing it was our own number), which made the conversation key
-        // depend on address ORDER — group messages scattered across conversations
-        // and senders looked mismatched. Now: everyone minus our own number(s) when
-        // known; if our number is unknown we keep everyone, which is stable too.
+        // Participant rules (deterministic AND correct for 1:1):
+        //   * received where the "to" side is just one number -> that one number is
+        //     THIS PHONE, so the conversation is 1:1 with the sender. Keeping our own
+        //     number here created a phantom 2-person "group" per contact, splitting
+        //     picture messages away from the SMS thread.
+        //   * received with 2+ other recipients -> a real group: sender + the others
+        //     (minus our own number when the SIM reports it; when it doesn't, keeping
+        //     it is still deterministic, so the group stays ONE conversation).
         val participants = if (isMine) {
-            to.ifEmpty { from }
+            to.filter { PhoneUtils.normalize(it) !in ownNumbers }.ifEmpty { to }.ifEmpty { from }
         } else {
-            val everyone = (from + to).distinctBy { PhoneUtils.normalize(it) }
-            val filtered = everyone.filter { PhoneUtils.normalize(it) !in ownNumbers }
-            filtered.ifEmpty { from }
+            val fromKeys = from.map { PhoneUtils.normalize(it) }.toSet()
+            val others = to.filter { PhoneUtils.normalize(it) !in fromKeys }
+                .distinctBy { PhoneUtils.normalize(it) }
+            val othersMinusOwn = others.filter { PhoneUtils.normalize(it) !in ownNumbers }
+            when {
+                others.size <= 1 -> from                       // 1:1 — the lone "to" is us
+                othersMinusOwn.size == 1 -> from + othersMinusOwn // group of 2 + us, own known
+                else -> from + othersMinusOwn.ifEmpty { others }
+            }
         }.ifEmpty { listOf("Unknown") }
 
         if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) return null

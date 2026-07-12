@@ -18,32 +18,63 @@ import java.net.URL
  */
 object UpdateChecker {
 
-    private const val LATEST_URL =
-        "https://api.github.com/repos/theOnionsAreWatching/NovaLox/releases/latest"
+    private const val REPO = "theOnionsAreWatching/NovaLox"
 
     data class Release(val tag: String, val apkUrl: String)
 
-    /** Blocking network call — run on Dispatchers.IO. Null = no update / unreachable. */
-    fun checkLatest(currentVersionName: String): Release? {
+    sealed class Check {
+        data class UpdateAvailable(val release: Release) : Check()
+        data class UpToDate(val latestTag: String) : Check()
+        object Failed : Check()
+    }
+
+    /** Blocking network call — run on Dispatchers.IO.
+     *  Primary path uses the release page's REDIRECT (no API, no rate limit —
+     *  the API allows only 60 requests/hour per IP, and users behind a shared
+     *  filtering proxy exhaust that together). API JSON is the fallback. */
+    fun check(currentVersionName: String): Check {
+        val tag = latestTagViaRedirect() ?: latestTagViaApi() ?: return Check.Failed
+        return if (isNewer(tag, currentVersionName)) {
+            Check.UpdateAvailable(Release(tag, apkUrlFor(tag)))
+        } else {
+            Check.UpToDate(tag)
+        }
+    }
+
+    /** Our release workflow names the asset deterministically. */
+    private fun apkUrlFor(tag: String): String =
+        "https://github.com/$REPO/releases/download/v$tag/NovaLox-v$tag.apk"
+
+    /** github.com/<repo>/releases/latest 302-redirects to /releases/tag/vX.Y.Z. */
+    private fun latestTagViaRedirect(): String? {
         return try {
-            val conn = URL(LATEST_URL).openConnection() as HttpURLConnection
+            val conn = URL("https://github.com/$REPO/releases/latest")
+                .openConnection() as HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.instanceFollowRedirects = false
+            val code = conn.responseCode
+            val location = conn.getHeaderField("Location")
+            conn.disconnect()
+            if (code in 300..399 && location != null && location.contains("/releases/tag/")) {
+                location.substringAfter("/releases/tag/").trim('/').removePrefix("v")
+                    .takeIf { it.isNotBlank() }
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun latestTagViaApi(): String? {
+        return try {
+            val conn = URL("https://api.github.com/repos/$REPO/releases/latest")
+                .openConnection() as HttpURLConnection
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.setRequestProperty("Accept", "application/vnd.github+json")
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
-            val json = JSONObject(body)
-            val tag = json.optString("tag_name").removePrefix("v")
-            if (tag.isBlank() || !isNewer(tag, currentVersionName)) return null
-            val assets = json.optJSONArray("assets") ?: return null
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                val name = a.optString("name")
-                if (name.endsWith(".apk")) {
-                    return Release(tag, a.optString("browser_download_url"))
-                }
-            }
-            null
+            JSONObject(body).optString("tag_name").removePrefix("v").takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
         }

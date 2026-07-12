@@ -163,21 +163,28 @@ class SettingsActivity : BaseActivity() {
                     val current = try {
                         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
                     } catch (_: Exception) { "0" }
-                    val release = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        io.github.theonionsarewatching.nova.util.UpdateChecker.checkLatest(current)
+                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        io.github.theonionsarewatching.nova.util.UpdateChecker.check(current)
                     }
-                    if (release == null) {
-                        Toast.makeText(ctx, getString(R.string.up_to_date, current), Toast.LENGTH_LONG).show()
-                    } else {
-                        AlertDialog.Builder(ctx)
-                            .setTitle(getString(R.string.update_available, release.tag))
-                            .setMessage(R.string.update_prompt)
-                            .setPositiveButton(R.string.download) { _, _ ->
-                                io.github.theonionsarewatching.nova.util.UpdateChecker.download(ctx, release)
-                                Toast.makeText(ctx, R.string.update_downloading, Toast.LENGTH_LONG).show()
-                            }
-                            .setNegativeButton(R.string.later, null)
-                            .show()
+                    when (result) {
+                        is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpToDate ->
+                            Toast.makeText(ctx,
+                                getString(R.string.up_to_date_detail, current, result.latestTag),
+                                Toast.LENGTH_LONG).show()
+                        is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.Failed ->
+                            Toast.makeText(ctx, R.string.update_check_failed, Toast.LENGTH_LONG).show()
+                        is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpdateAvailable -> {
+                            val release = result.release
+                            AlertDialog.Builder(ctx)
+                                .setTitle(getString(R.string.update_available, release.tag))
+                                .setMessage(R.string.update_prompt)
+                                .setPositiveButton(R.string.download) { _, _ ->
+                                    io.github.theonionsarewatching.nova.util.UpdateChecker.download(ctx, release)
+                                    Toast.makeText(ctx, R.string.update_downloading, Toast.LENGTH_LONG).show()
+                                }
+                                .setNegativeButton(R.string.later, null)
+                                .show()
+                        }
                     }
                 }
             }
