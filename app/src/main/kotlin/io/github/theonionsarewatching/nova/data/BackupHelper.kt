@@ -3,6 +3,7 @@ package io.github.theonionsarewatching.nova.data
 import android.content.Context
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import android.net.Uri
+import android.provider.Telephony
 import android.util.JsonReader
 import android.util.JsonWriter
 import java.io.File
@@ -24,6 +25,11 @@ object BackupHelper {
     const val VERSION = 1
 
     data class LocalBackup(val displayName: String, val uri: Uri)
+
+    private data class RestorePart(
+        val oldMessageId: Long, val mime: String, val name: String,
+        val storedName: String, val size: Long
+    )
 
     /** percent 0..100 for determinate progress, -1 for "working, size unknown". */
     fun interface Progress {
@@ -241,26 +247,25 @@ object BackupHelper {
             false
         }
     }
-
     suspend fun restore(context: Context, uri: Uri, progress: Progress = Progress { _, _ -> }): Boolean {
         val repo = Repo.get(context)
         return try {
             progress.report(-1, null)
             data class RConvo(val oldId: Long, val entity: ConversationEntity)
             data class RMsg(val oldId: Long, val oldConvoId: Long, val entity: MessageEntity)
-            data class RPart(val oldMessageId: Long, val mime: String, val name: String, val storedName: String, val size: Long)
-            data class REl(val oldMessageId: Long, val type: Int, val value: String)
 
             val convos = ArrayList<RConvo>()
             val messages = ArrayList<RMsg>()
-            val parts = ArrayList<RPart>()
-            val elements = ArrayList<REl>()
+            val parts = ArrayList<RestorePart>()
             val keywords = ArrayList<String>()
 
-            val partsDir = File(context.filesDir, "parts").apply { mkdirs() }
+            // part files land in a TEMP dir first: they get written into the system
+            // store, and the import then copies them back into app storage itself
+            val tempDir = File(context.cacheDir, "restore_parts").apply {
+                deleteRecursively(); mkdirs()
+            }
             var sawData = false
 
-            // pass: read the zip (data.json first entry by construction, but handle any order)
             context.contentResolver.openInputStream(uri)?.use { raw ->
                 ZipInputStream(raw.buffered()).use { zip ->
                     var entry: ZipEntry? = zip.nextEntry
@@ -373,23 +378,7 @@ object BackupHelper {
                                                 else -> r.skipValue()
                                             }
                                             r.endObject()
-                                            parts.add(RPart(mid, mime, name, stored, size))
-                                        }
-                                        r.endArray()
-                                    }
-                                    "elements" -> {
-                                        r.beginArray()
-                                        while (r.hasNext()) {
-                                            var mid = 0L; var type = 0; var value = ""
-                                            r.beginObject()
-                                            while (r.hasNext()) when (r.nextName()) {
-                                                "messageId" -> mid = r.nextLong()
-                                                "type" -> type = r.nextInt()
-                                                "value" -> value = r.nextString()
-                                                else -> r.skipValue()
-                                            }
-                                            r.endObject()
-                                            elements.add(REl(mid, type, value))
+                                            parts.add(RestorePart(mid, mime, name, stored, size))
                                         }
                                         r.endArray()
                                     }
@@ -403,10 +392,8 @@ object BackupHelper {
                             }
                             r.endObject()
                         } else if (name.startsWith("parts/") && !entry.isDirectory) {
-                            val safe = File(name).name // strip any path tricks
-                            progress.report(-1, safe)
-                            val out = File(partsDir, safe)
-                            out.outputStream().use { zip.copyTo(it) }
+                            val safe = File(name).name
+                            File(tempDir, safe).outputStream().use { zip.copyTo(it) }
                         }
                         zip.closeEntry()
                         entry = zip.nextEntry
@@ -416,63 +403,243 @@ object BackupHelper {
 
             if (!sawData || convos.isEmpty() && messages.isEmpty()) return false
 
-            val insertTotal = (convos.size + messages.size + parts.size + elements.size).coerceAtLeast(1)
-            var inserted = 0
-            fun tick() {
-                inserted++
-                if (inserted % 50 == 0 || inserted >= insertTotal)
-                    progress.report(inserted * 100 / insertTotal, null)
+            val resolver = context.contentResolver
+            val convoById = convos.associateBy { it.oldId }
+            val partsByMsg = parts.groupBy { it.oldMessageId }
+
+            // ---- identify this phone's own number(s), including from the backup
+            //      itself: in a legacy 2-address conversation with received messages,
+            //      the address that is never a sender anywhere is our own number ----
+            val receivedSenders = messages.filter { !it.entity.isMine }
+                .map { PhoneUtils.normalize(it.entity.address) }.toHashSet()
+            val ownGuesses = HashSet<String>()
+            for (c in convos) {
+                val addrs = c.entity.addresses.split("|").filter { it.isNotBlank() }
+                if (addrs.size != 2) continue
+                val hasReceived = messages.any { it.oldConvoId == c.oldId && !it.entity.isMine }
+                if (!hasReceived) continue
+                for (a in addrs) {
+                    val n = PhoneUtils.normalize(a)
+                    if (n !in receivedSenders) ownGuesses.add(n)
+                }
+            }
+            val own = repo.ownNumbersForRestore() + ownGuesses
+
+            // ---- Phase 1: write real messages into the SYSTEM store ----
+            repo.syncSuspended = true
+            val flagged = ArrayList<Triple<Long, Boolean, Boolean>>() // sysId, isMms, locked
+            val scheduledLater = ArrayList<RMsg>()
+            val total = messages.size.coerceAtLeast(1)
+            var done = 0
+            for (m in messages) {
+                done++
+                if (done % 25 == 0) progress.report(done * 50 / total, null)
+                val e = m.entity
+                if (e.deletedAt != null) continue                 // bin stays out of the system
+                if (e.status == 6 /* SCHEDULED */) { scheduledLater.add(m); continue }
+                val msgParts = partsByMsg[m.oldId].orEmpty()
+                if (e.isMms && e.body.isBlank() && msgParts.isEmpty()) continue // legacy blank junk
+                val convoAddrs = convoById[m.oldConvoId]?.entity?.addresses
+                    ?.split("|")?.filter { it.isNotBlank() }.orEmpty()
+
+                try {
+                    if (!e.isMms) {
+                        val targets = if (e.isMine)
+                            e.address.split("|").filter { it.isNotBlank() }.ifEmpty { convoAddrs }
+                        else listOf(e.address)
+                        for (t in targets) {
+                            if (smsExists(resolver, t, e.body, e.date)) continue
+                            val v = android.content.ContentValues().apply {
+                                put(Telephony.Sms.ADDRESS, t)
+                                put(Telephony.Sms.BODY, e.body)
+                                put(Telephony.Sms.DATE, e.date)
+                                put(Telephony.Sms.READ, 1)
+                                put(Telephony.Sms.TYPE,
+                                    if (e.isMine) Telephony.Sms.MESSAGE_TYPE_SENT
+                                    else Telephony.Sms.MESSAGE_TYPE_INBOX)
+                                put(Telephony.Sms.THREAD_ID,
+                                    Telephony.Threads.getOrCreateThreadId(context, t))
+                            }
+                            val u = resolver.insert(Telephony.Sms.CONTENT_URI, v)
+                            val sysId = u?.lastPathSegment?.toLongOrNull()
+                            if (sysId != null && e.locked) flagged.add(Triple(sysId, false, true))
+                        }
+                    } else {
+                        val sysId = insertSystemMms(context, e, convoAddrs, msgParts, tempDir, own)
+                        if (sysId != null && e.locked) flagged.add(Triple(sysId, true, true))
+                    }
+                } catch (_: Exception) {
+                    // one bad message must not sink the restore
+                }
             }
 
-            // wipe, then insert with id remapping
+            // ---- Phase 2: wipe the app database and re-derive it with the FIXED
+            //      import — blanks filtered, groups computed correctly, subjects read ----
+            progress.report(50, null)
             repo.db.elements().deleteAll()
             repo.db.parts().deleteAll()
             repo.db.messages().deleteAll()
             repo.db.conversations().deleteAll()
             repo.db.keywords().deleteAll()
+            try {
+                File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
+            } catch (_: Exception) {}
+            repo.syncSuspended = false
+            repo.importFromTelephony { pct -> progress.report(50 + pct * 45 / 100, null) }
 
-            val convoMap = HashMap<Long, Long>()
-            for (c0 in convos) {
-                // recompute the conversation key with the CURRENT normalization rules,
-                // so restores also heal grouping bugs from older exports
-                val c = c0.copy(entity = c0.entity.copy(
-                    convoKey = PhoneUtils.convoKey(c0.entity.addresses.split("|").filter { it.isNotBlank() })
-                ))
-                val newId = repo.db.conversations().insert(c.entity)
-                convoMap[c.oldId] = if (newId > 0) newId
-                else repo.db.conversations().byKey(c.entity.convoKey)?.id ?: continue
-                tick()
+            // ---- Phase 3: re-apply what only the app knows ----
+            progress.report(95, null)
+            for ((sysId, isMms, locked) in flagged) {
+                if (!locked) continue
+                repo.db.messages().byTelephonyId(sysId, isMms)?.let {
+                    repo.db.messages().setLocked(it.id, true)
+                }
             }
-            val msgMap = HashMap<Long, Long>()
-            for (m in messages) {
-                val cid = convoMap[m.oldConvoId] ?: continue
-                msgMap[m.oldId] = repo.db.messages().insert(m.entity.copy(convoId = cid))
-                tick()
+            for (m in scheduledLater) {
+                try {
+                    val addrs = m.entity.address.split("|").filter { it.isNotBlank() }
+                        .ifEmpty { convoById[m.oldConvoId]?.entity?.addresses?.split("|")
+                            ?.filter { a -> a.isNotBlank() }.orEmpty() }
+                    if (addrs.isEmpty()) continue
+                    val convo = repo.getOrCreateConversation(addrs)
+                    repo.db.messages().insert(m.entity.copy(convoId = convo.id))
+                } catch (_: Exception) {}
             }
-            for (p in parts) {
-                val mid = msgMap[p.oldMessageId] ?: continue
-                val f = File(partsDir, p.storedName)
-                if (!f.exists()) continue
-                repo.db.parts().insert(PartEntity(
-                    messageId = mid, mimeType = p.mime, filePath = f.absolutePath,
-                    fileName = p.name, size = if (p.size > 0) p.size else f.length()
-                ))
-                tick()
-            }
-            val elByMsg = elements.groupBy { it.oldMessageId }
-            for ((oldMid, els) in elByMsg) {
-                val mid = msgMap[oldMid] ?: continue
-                repo.db.elements().insertAll(els.map { ElementEntity(messageId = mid, type = it.type, value = it.value) })
+            for (c in convos) {
+                val addrs = c.entity.addresses.split("|").filter { it.isNotBlank() }
+                    .filter { PhoneUtils.normalize(it) !in own }
+                    .ifEmpty { c.entity.addresses.split("|").filter { it.isNotBlank() } }
+                if (addrs.isEmpty()) continue
+                val key = PhoneUtils.convoKey(addrs)
+                val target = repo.db.conversations().byKey(key) ?: continue
+                val e = c.entity
+                if (e.pinned || e.archived || e.muted || e.notifBlocked || e.hidden ||
+                    e.draft.isNotBlank() || e.customTone.isNotBlank() || e.vibrateMode != 0 ||
+                    e.groupMode != target.groupMode
+                ) {
+                    repo.db.conversations().applyRestoredSettings(
+                        target.id, e.pinned, e.archived, e.muted, e.notifBlocked,
+                        e.hidden, e.draft, e.customTone, e.vibrateMode, e.groupMode
+                    )
+                }
             }
             for (k in keywords) repo.db.keywords().insert(KeywordEntity(keyword = k))
 
+            tempDir.deleteRecursively()
             repo.rescheduleAllAlarms()
             ChangeBus.ping()
+            progress.report(100, null)
             true
         } catch (_: Exception) {
+            Repo.get(context).syncSuspended = false
             false
         }
     }
+
+    private fun smsExists(resolver: android.content.ContentResolver, address: String, body: String, date: Long): Boolean {
+        return try {
+            resolver.query(
+                Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID),
+                "${Telephony.Sms.DATE} = ? AND ${Telephony.Sms.BODY} = ?",
+                arrayOf(date.toString(), body), null
+            )?.use { it.count > 0 } ?: false
+        } catch (_: Exception) { false }
+    }
+
+    /** Insert an MMS (pdu + addr rows + parts) into the system store.
+     *  The addr rows are written the way our importer expects, so re-import
+     *  groups everything correctly. Returns the new system id. */
+    private fun insertSystemMms(
+        context: Context,
+        e: MessageEntity,
+        convoAddrs: List<String>,
+        msgParts: List<RestorePart>,
+        tempDir: File,
+        own: Set<String>
+    ): Long? {
+        val resolver = context.contentResolver
+        // duplicate check: same second + same box
+        val dateSec = e.date / 1000
+        try {
+            resolver.query(
+                Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
+                "${Telephony.Mms.DATE} = ? AND ${Telephony.Mms.MESSAGE_BOX} = ?",
+                arrayOf(dateSec.toString(),
+                    (if (e.isMine) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_INBOX).toString()),
+                null
+            )?.use { if (it.count > 0) return null }
+        } catch (_: Exception) {}
+
+        val participants = if (e.isMine)
+            e.address.split("|").filter { it.isNotBlank() }.ifEmpty { convoAddrs }
+        else convoAddrs.ifEmpty { listOf(e.address) }
+        val threadAddrs = participants.filter { PhoneUtils.normalize(it) !in own }
+            .ifEmpty { participants }
+
+        val v = android.content.ContentValues().apply {
+            put(Telephony.Mms.DATE, dateSec)
+            put(Telephony.Mms.MESSAGE_BOX,
+                if (e.isMine) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_INBOX)
+            put(Telephony.Mms.READ, 1)
+            put(Telephony.Mms.MESSAGE_TYPE, if (e.isMine) 128 else 132)
+            put(Telephony.Mms.MMS_VERSION, 18)
+            put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.multipart.related")
+            put(Telephony.Mms.THREAD_ID,
+                Telephony.Threads.getOrCreateThreadId(context, threadAddrs.toSet()))
+        }
+        val mmsUri = resolver.insert(Telephony.Mms.CONTENT_URI, v) ?: return null
+        val sysId = mmsUri.lastPathSegment?.toLongOrNull() ?: return null
+
+        fun addr(address: String, type: Int) {
+            try {
+                resolver.insert(Uri.parse("content://mms/$sysId/addr"),
+                    android.content.ContentValues().apply {
+                        put("address", address)
+                        put("type", type)
+                        put("charset", 106)
+                    })
+            } catch (_: Exception) {}
+        }
+        if (e.isMine) {
+            addr(own.firstOrNull() ?: "insert-address-token", 137)
+            threadAddrs.forEach { addr(it, 151) }
+        } else {
+            addr(e.address, 137)
+            threadAddrs.filter { PhoneUtils.normalize(it) != PhoneUtils.normalize(e.address) }
+                .forEach { addr(it, 151) }
+        }
+
+        val placeholder = context.getString(io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
+        if (e.body.isNotBlank() && e.body != placeholder) {
+            try {
+                resolver.insert(Uri.parse("content://mms/$sysId/part"),
+                    android.content.ContentValues().apply {
+                        put("mid", sysId)
+                        put("ct", "text/plain")
+                        put("text", e.body)
+                        put("chset", 106)
+                    })
+            } catch (_: Exception) {}
+        }
+        for (p in msgParts) {
+            try {
+                val src = File(tempDir, p.storedName)
+                if (!src.exists()) continue
+                val partUri = resolver.insert(Uri.parse("content://mms/$sysId/part"),
+                    android.content.ContentValues().apply {
+                        put("mid", sysId)
+                        put("ct", p.mime)
+                        put("name", p.name)
+                        put("cl", p.name)
+                    }) ?: continue
+                resolver.openOutputStream(partUri)?.use { out ->
+                    src.inputStream().use { it.copyTo(out) }
+                }
+            } catch (_: Exception) {}
+        }
+        return sysId
+    }
+
 
     /** JsonWriter/JsonReader close their stream; these keep the zip stream open across entries. */
     private class NonClosingOutputStream(private val inner: java.io.OutputStream) : java.io.OutputStream() {

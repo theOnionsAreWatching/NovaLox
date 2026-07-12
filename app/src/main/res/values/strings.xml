@@ -253,7 +253,7 @@
     <string name="pref_backup">Back up messages…</string>
     <string name="pref_restore">Restore from backup…</string>
     <string name="restore_title">Restore backup</string>
-    <string name="restore_warning">Restoring replaces everything currently in Nova (messages, conversations, keywords) with the backup\'s contents. Continue?</string>
+    <string name="restore_warning">Restoring writes the backup\'s messages into this phone\'s message storage (so they\'re real messages, visible to re-import), then rebuilds the app from it. Anything currently in the app is replaced. Messages already on this phone are kept and not duplicated. Recycle-bin contents from the backup are not restored. Continue?</string>
     <string name="backing_up">Backing up…</string>
     <string name="restoring">Restoring…</string>
     <string name="backup_done">Backup saved</string>

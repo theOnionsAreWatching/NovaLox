@@ -162,6 +162,9 @@ class Repo private constructor(private val context: Context) {
     private val ownNumbers: Set<String>
         get() = simOwnNumbers + Prefs.get(context).learnedOwnNumbers
 
+    /** Restore needs the combined own-number set to write correct system rows. */
+    fun ownNumbersForRestore(): Set<String> = ownNumbers
+
     /** This phone's own numbers per the SIM — best effort, empty on many SIMs. */
     private val simOwnNumbers: Set<String> by lazy {
         val out = HashSet<String>()
@@ -906,7 +909,13 @@ class Repo private constructor(private val context: Context) {
     /** Safety net: pull anything another app wrote to telephony in the last 48h that we don't have.
      *  Matching rule: timestamp window + address (+ body). */
     @SuppressLint("Range")
+    /** Set while restore bulk-writes into telephony, so the content observer
+     *  doesn't ingest half-written rows into a database we're about to wipe. */
+    @Volatile
+    var syncSuspended = false
+
     fun syncRecentFromTelephony() {
+        if (syncSuspended) return
         scope.launch {
             val resolver = context.contentResolver
             val cutoff = System.currentTimeMillis() - 48 * 3600_000L

@@ -227,6 +227,17 @@ interface ConversationDao {
     @Query("UPDATE conversations SET customTone = :tone WHERE id = :id")
     suspend fun setCustomTone(id: Long, tone: String)
 
+    @Query(
+        """UPDATE conversations SET pinned = :pinned, archived = :archived, muted = :muted,
+           notifBlocked = :notifBlocked, hidden = :hidden, draft = :draft,
+           customTone = :customTone, vibrateMode = :vibrateMode, groupMode = :groupMode
+           WHERE id = :id"""
+    )
+    suspend fun applyRestoredSettings(
+        id: Long, pinned: Boolean, archived: Boolean, muted: Boolean, notifBlocked: Boolean,
+        hidden: Boolean, draft: String, customTone: String, vibrateMode: Int, groupMode: Int
+    )
+
     @Query("UPDATE conversations SET vibrateMode = :mode WHERE id = :id")
     suspend fun setVibrateMode(id: Long, mode: Int)
 
@@ -346,6 +357,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = 1 LIMIT 1")
     suspend fun byTelephonyMms(tId: Long): MessageEntity?
+
+    @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms LIMIT 1")
+    suspend fun byTelephonyId(tId: Long, isMms: Boolean): MessageEntity?
 
     @Query("UPDATE messages SET body = :body WHERE id = :id")
     suspend fun updateBody(id: Long, body: String)
