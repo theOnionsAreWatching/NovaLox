@@ -119,6 +119,24 @@ object UpdateChecker {
         return false
     }
 
+    /** If a previously downloaded update APK is now installed (our version caught
+     *  up to its tag), remove the file — via the download manager, so it works on
+     *  every Android version without storage permissions. */
+    fun cleanupInstalledUpdate(context: Context, currentVersionName: String) {
+        val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(context)
+        val tag = prefs.pendingUpdateTag
+        if (tag.isBlank()) return
+        if (isNewer(tag, currentVersionName)) return // not installed yet — keep the file
+        if (prefs.deleteApkAfterUpdate && prefs.pendingUpdateDownloadId >= 0) {
+            try {
+                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.remove(prefs.pendingUpdateDownloadId)
+            } catch (_: Exception) {}
+        }
+        prefs.pendingUpdateTag = ""
+        prefs.pendingUpdateDownloadId = -1L
+    }
+
     /** Download via the system's download manager (visible in the notification
      *  shade) and prompt the install screen when it lands. */
     fun download(context: Context, release: Release) {
@@ -133,6 +151,11 @@ object UpdateChecker {
                 )
             val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val id = dm.enqueue(req)
+            // remembered so the file can be cleaned up after the update installs
+            io.github.theonionsarewatching.nova.util.Prefs.get(context).apply {
+                pendingUpdateDownloadId = id
+                pendingUpdateTag = release.tag
+            }
 
             // when it finishes, hand the APK to the installer
             val receiver = object : BroadcastReceiver() {

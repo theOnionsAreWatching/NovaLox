@@ -20,6 +20,18 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    var learnedOwnNumbers: Set<String>
+        get() = (sp.getString("learned_own_numbers", "") ?: "")
+            .split(",").filter { it.isNotBlank() }.toSet()
+        set(v) = sp.edit().putString("learned_own_numbers", v.joinToString(",")).apply()
+    val deleteApkAfterUpdate: Boolean
+        get() = sp.getBoolean("delete_apk_after_update", true)
+    var pendingUpdateDownloadId: Long
+        get() = sp.getLong("pending_update_dl_id", -1L)
+        set(v) = sp.edit().putLong("pending_update_dl_id", v).apply()
+    var pendingUpdateTag: String
+        get() = sp.getString("pending_update_tag", "") ?: ""
+        set(v) = sp.edit().putString("pending_update_tag", v).apply()
     var lastNotifiedUpdateTag: String
         get() = sp.getString("last_notified_update_tag", "") ?: ""
         set(v) = sp.edit().putString("last_notified_update_tag", v).apply()

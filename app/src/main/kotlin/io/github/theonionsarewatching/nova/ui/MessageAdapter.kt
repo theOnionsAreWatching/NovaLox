@@ -188,7 +188,7 @@ class MessageAdapter(
         holder.b.metaLine.textSize = prefs.timeTextSp
         val time = if (m.status == MsgStatus.SCHEDULED && m.scheduledAt != null)
             ctx.getString(R.string.scheduled_for, Formatters.full(m.scheduledAt))
-        else Formatters.time(m.date)
+        else Formatters.messageStamp(m.date)
         val status = if (m.isMine) Sender.statusLabel(ctx, m.status) else ""
         holder.b.metaLine.text = if (status.isNotBlank()) "$time \u00B7 $status" else time
         holder.b.metaLine.setTextColor(

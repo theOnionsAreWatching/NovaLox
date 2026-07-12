@@ -341,4 +341,8 @@
     <!-- v0.9.2 additions -->
     <string name="up_to_date_detail">You\'re up to date — installed v%1$s, newest release v%2$s</string>
     <string name="update_check_failed">Couldn\'t reach the update server — check your connection and try again</string>
+
+    <!-- v0.9.4 additions -->
+    <string name="pref_delete_apk">Delete update file after installing</string>
+    <string name="pref_delete_apk_summary">Removes the downloaded APK from Downloads once the update is installed</string>
 </resources>

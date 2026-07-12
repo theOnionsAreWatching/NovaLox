@@ -114,6 +114,13 @@ class MainActivity : BaseActivity() {
             runOnboardingChain()
             loadConversations()
             maybeCheckUpdates()
+            lifecycleScope.launch {
+                val current = try {
+                    packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+                } catch (_: Exception) { "0" }
+                io.github.theonionsarewatching.nova.util.UpdateChecker
+                    .cleanupInstalledUpdate(this@MainActivity, current)
+            }
             repo.cleanRecycleBin()
             repo.refreshContactNames()
             if (binding.gateView.visibility == View.GONE && binding.convoList.childCount == 0) {

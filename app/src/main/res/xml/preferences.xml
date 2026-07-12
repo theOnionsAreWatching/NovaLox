@@ -147,6 +147,13 @@
             app:iconSpaceReserved="false"
             android:key="check_updates"
             android:title="@string/pref_check_updates" />
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="delete_apk_after_update"
+            android:title="@string/pref_delete_apk"
+            android:summary="@string/pref_delete_apk_summary"
+            android:defaultValue="true" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="resync"

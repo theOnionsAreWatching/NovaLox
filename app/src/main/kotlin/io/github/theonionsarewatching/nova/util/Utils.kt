@@ -53,6 +53,39 @@ object Formatters {
             android.text.format.DateUtils.FORMAT_SHOW_TIME
     )
 
+    /** Timestamp under a message inside a conversation. */
+    fun messageStamp(ts: Long): String {
+        val now = Calendar.getInstance()
+        val then = Calendar.getInstance().apply { timeInMillis = ts }
+        val sameDay = now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
+            now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
+        val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+        val withinWeek = now.timeInMillis - ts < 6L * 24 * 60 * 60 * 1000 && ts <= now.timeInMillis
+        return when {
+            sameDay -> time(ts)
+            withinWeek -> android.text.format.DateUtils.formatDateTime(
+                appContext, ts,
+                android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+                    android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY or
+                    android.text.format.DateUtils.FORMAT_SHOW_TIME
+            )
+            sameYear -> android.text.format.DateUtils.formatDateTime(
+                appContext, ts,
+                android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                    android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+                    android.text.format.DateUtils.FORMAT_NO_YEAR or
+                    android.text.format.DateUtils.FORMAT_SHOW_TIME
+            )
+            else -> android.text.format.DateUtils.formatDateTime(
+                appContext, ts,
+                android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                    android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+                    android.text.format.DateUtils.FORMAT_SHOW_YEAR or
+                    android.text.format.DateUtils.FORMAT_SHOW_TIME
+            )
+        }
+    }
+
     fun listStamp(ts: Long): String {
         val now = Calendar.getInstance()
         val then = Calendar.getInstance().apply { timeInMillis = ts }

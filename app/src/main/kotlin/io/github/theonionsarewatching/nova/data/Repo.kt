@@ -149,8 +149,21 @@ class Repo private constructor(private val context: Context) {
         return ingestMms(mmsId, date, msgBox)
     }
 
-    /** This phone's own numbers, normalized — best effort, may be empty on many SIMs. */
-    private val ownNumbers: Set<String> by lazy {
+    /** Record a number as belonging to THIS phone (learned from sent messages). */
+    private fun learnOwnNumbers(addresses: Collection<String>) {
+        if (addresses.isEmpty()) return
+        val prefs = Prefs.get(context)
+        val current = prefs.learnedOwnNumbers
+        val add = addresses.map { PhoneUtils.normalize(it) }
+            .filter { it.isNotBlank() && it !in current }
+        if (add.isNotEmpty()) prefs.learnedOwnNumbers = current + add
+    }
+
+    private val ownNumbers: Set<String>
+        get() = simOwnNumbers + Prefs.get(context).learnedOwnNumbers
+
+    /** This phone's own numbers per the SIM — best effort, empty on many SIMs. */
+    private val simOwnNumbers: Set<String> by lazy {
         val out = HashSet<String>()
         try {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
@@ -288,6 +301,8 @@ class Repo private constructor(private val context: Context) {
         //   * received with 2+ other recipients -> a real group: sender + the others
         //     (minus our own number when the SIM reports it; when it doesn't, keeping
         //     it is still deterministic, so the group stays ONE conversation).
+        if (isMine && from.isNotEmpty()) learnOwnNumbers(from)
+
         val participants = if (isMine) {
             to.filter { PhoneUtils.normalize(it) !in ownNumbers }.ifEmpty { to }.ifEmpty { from }
         } else {
@@ -785,6 +800,30 @@ class Repo private constructor(private val context: Context) {
     @SuppressLint("Range")
     suspend fun importFromTelephony(onProgress: (Int) -> Unit) = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
+
+        // learn this phone's own number(s) from sent MMS senders FIRST — without
+        // this, sent and received group messages computed different conversation
+        // keys and sent messages landed in a parallel copy of the group
+        try {
+            val sentIds = ArrayList<Long>()
+            resolver.query(
+                Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_BOX),
+                "${Telephony.Mms.MESSAGE_BOX} != ${Telephony.Mms.MESSAGE_BOX_INBOX}", null, null
+            )?.use { c -> while (c.moveToNext()) sentIds.add(c.getLong(0)) }
+            val learned = ArrayList<String>()
+            for (id in sentIds) {
+                resolver.query(
+                    Uri.parse("content://mms/$id/addr"), arrayOf("address", "type"),
+                    "type = 137", null, null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val a = c.getString(0) ?: continue
+                        if (a.isNotBlank() && a != "insert-address-token") learned.add(a)
+                    }
+                }
+            }
+            learnOwnNumbers(learned)
+        } catch (_: Exception) {}
 
         var smsTotal = 0
         resolver.query(Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID), null, null, null)
