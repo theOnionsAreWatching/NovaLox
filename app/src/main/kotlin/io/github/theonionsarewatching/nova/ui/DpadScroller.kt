@@ -71,7 +71,16 @@ class DpadScroller(
         val focused = rv.focusedChild
         val pos = if (focused != null) rv.getChildAdapterPosition(focused) else RecyclerView.NO_POSITION
         if (pos == RecyclerView.NO_POSITION) {
-            focusPosition(if (down) 0 else count - 1)
+            // focus fell off a recycled view mid-hold: re-anchor to the nearest
+            // VISIBLE row in the direction of travel and keep going — never to
+            // index 0, which is what made held scrolling snap back to the top
+            val lm = rv.layoutManager as? LinearLayoutManager
+            val anchor = if (down) {
+                lm?.findLastVisibleItemPosition()?.takeIf { it >= 0 }
+            } else {
+                lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 }
+            } ?: if (down) count - 1 else 0
+            focusPosition(anchor)
             return true
         }
 

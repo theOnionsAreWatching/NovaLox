@@ -58,15 +58,26 @@ object Formatters {
         val then = Calendar.getInstance().apply { timeInMillis = ts }
         val sameDay = now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
             now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
-        return if (sameDay) time(ts)
-        else android.text.format.DateUtils.formatDateTime(
-            appContext, ts,
-            android.text.format.DateUtils.FORMAT_SHOW_DATE or
-                android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
-                android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
-                android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY
-            // DateUtils adds the year automatically when it isn't the current year
-        )
+        val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+        return when {
+            sameDay -> time(ts)
+            sameYear -> android.text.format.DateUtils.formatDateTime(
+                appContext, ts,
+                android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                    android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+                    android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+                    android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY or
+                    android.text.format.DateUtils.FORMAT_NO_YEAR
+            )
+            // older than this year: ALWAYS show the year (explicitly — the automatic
+            // rule skipped it on dates more than a year back), drop the weekday
+            else -> android.text.format.DateUtils.formatDateTime(
+                appContext, ts,
+                android.text.format.DateUtils.FORMAT_SHOW_DATE or
+                    android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+                    android.text.format.DateUtils.FORMAT_SHOW_YEAR
+            )
+        }
     }
 }
 

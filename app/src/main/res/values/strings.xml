@@ -330,4 +330,11 @@
     <string name="download">Download</string>
     <string name="update_downloading">Downloading — watch the notification bar</string>
     <string name="open_with_system">Open with system player</string>
+
+    <!-- v0.9.1 additions -->
+    <string name="participants_title">Participants (%1$d)</string>
+    <string name="message_privately">Message privately</string>
+    <string name="call">Call</string>
+    <string name="resize_restart_confirm">Resize to %1$s? The app will close and reopen so everything changes at once.</string>
+    <string name="resize_and_restart">Resize &amp; restart</string>
 </resources>

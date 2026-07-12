@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import coil.transform.CircleCropTransformation
+import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
 import io.github.theonionsarewatching.nova.databinding.ItemConversationBinding
@@ -62,7 +63,12 @@ class ConversationAdapter(
         } else {
             holder.b.convoAvatar.visibility = android.view.View.GONE
             holder.b.avatarLetter.visibility = android.view.View.VISIBLE
-            val letter = title.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar() ?: '#'
+            // named contacts: first letter. Unsaved numbers: first digit of the
+            // NORMALIZED number (so "+1 212 444 1100" shows 2, not the country code)
+            val letter = title.firstOrNull { it.isLetter() }?.uppercaseChar()
+                ?: PhoneUtils.normalize(c.addressList().firstOrNull() ?: "")
+                    .firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
+                ?: '#'
             holder.b.avatarLetter.text = letter.toString()
             val palette = intArrayOf(
                 0xFF1565C0.toInt(), 0xFF00796B.toInt(), 0xFF2E7D32.toInt(), 0xFFE65100.toInt(),

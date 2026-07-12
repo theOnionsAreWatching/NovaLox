@@ -101,7 +101,8 @@ class SettingsActivity : BaseActivity() {
             find("restore_backup") {
                 AlertDialog.Builder(requireContext())
                     .setTitle(R.string.restore_title)
-                    .setMessage(R.string.restore_warning)
+                    .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessage(
+                        requireActivity(), R.string.restore_warning))
                     .setPositiveButton(R.string.restore) { _, _ ->
                         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
@@ -120,7 +121,8 @@ class SettingsActivity : BaseActivity() {
             find("reimport") {
                 AlertDialog.Builder(requireContext())
                     .setTitle(R.string.pref_reimport)
-                    .setMessage(R.string.reimport_warning)
+                    .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessage(
+                        requireActivity(), R.string.reimport_warning))
                     .setPositiveButton(R.string.pref_reimport) { _, _ ->
                         val ctx = requireContext()
                         val ui = ProgressUi(ctx, R.string.reimporting)
@@ -136,6 +138,24 @@ class SettingsActivity : BaseActivity() {
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
+            findPreference<androidx.preference.ListPreference>("app_zoom")
+                ?.setOnPreferenceChangeListener { pref, newValue ->
+                    val entryIdx = (pref as androidx.preference.ListPreference)
+                        .findIndexOfValue(newValue.toString())
+                    val label = pref.entries.getOrNull(entryIdx) ?: newValue.toString()
+                    AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.pref_resize)
+                        .setMessage(getString(R.string.resize_restart_confirm, label))
+                        .setPositiveButton(R.string.resize_and_restart) { _, _ ->
+                            io.github.theonionsarewatching.nova.util.Prefs.get(requireContext())
+                                .sp.edit().putString("app_zoom", newValue.toString()).apply()
+                            restartApp()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                    false // we persist manually after the confirmation
+                }
+
             find("check_updates") {
                 val ctx = requireContext()
                 Toast.makeText(ctx, R.string.checking_updates, Toast.LENGTH_SHORT).show()
@@ -171,12 +191,22 @@ class SettingsActivity : BaseActivity() {
             }
 
             // restart-sensitive prefs: recreate the settings screen so the change is visible
-            for (key in listOf("theme", "layout_direction", "app_zoom")) {
+            for (key in listOf("theme", "layout_direction")) {
                 findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
                     requireActivity().recreate()
                     true
                 }
             }
+        }
+
+        /** Kill and relaunch so the new size applies to EVERY screen at once. */
+        private fun restartApp() {
+            val ctx = requireContext().applicationContext
+            val intent = android.content.Intent(ctx,
+                io.github.theonionsarewatching.nova.ui.MainActivity::class.java)
+            val restart = android.content.Intent.makeRestartActivityTask(intent.component)
+            ctx.startActivity(restart)
+            Runtime.getRuntime().exit(0)
         }
 
         private fun find(key: String, action: () -> Unit) {

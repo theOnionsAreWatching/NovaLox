@@ -86,16 +86,35 @@ class ComposeActivity : BaseActivity() {
     }
 
     private fun handleIncomingIntent() {
-        val data: Uri? = intent.data
-        if (data != null && (intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW)) {
-            val ssp = data.schemeSpecificPart?.substringBefore('?')
-            ssp?.split(";", ",")?.map { it.trim() }?.filter { it.isNotBlank() }?.forEach {
-                if (recipients.none { r -> PhoneUtils.normalize(r) == PhoneUtils.normalize(it) }) recipients.add(it)
+        try {
+            val data: Uri? = intent.data
+            if (data != null && (intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW)) {
+                // sms:+1234567 URIs are OPAQUE — getQueryParameter() throws on them
+                // (this is what crashed the dialer's "send message" hand-off).
+                // Parse the raw scheme-specific part by hand instead.
+                val raw = data.schemeSpecificPart.orEmpty()
+                val numbersPart = raw.substringBefore('?')
+                numbersPart.split(";", ",").map {
+                    try { java.net.URLDecoder.decode(it.trim(), "UTF-8") } catch (_: Exception) { it.trim() }
+                }.filter { it.isNotBlank() }.forEach {
+                    if (recipients.none { r -> PhoneUtils.normalize(r) == PhoneUtils.normalize(it) }) {
+                        recipients.add(it)
+                    }
+                }
+                val query = raw.substringAfter('?', "")
+                query.split('&').firstOrNull { it.startsWith("body=") }?.let {
+                    val body = try {
+                        java.net.URLDecoder.decode(it.removePrefix("body="), "UTF-8")
+                    } catch (_: Exception) { it.removePrefix("body=") }
+                    binding.bodyInput.setText(body)
+                }
             }
-            data.getQueryParameter("body")?.let { binding.bodyInput.setText(it) }
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { binding.bodyInput.setText(it) }
+            intent.getStringExtra("prefill_body")?.let { binding.bodyInput.setText(it) }
+        } catch (_: Exception) {
+            // never crash on a malformed external intent — open blank instead
         }
-        intent.getStringExtra(Intent.EXTRA_TEXT)?.let { binding.bodyInput.setText(it) }
-        intent.getStringExtra("prefill_body")?.let { binding.bodyInput.setText(it) }
+        updateRecipientLabel()
     }
 
     private fun filterSuggestions(q: String) {

@@ -946,6 +946,11 @@ class ThreadActivity : BaseActivity() {
                 finish()
             }
         }
+        if (c.isGroup) {
+            items += getString(R.string.participants_title, c.addressList().size) to {
+                GroupParticipants.show(this, c)
+            }
+        }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
