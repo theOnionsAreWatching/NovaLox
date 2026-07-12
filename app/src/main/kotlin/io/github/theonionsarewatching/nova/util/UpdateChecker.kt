@@ -33,7 +33,8 @@ object UpdateChecker {
      *  the API allows only 60 requests/hour per IP, and users behind a shared
      *  filtering proxy exhaust that together). API JSON is the fallback. */
     fun check(currentVersionName: String): Check {
-        val tag = latestTagViaRedirect() ?: latestTagViaApi() ?: return Check.Failed
+        val tag = latestTagViaRedirect() ?: latestTagViaAtom() ?: latestTagViaApi()
+            ?: return Check.Failed
         return if (isNewer(tag, currentVersionName)) {
             Check.UpdateAvailable(Release(tag, apkUrlFor(tag)))
         } else {
@@ -45,7 +46,14 @@ object UpdateChecker {
     private fun apkUrlFor(tag: String): String =
         "https://github.com/$REPO/releases/download/v$tag/NovaLox-v$tag.apk"
 
-    /** github.com/<repo>/releases/latest 302-redirects to /releases/tag/vX.Y.Z. */
+    private fun tagFromUrl(url: String?): String? =
+        url?.takeIf { it.contains("/releases/tag/") }
+            ?.substringAfter("/releases/tag/")?.trim('/')?.substringBefore('?')
+            ?.removePrefix("v")?.takeIf { it.isNotBlank() }
+
+    /** github.com/<repo>/releases/latest 302-redirects to /releases/tag/vX.Y.Z.
+     *  Some filtering proxies follow the redirect THEMSELVES and hand us the final
+     *  page as a 200 — in that case the final URL still carries the tag. */
     private fun latestTagViaRedirect(): String? {
         return try {
             val conn = URL("https://github.com/$REPO/releases/latest")
@@ -53,13 +61,29 @@ object UpdateChecker {
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.instanceFollowRedirects = false
+            conn.setRequestProperty("User-Agent", "NovaLox-Updater")
             val code = conn.responseCode
             val location = conn.getHeaderField("Location")
+            val finalUrl = conn.url?.toString()
             conn.disconnect()
-            if (code in 300..399 && location != null && location.contains("/releases/tag/")) {
-                location.substringAfter("/releases/tag/").trim('/').removePrefix("v")
-                    .takeIf { it.isNotBlank() }
-            } else null
+            tagFromUrl(location) ?: if (code == 200) tagFromUrl(finalUrl) else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Releases Atom feed: plain XML, no rate limit — third path for odd proxies. */
+    private fun latestTagViaAtom(): String? {
+        return try {
+            val conn = URL("https://github.com/$REPO/releases.atom")
+                .openConnection() as HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.setRequestProperty("User-Agent", "NovaLox-Updater")
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            Regex("/releases/tag/(v?[0-9][^\"'<]*)").find(body)
+                ?.groupValues?.get(1)?.removePrefix("v")?.takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
         }
@@ -72,6 +96,7 @@ object UpdateChecker {
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
             conn.setRequestProperty("Accept", "application/vnd.github+json")
+            conn.setRequestProperty("User-Agent", "NovaLox-Updater")
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             conn.disconnect()
             JSONObject(body).optString("tag_name").removePrefix("v").takeIf { it.isNotBlank() }

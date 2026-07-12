@@ -20,6 +20,9 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    var lastNotifiedUpdateTag: String
+        get() = sp.getString("last_notified_update_tag", "") ?: ""
+        set(v) = sp.edit().putString("last_notified_update_tag", v).apply()
     var lastUpdateCheck: Long
         get() = sp.getLong("last_update_check", 0L)
         set(v) = sp.edit().putLong("last_update_check", v).apply()

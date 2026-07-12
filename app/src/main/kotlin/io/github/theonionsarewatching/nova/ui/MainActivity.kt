@@ -297,6 +297,8 @@ class MainActivity : BaseActivity() {
                 io.github.theonionsarewatching.nova.util.UpdateChecker.check(current)
             }
             val release = (result as? io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpdateAvailable)?.release
+            if (release != null && release.tag == prefs.lastNotifiedUpdateTag) return@launch
+            if (release != null) prefs.lastNotifiedUpdateTag = release.tag
             if (release != null && !isFinishing) {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(getString(R.string.update_available, release.tag))

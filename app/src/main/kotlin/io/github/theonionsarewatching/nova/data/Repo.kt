@@ -255,6 +255,11 @@ class Repo private constructor(private val context: Context) {
             } ?: 0
         } catch (_: Exception) { 0 }
         val notDownloaded = mType == 130
+        // the mms table also holds protocol rows with no content — delivery reports,
+        // read reports, acknowledgements (m_type 129/131/133/134/135/136...). These
+        // imported as BLANK messages next to the real MMS. Only actual messages pass:
+        // 128 = outgoing send-request, 132 = downloaded incoming, 130 = placeholder.
+        if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return null
 
         // addresses
         val from = ArrayList<String>()
