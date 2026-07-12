@@ -20,6 +20,11 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    var lastUpdateCheck: Long
+        get() = sp.getLong("last_update_check", 0L)
+        set(v) = sp.edit().putLong("last_update_check", v).apply()
+    val appZoom: Float
+        get() = (sp.getString("app_zoom", "1.0") ?: "1.0").toFloatOrNull() ?: 1.0f
     var defaultTone: String
         get() = sp.getString("default_tone", "") ?: ""
         set(v) = sp.edit().putString("default_tone", v).apply()

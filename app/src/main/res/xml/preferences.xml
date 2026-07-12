@@ -15,10 +15,18 @@
             app:iconSpaceReserved="false"
             android:key="accent_picker"
             android:title="@string/pref_accent" />
+        <ListPreference
+            app:iconSpaceReserved="false"
+            android:key="app_zoom"
+            android:title="@string/pref_resize"
+            android:summary="@string/pref_resize_summary"
+            android:entries="@array/scale_entries"
+            android:entryValues="@array/scale_values"
+            android:defaultValue="1.0" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_sizes"
-            android:title="@string/pref_sizes"
+            android:title="@string/pref_advanced_resize"
             android:summary="@string/pref_sizes_summary" />
         <ListPreference
             app:iconSpaceReserved="false"
@@ -53,6 +61,13 @@
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_behavior">
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="auto_download_mms"
+            android:title="@string/pref_auto_mms"
+            android:summary="@string/pref_auto_mms_summary"
+            android:defaultValue="true" />
         <SwitchPreferenceCompat
             app:singleLineTitle="false"
             app:iconSpaceReserved="false"
@@ -123,6 +138,15 @@
             app:iconSpaceReserved="false"
             android:key="restore_backup"
             android:title="@string/pref_restore" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="reimport"
+            android:title="@string/pref_reimport"
+            android:summary="@string/pref_reimport_summary" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="check_updates"
+            android:title="@string/pref_check_updates" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="resync"

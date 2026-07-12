@@ -306,4 +306,28 @@
 
     <!-- v0.8 additions -->
     <string name="softkey_trouble_hint">If a softkey doesn\'t respond even after setup (this happens on some phones), turn the softkey bar off: Settings → Softkey bar → Never. On-screen buttons appear instead, and they work with the D-pad.</string>
+
+    <!-- v0.9 additions -->
+    <string name="mms_not_downloaded">[Multimedia message — not downloaded. Auto-download is off in Settings.]</string>
+    <string name="enter_code_manually">Enter key code…</string>
+    <string name="key_code_hint">Key code number</string>
+    <string name="last_key_seen">Last key press seen: code %1$d</string>
+    <string name="pref_resize">Resize</string>
+    <string name="pref_resize_summary">Make everything in the app bigger or smaller</string>
+    <string name="pref_advanced_resize">Advanced resize…</string>
+    <string name="pref_auto_mms">Auto-download multimedia messages</string>
+    <string name="pref_auto_mms_summary">Download picture/video messages as they arrive. Turn off to save data.</string>
+    <string name="pref_reimport">Re-import all messages</string>
+    <string name="pref_reimport_summary">Rebuild conversations from the phone\'s message store (fixes mixed-up group messages)</string>
+    <string name="reimport_warning">This clears the app\'s copy of your messages and re-imports everything from the phone\'s message store. Message locks and scheduled sends are lost; keywords and settings are kept. Continue?</string>
+    <string name="reimporting">Re-importing…</string>
+    <string name="reimport_done">Re-import complete</string>
+    <string name="pref_check_updates">Check for updates</string>
+    <string name="checking_updates">Checking…</string>
+    <string name="up_to_date">You\'re up to date (v%1$s)</string>
+    <string name="update_available">Update available: v%1$s</string>
+    <string name="update_prompt">A newer version is on the releases page. Download it now? You\'ll be asked to confirm the install when it finishes.</string>
+    <string name="download">Download</string>
+    <string name="update_downloading">Downloading — watch the notification bar</string>
+    <string name="open_with_system">Open with system player</string>
 </resources>

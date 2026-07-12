@@ -113,6 +113,7 @@ class MainActivity : BaseActivity() {
             askFirstRunPermissions()
             runOnboardingChain()
             loadConversations()
+            maybeCheckUpdates()
             repo.cleanRecycleBin()
             repo.refreshContactNames()
             if (binding.gateView.visibility == View.GONE && binding.convoList.childCount == 0) {
@@ -282,6 +283,33 @@ class MainActivity : BaseActivity() {
     }
 
     // ============================== menus ==============================
+
+    /** Quiet weekly update check; only speaks up when there IS an update. */
+    private fun maybeCheckUpdates() {
+        val now = System.currentTimeMillis()
+        if (now - prefs.lastUpdateCheck < 7L * 24 * 60 * 60 * 1000) return
+        prefs.lastUpdateCheck = now
+        lifecycleScope.launch {
+            val current = try {
+                packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+            } catch (_: Exception) { "0" }
+            val release = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.github.theonionsarewatching.nova.util.UpdateChecker.checkLatest(current)
+            }
+            if (release != null && !isFinishing) {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(getString(R.string.update_available, release.tag))
+                    .setMessage(R.string.update_prompt)
+                    .setPositiveButton(R.string.download) { _, _ ->
+                        io.github.theonionsarewatching.nova.util.UpdateChecker.download(this@MainActivity, release)
+                        android.widget.Toast.makeText(this@MainActivity, R.string.update_downloading,
+                            android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    .setNegativeButton(R.string.later, null)
+                    .show()
+            }
+        }
+    }
 
     private fun setHeaderFocusable(on: Boolean) {
         binding.btnSettings.isFocusable = on

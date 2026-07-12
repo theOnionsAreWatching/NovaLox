@@ -344,6 +344,12 @@ interface MessageDao {
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms)")
     suspend fun existsByTelephonyId(tId: Long, isMms: Boolean): Boolean
 
+    @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = 1 LIMIT 1")
+    suspend fun byTelephonyMms(tId: Long): MessageEntity?
+
+    @Query("UPDATE messages SET body = :body WHERE id = :id")
+    suspend fun updateBody(id: Long, body: String)
+
     @Query(
         """SELECT EXISTS(SELECT 1 FROM messages WHERE convoId = :convoId AND isMine = :mine
            AND body = :body AND date BETWEEN :from AND :to)"""

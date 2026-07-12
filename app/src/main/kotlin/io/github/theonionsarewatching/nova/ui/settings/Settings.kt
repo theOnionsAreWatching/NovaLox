@@ -117,6 +117,50 @@ class SettingsActivity : BaseActivity() {
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
+            find("reimport") {
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.pref_reimport)
+                    .setMessage(R.string.reimport_warning)
+                    .setPositiveButton(R.string.pref_reimport) { _, _ ->
+                        val ctx = requireContext()
+                        val ui = ProgressUi(ctx, R.string.reimporting)
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                io.github.theonionsarewatching.nova.data.Repo.get(ctx)
+                                    .reimportAll { pct -> ui.bar.post { ui.update(pct, null) } }
+                            }
+                            ui.dismiss()
+                            Toast.makeText(ctx, R.string.reimport_done, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            find("check_updates") {
+                val ctx = requireContext()
+                Toast.makeText(ctx, R.string.checking_updates, Toast.LENGTH_SHORT).show()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val current = try {
+                        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
+                    } catch (_: Exception) { "0" }
+                    val release = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        io.github.theonionsarewatching.nova.util.UpdateChecker.checkLatest(current)
+                    }
+                    if (release == null) {
+                        Toast.makeText(ctx, getString(R.string.up_to_date, current), Toast.LENGTH_LONG).show()
+                    } else {
+                        AlertDialog.Builder(ctx)
+                            .setTitle(getString(R.string.update_available, release.tag))
+                            .setMessage(R.string.update_prompt)
+                            .setPositiveButton(R.string.download) { _, _ ->
+                                io.github.theonionsarewatching.nova.util.UpdateChecker.download(ctx, release)
+                                Toast.makeText(ctx, R.string.update_downloading, Toast.LENGTH_LONG).show()
+                            }
+                            .setNegativeButton(R.string.later, null)
+                            .show()
+                    }
+                }
+            }
             find("resync") {
                 Repo.get(requireContext()).syncRecentFromTelephony()
                 Toast.makeText(requireContext(), R.string.resync_started, Toast.LENGTH_SHORT).show()
@@ -127,7 +171,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             // restart-sensitive prefs: recreate the settings screen so the change is visible
-            for (key in listOf("theme", "layout_direction")) {
+            for (key in listOf("theme", "layout_direction", "app_zoom")) {
                 findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
                     requireActivity().recreate()
                     true
@@ -662,6 +706,7 @@ class SoftkeyConfigActivity : BaseActivity() {
     private var capturedLeft = -1
     private var capturedRight = -1
     private var onboarding = false
+    private var lastSeenCode = -1
     private lateinit var binding: ActivityListBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -684,16 +729,20 @@ class SoftkeyConfigActivity : BaseActivity() {
         when (step) {
             Step.LEFT -> {
                 binding.emptyLabel.text = getString(R.string.press_left_softkey) +
-                    "\n\n" + getString(R.string.softkey_trouble_hint)
+                    lastSeenLine() + "\n\n" + getString(R.string.softkey_trouble_hint)
                 binding.btnAction.setText(R.string.skip)
                 binding.btnAction.setOnClickListener { finishFlow(save = false) }
-                binding.btnAction2.visibility = View.GONE
+                binding.btnAction2.visibility = View.VISIBLE
+                binding.btnAction2.setText(R.string.enter_code_manually)
+                binding.btnAction2.setOnClickListener { manualCodeDialog() }
             }
             Step.RIGHT -> {
-                binding.emptyLabel.setText(R.string.press_right_softkey)
+                binding.emptyLabel.text = getString(R.string.press_right_softkey) + lastSeenLine()
                 binding.btnAction.setText(R.string.start_over)
                 binding.btnAction.setOnClickListener { restart() }
-                binding.btnAction2.visibility = View.GONE
+                binding.btnAction2.visibility = View.VISIBLE
+                binding.btnAction2.setText(R.string.enter_code_manually)
+                binding.btnAction2.setOnClickListener { manualCodeDialog() }
             }
             Step.CONFIRM -> {
                 binding.emptyLabel.text =
@@ -705,6 +754,52 @@ class SoftkeyConfigActivity : BaseActivity() {
                 binding.btnAction2.setOnClickListener { restart() }
                 binding.btnAction.requestFocus()
             }
+        }
+    }
+
+    /** Shows the code of the last key press, even rejected ones — this is how a
+     *  user (or someone helping them over adb) can identify an unusual softkey. */
+    private fun lastSeenLine(): String =
+        if (lastSeenCode > 0) "\n\n" + getString(R.string.last_key_seen, lastSeenCode) else ""
+
+    /** For phones whose softkeys aren't delivered normally: type the key code in. */
+    private fun manualCodeDialog() {
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = getString(R.string.key_code_hint)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.enter_code_manually)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val code = input.text?.toString()?.toIntOrNull() ?: return@setPositiveButton
+                if (code <= 0 || code in BLOCKED_KEYS) {
+                    Toast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                acceptCode(code)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun acceptCode(code: Int) {
+        when (step) {
+            Step.LEFT -> {
+                capturedLeft = code
+                step = Step.RIGHT
+                render()
+            }
+            Step.RIGHT -> {
+                if (code == capturedLeft) {
+                    Toast.makeText(this, R.string.same_key_twice, Toast.LENGTH_SHORT).show()
+                } else {
+                    capturedRight = code
+                    step = Step.CONFIRM
+                    render()
+                }
+            }
+            else -> {}
         }
     }
 
@@ -734,6 +829,14 @@ class SoftkeyConfigActivity : BaseActivity() {
                 true else super.dispatchKeyEvent(event)
         }
         val code = event.keyCode
+        val navKeys = setOf(
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER
+        )
+        if (code != KeyEvent.KEYCODE_BACK && code !in navKeys) {
+            lastSeenCode = code
+            render()
+        }
         if (code == KeyEvent.KEYCODE_BACK) {
             finishFlow(save = false)
             return true
@@ -749,23 +852,7 @@ class SoftkeyConfigActivity : BaseActivity() {
             Toast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
             return true
         }
-        when (step) {
-            Step.LEFT -> {
-                capturedLeft = code
-                step = Step.RIGHT
-                render()
-            }
-            Step.RIGHT -> {
-                if (code == capturedLeft) {
-                    Toast.makeText(this, R.string.same_key_twice, Toast.LENGTH_SHORT).show()
-                } else {
-                    capturedRight = code
-                    step = Step.CONFIRM
-                    render()
-                }
-            }
-            else -> {}
-        }
+        acceptCode(code)
         return true
     }
 }

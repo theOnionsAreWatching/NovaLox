@@ -77,18 +77,64 @@ class MediaViewerActivity : BaseActivity() {
         val p = currentPart() ?: return
         if (!p.isVideo()) return
         val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: return
-        if (vv.isPlaying) { vv.stopPlayback(); return }
+        val poster = binding.pager.findViewWithTag<android.widget.ImageView>("poster_${p.id}")
+        if (vv.isPlaying) {
+            vv.stopPlayback()
+            poster?.visibility = View.VISIBLE
+            return
+        }
         try {
             vv.setVideoPath(p.filePath)
+            vv.setOnPreparedListener {
+                // the still frame sits ABOVE the video surface — hide it now
+                poster?.visibility = View.GONE
+            }
+            vv.setOnCompletionListener { poster?.visibility = View.VISIBLE }
+            vv.setOnErrorListener { _, _, _ ->
+                poster?.visibility = View.VISIBLE
+                openWithSystemPlayer(p)
+                true
+            }
             vv.start()
+        } catch (_: Exception) {
+            openWithSystemPlayer(p)
+        }
+    }
+
+    private fun openWithSystemPlayer(p: io.github.theonionsarewatching.nova.data.PartEntity) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", File(p.filePath)
+            )
+            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, p.mimeType)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
         } catch (_: Exception) {}
     }
 
+    /** MENU: fallback actions for files this phone's codecs struggle with. */
+    private fun viewerOptions() {
+        val p = currentPart() ?: return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.open_with_system), getString(R.string.save)
+            )) { _, which ->
+                when (which) {
+                    0 -> openWithSystemPlayer(p)
+                    1 -> saveCurrent()
+                }
+            }
+            .show()
+    }
+
     private fun stopPlayback() {
-        // stop whichever page's VideoView is playing
+        // stop whichever page's VideoView is playing, restore its poster frame
         for (p in parts) {
             val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: continue
             if (vv.isPlaying) try { vv.stopPlayback() } catch (_: Exception) {}
+            binding.pager.findViewWithTag<android.widget.ImageView>("poster_${p.id}")
+                ?.visibility = View.VISIBLE
         }
     }
 
@@ -121,6 +167,10 @@ class MediaViewerActivity : BaseActivity() {
                     binding.pager.setCurrentItem(
                         (binding.pager.currentItem + 1).coerceAtMost((parts.size - 1).coerceAtLeast(0)), true
                     )
+                    return true
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    viewerOptions()
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
@@ -158,6 +208,7 @@ class MediaViewerActivity : BaseActivity() {
                     holder.b.pageVideo.visibility = View.VISIBLE
                     holder.b.pageVideo.tag = "video_${p.id}"
                     holder.b.pageImage.visibility = View.VISIBLE
+                    holder.b.pageImage.tag = "poster_${p.id}"
                     holder.b.pageImage.load(File(p.filePath)) // first frame via VideoFrameDecoder
                 }
                 else -> {

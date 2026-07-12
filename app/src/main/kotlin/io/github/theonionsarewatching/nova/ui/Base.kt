@@ -172,6 +172,11 @@ abstract class BaseActivity : AppCompatActivity() {
         val p = Prefs.get(newBase)
         val config = Configuration(newBase.resources.configuration)
         config.fontScale = config.fontScale * p.fontScale
+        // whole-app resize: scaling the density scales EVERYTHING — buttons,
+        // spacing, icons, avatars — not just text
+        if (p.appZoom != 1.0f) {
+            config.densityDpi = (config.densityDpi * p.appZoom).toInt().coerceAtLeast(120)
+        }
         super.attachBaseContext(newBase.createConfigurationContext(config))
     }
 

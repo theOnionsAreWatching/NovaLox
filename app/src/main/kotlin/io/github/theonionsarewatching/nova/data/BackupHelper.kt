@@ -1,6 +1,7 @@
 package io.github.theonionsarewatching.nova.data
 
 import android.content.Context
+import io.github.theonionsarewatching.nova.util.PhoneUtils
 import android.net.Uri
 import android.util.JsonReader
 import android.util.JsonWriter
@@ -431,7 +432,12 @@ object BackupHelper {
             repo.db.keywords().deleteAll()
 
             val convoMap = HashMap<Long, Long>()
-            for (c in convos) {
+            for (c0 in convos) {
+                // recompute the conversation key with the CURRENT normalization rules,
+                // so restores also heal grouping bugs from older exports
+                val c = c0.copy(entity = c0.entity.copy(
+                    convoKey = PhoneUtils.convoKey(c0.entity.addresses.split("|").filter { it.isNotBlank() })
+                ))
                 val newId = repo.db.conversations().insert(c.entity)
                 convoMap[c.oldId] = if (newId > 0) newId
                 else repo.db.conversations().byKey(c.entity.convoKey)?.id ?: continue

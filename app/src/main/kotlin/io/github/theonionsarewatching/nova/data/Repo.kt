@@ -149,6 +149,52 @@ class Repo private constructor(private val context: Context) {
         return ingestMms(mmsId, date, msgBox)
     }
 
+    /** This phone's own numbers, normalized — best effort, may be empty on many SIMs. */
+    private val ownNumbers: Set<String> by lazy {
+        val out = HashSet<String>()
+        try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            @Suppress("DEPRECATION")
+            tm.line1Number?.takeIf { it.isNotBlank() }?.let { out.add(PhoneUtils.normalize(it)) }
+        } catch (_: Exception) {}
+        try {
+            val sm = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
+                as android.telephony.SubscriptionManager
+            @Suppress("DEPRECATION")
+            sm.activeSubscriptionInfoList?.forEach { info ->
+                @Suppress("DEPRECATION")
+                info.number?.takeIf { it.isNotBlank() }?.let { out.add(PhoneUtils.normalize(it)) }
+            }
+        } catch (_: Exception) {}
+        out
+    }
+
+    /** Re-read an MMS's text content (parts + subject) — used to heal blank rows. */
+    private fun mmsBodyFor(mmsId: Long): String {
+        var body = ""
+        try {
+            context.contentResolver.query(
+                Uri.parse("content://mms/part"), arrayOf("_id", "ct", "text"),
+                "mid = ?", arrayOf(mmsId.toString()), null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if ((c.getString(1) ?: "") != "text/plain") continue
+                    val pid = c.getLong(0)
+                    val t = c.getString(2) ?: try {
+                        context.contentResolver.openInputStream(Uri.parse("content://mms/part/$pid"))
+                            ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    } catch (_: Exception) { null }
+                    if (!t.isNullOrBlank()) body = if (body.isBlank()) t else body + "\n" + t
+                }
+            }
+        } catch (_: Exception) {}
+        val subject = mmsSubject(mmsId)
+        if (subject.isNotBlank() && !body.contains(subject)) {
+            body = if (body.isBlank()) subject else subject + "\n" + body
+        }
+        return body
+    }
+
     /** MMS subject, charset-decoded. Many senders put the actual message text here. */
     private fun mmsSubject(mmsId: Long): String {
         return try {
@@ -160,13 +206,16 @@ class Repo private constructor(private val context: Context) {
                 val raw = c.getString(0) ?: return ""
                 if (raw.isBlank()) return ""
                 val cs = c.getInt(1)
-                val decoded = try {
+                var decoded = try {
                     com.google.android.mms.pdu_alt.EncodedStringValue(
                         cs, raw.toByteArray(Charsets.ISO_8859_1)
                     ).string
                 } catch (_: Throwable) {
                     raw
                 }
+                // some phones store the subject as plain readable text: if decoding
+                // produced replacement garbage, the raw value was already correct
+                if (decoded.contains('\uFFFD')) decoded = raw
                 val cleaned = decoded.trim()
                 if (cleaned.lowercase() in setOf("no subject", "(no subject)", "nosubject")) ""
                 else cleaned
@@ -180,6 +229,32 @@ class Repo private constructor(private val context: Context) {
     suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? {
         val resolver = context.contentResolver
         val isMine = msgBox != Telephony.Mms.MESSAGE_BOX_INBOX
+
+        // the content observer and the MMS receiver can both try to ingest the same
+        // message; the loser of that race used to create a blank duplicate. Ingest
+        // each telephony row exactly once — and if the first pass caught it before
+        // its text parts were written (blank body), heal it now instead.
+        db.messages().byTelephonyMms(mmsId)?.let { existing ->
+            if (existing.body.isBlank()) {
+                val healed = mmsBodyFor(mmsId)
+                if (healed.isNotBlank()) {
+                    db.messages().updateBody(existing.id, healed)
+                    if (!existing.elementsExtracted || healed.isNotBlank()) extractElements(existing.id, healed)
+                    refreshConversation(existing.convoId)
+                    ChangeBus.ping()
+                }
+            }
+            return null
+        }
+
+        // not downloaded yet (notification-ind): show a placeholder, not a blank row
+        val mType = try {
+            resolver.query(Uri.parse("content://mms"), arrayOf("m_type"),
+                "_id = ?", arrayOf(mmsId.toString()), null)?.use { c ->
+                if (c.moveToFirst()) c.getInt(0) else 0
+            } ?: 0
+        } catch (_: Exception) { 0 }
+        val notDownloaded = mType == 130
 
         // addresses
         val from = ArrayList<String>()
@@ -200,13 +275,17 @@ class Repo private constructor(private val context: Context) {
             }
         } catch (_: Exception) {}
 
+        // DETERMINISTIC participant set: the old heuristic dropped a random "to"
+        // entry (guessing it was our own number), which made the conversation key
+        // depend on address ORDER — group messages scattered across conversations
+        // and senders looked mismatched. Now: everyone minus our own number(s) when
+        // known; if our number is unknown we keep everyone, which is stable too.
         val participants = if (isMine) {
             to.ifEmpty { from }
         } else {
-            // group MMS: sender + other recipients (own number is usually among "to"; we can't
-            // reliably know it, so keep everyone; 1:1 MMS simply has a single sender)
-            val others = to.filter { PhoneUtils.normalize(it) !in from.map { f -> PhoneUtils.normalize(f) } }
-            if (others.size >= 2) from + others.take(others.size - 1) else from
+            val everyone = (from + to).distinctBy { PhoneUtils.normalize(it) }
+            val filtered = everyone.filter { PhoneUtils.normalize(it) !in ownNumbers }
+            filtered.ifEmpty { from }
         }.ifEmpty { listOf("Unknown") }
 
         if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) return null
@@ -227,8 +306,16 @@ class Repo private constructor(private val context: Context) {
                     val text = c.getString(2)
                     val name = c.getString(3) ?: c.getString(4) ?: "part_$pid"
                     when {
-                        ct == "text/plain" -> if (!text.isNullOrBlank()) bodyText =
-                            if (bodyText.isBlank()) text else bodyText + "\n" + text
+                        ct == "text/plain" -> {
+                            // large text parts store their content in the part file,
+                            // leaving the text column null — read the file in that case
+                            val t = text ?: try {
+                                resolver.openInputStream(Uri.parse("content://mms/part/$pid"))
+                                    ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                            } catch (_: Exception) { null }
+                            if (!t.isNullOrBlank()) bodyText =
+                                if (bodyText.isBlank()) t else bodyText + "\n" + t
+                        }
                         ct == "application/smil" -> { /* layout description, skip */ }
                         else -> binaryParts.add(RawPart(pid, ct, name, null))
                     }
@@ -241,6 +328,9 @@ class Repo private constructor(private val context: Context) {
         val subject = mmsSubject(mmsId)
         if (subject.isNotBlank() && !bodyText.contains(subject)) {
             bodyText = if (bodyText.isBlank()) subject else subject + "\n" + bodyText
+        }
+        if (notDownloaded && bodyText.isBlank()) {
+            bodyText = context.getString(io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
         }
 
         val convo = getOrCreateConversation(participants)
@@ -344,7 +434,9 @@ class Repo private constructor(private val context: Context) {
         val addresses = convo.addressList()
         if (addresses.isEmpty() || text.isBlank()) return null
 
-        val asGroupMms = convo.isGroup && convo.groupMode == GroupMode.GROUP_MMS
+        // email addresses can only be reached over MMS; SMS to them fails silently
+        val hasEmail = addresses.any { it.contains("@") }
+        val asGroupMms = hasEmail || (convo.isGroup && convo.groupMode == GroupMode.GROUP_MMS)
         val now = System.currentTimeMillis()
         val initialStatuses =
             if (convo.isGroup && !asGroupMms)
@@ -566,6 +658,21 @@ class Repo private constructor(private val context: Context) {
         val m = db.messages().byId(messageId) ?: return
         db.messages().softDelete(messageId, System.currentTimeMillis())
         refreshAndPing(m.convoId)
+    }
+
+    /** Wipe messages/conversations and re-import from the phone's message store.
+     *  Fixes conversations that were mis-grouped by the old import. Keeps keywords
+     *  and settings; app-only flags on messages (locks, schedules) are lost. */
+    suspend fun reimportAll(onProgress: (Int) -> Unit) {
+        db.elements().deleteAll()
+        db.parts().deleteAll()
+        db.messages().deleteAll()
+        db.conversations().deleteAll()
+        try {
+            File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
+        } catch (_: Exception) {}
+        importFromTelephony(onProgress)
+        ChangeBus.ping()
     }
 
     /** Per-conversation notification tone ("" = follow app default, "silent" = no sound). */
