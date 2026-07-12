@@ -345,4 +345,12 @@
     <!-- v0.9.4 additions -->
     <string name="pref_delete_apk">Delete update file after installing</string>
     <string name="pref_delete_apk_summary">Removes the downloaded APK from Downloads once the update is installed</string>
+
+    <!-- v0.9.6 additions -->
+    <string name="restore_writing_detail">Message %1$d of %2$d</string>
+    <string name="restore_eta">about %1$s left</string>
+    <string name="eta_seconds">%1$d sec</string>
+    <string name="eta_minutes">%1$d min</string>
+    <string name="restore_rebuilding">Rebuilding conversations…</string>
+    <string name="restore_finishing">Restoring locks and settings…</string>
 </resources>

@@ -426,19 +426,129 @@ object BackupHelper {
             val own = repo.ownNumbersForRestore() + ownGuesses
 
             // ---- Phase 1: write real messages into the SYSTEM store ----
+            val placeholderBody = context.getString(
+                io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
+
+            // preloaded duplicate indexes: one query each instead of one PER MESSAGE
+            val smsSeen = HashSet<Long>()
+            try {
+                resolver.query(Telephony.Sms.CONTENT_URI,
+                    arrayOf(Telephony.Sms.DATE, Telephony.Sms.BODY), null, null, null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        smsSeen.add(c.getLong(0) * 31 + (c.getString(1) ?: "").hashCode())
+                    }
+                }
+            } catch (_: Exception) {}
+            val mmsSeen = HashSet<Long>()
+            try {
+                resolver.query(Telephony.Mms.CONTENT_URI,
+                    arrayOf(Telephony.Mms.DATE, Telephony.Mms.MESSAGE_BOX), null, null, null
+                )?.use { c ->
+                    while (c.moveToNext()) mmsSeen.add(c.getLong(0) * 10 + c.getInt(1))
+                }
+            } catch (_: Exception) {}
+
+            // remove zero-part content MMS rows already in the system store (a
+            // previous restore may have written them; strict stock apps crash on
+            // them). Notification-ind rows (130) legitimately have no parts — kept.
+            try {
+                val partMids = HashSet<Long>()
+                resolver.query(Uri.parse("content://mms/part"), arrayOf("mid"),
+                    null, null, null)?.use { c ->
+                    while (c.moveToNext()) partMids.add(c.getLong(0))
+                }
+                val empty = ArrayList<Long>()
+                resolver.query(Telephony.Mms.CONTENT_URI,
+                    arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_TYPE), null, null, null
+                )?.use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getLong(0)
+                        val t = c.getInt(1)
+                        if ((t == 128 || t == 132) && id !in partMids) empty.add(id)
+                    }
+                }
+                for (id in empty) runCatching {
+                    resolver.delete(Uri.parse("content://mms/$id"), null, null)
+                }
+            } catch (_: Exception) {}
+
+            val threadIdCache = HashMap<String, Long>()
+            fun threadIdFor(addrs: Collection<String>): Long {
+                val key = addrs.map { PhoneUtils.normalize(it) }.sorted().joinToString(",")
+                return threadIdCache.getOrPut(key) {
+                    try {
+                        if (addrs.size == 1) Telephony.Threads.getOrCreateThreadId(context, addrs.first())
+                        else Telephony.Threads.getOrCreateThreadId(context, addrs.toSet())
+                    } catch (_: Exception) { 0L }
+                }
+            }
+
+            // live progress with an estimate
+            val phaseStart = System.currentTimeMillis()
+            var lastReport = 0L
+            var currentFile = ""
+            fun reportWriting(done: Int, total: Int, force: Boolean = false) {
+                val now = System.currentTimeMillis()
+                if (!force && now - lastReport < 150) return
+                lastReport = now
+                var detail = context.getString(
+                    io.github.theonionsarewatching.nova.R.string.restore_writing_detail, done, total)
+                if (currentFile.isNotBlank()) detail += " \u00B7 " + currentFile
+                if (done >= 20) {
+                    val remainMs = (now - phaseStart) * (total - done) / done
+                    val eta = if (remainMs < 60_000)
+                        context.getString(io.github.theonionsarewatching.nova.R.string.eta_seconds,
+                            (remainMs / 1000).coerceAtLeast(1))
+                    else context.getString(io.github.theonionsarewatching.nova.R.string.eta_minutes,
+                        remainMs / 60_000 + 1)
+                    detail += " \u00B7 " + context.getString(
+                        io.github.theonionsarewatching.nova.R.string.restore_eta, eta)
+                }
+                progress.report(done * 50 / total, detail)
+            }
+
             repo.syncSuspended = true
             val flagged = ArrayList<Triple<Long, Boolean, Boolean>>() // sysId, isMms, locked
             val scheduledLater = ArrayList<RMsg>()
             val total = messages.size.coerceAtLeast(1)
             var done = 0
+            val smsBatch = ArrayList<android.content.ContentValues>(128)
+            fun flushSmsBatch() {
+                if (smsBatch.isEmpty()) return
+                try {
+                    resolver.bulkInsert(Telephony.Sms.CONTENT_URI, smsBatch.toTypedArray())
+                } catch (_: Exception) {
+                    // fall back to singles if a provider dislikes bulk
+                    for (v in smsBatch) runCatching { resolver.insert(Telephony.Sms.CONTENT_URI, v) }
+                }
+                smsBatch.clear()
+            }
+            fun smsValues(t: String, e: MessageEntity) = android.content.ContentValues().apply {
+                put(Telephony.Sms.ADDRESS, t)
+                put(Telephony.Sms.BODY, e.body)
+                put(Telephony.Sms.DATE, e.date)
+                put(Telephony.Sms.DATE_SENT, e.date)
+                put(Telephony.Sms.READ, 1)
+                put(Telephony.Sms.SEEN, 1)
+                put(Telephony.Sms.STATUS, Telephony.Sms.STATUS_NONE)
+                put(Telephony.Sms.TYPE,
+                    if (e.isMine) Telephony.Sms.MESSAGE_TYPE_SENT
+                    else Telephony.Sms.MESSAGE_TYPE_INBOX)
+                put(Telephony.Sms.THREAD_ID, threadIdFor(listOf(t)))
+            }
             for (m in messages) {
                 done++
-                if (done % 25 == 0) progress.report(done * 50 / total, null)
+                reportWriting(done, total)
                 val e = m.entity
                 if (e.deletedAt != null) continue                 // bin stays out of the system
                 if (e.status == 6 /* SCHEDULED */) { scheduledLater.add(m); continue }
                 val msgParts = partsByMsg[m.oldId].orEmpty()
-                if (e.isMms && e.body.isBlank() && msgParts.isEmpty()) continue // legacy blank junk
+                // placeholder/blank MMS with no parts must NOT be written: a system
+                // MMS row with zero parts crashes some stock apps (Sonim and other
+                // old-AOSP messengers choke loading it)
+                if (e.isMms && msgParts.isEmpty() &&
+                    (e.body.isBlank() || e.body == placeholderBody)) continue
                 val convoAddrs = convoById[m.oldConvoId]?.entity?.addresses
                     ?.split("|")?.filter { it.isNotBlank() }.orEmpty()
 
@@ -448,30 +558,38 @@ object BackupHelper {
                             e.address.split("|").filter { it.isNotBlank() }.ifEmpty { convoAddrs }
                         else listOf(e.address)
                         for (t in targets) {
-                            if (smsExists(resolver, t, e.body, e.date)) continue
-                            val v = android.content.ContentValues().apply {
-                                put(Telephony.Sms.ADDRESS, t)
-                                put(Telephony.Sms.BODY, e.body)
-                                put(Telephony.Sms.DATE, e.date)
-                                put(Telephony.Sms.READ, 1)
-                                put(Telephony.Sms.TYPE,
-                                    if (e.isMine) Telephony.Sms.MESSAGE_TYPE_SENT
-                                    else Telephony.Sms.MESSAGE_TYPE_INBOX)
-                                put(Telephony.Sms.THREAD_ID,
-                                    Telephony.Threads.getOrCreateThreadId(context, t))
+                            val dupKey = e.date * 31 + e.body.hashCode()
+                            if (dupKey in smsSeen) continue
+                            smsSeen.add(dupKey)
+                            if (e.locked) {
+                                // locked rows are inserted alone: we need their id back
+                                val u = resolver.insert(Telephony.Sms.CONTENT_URI, smsValues(t, e))
+                                val sysId = u?.lastPathSegment?.toLongOrNull()
+                                if (sysId != null) flagged.add(Triple(sysId, false, true))
+                            } else {
+                                smsBatch.add(smsValues(t, e))
+                                if (smsBatch.size >= 100) flushSmsBatch()
                             }
-                            val u = resolver.insert(Telephony.Sms.CONTENT_URI, v)
-                            val sysId = u?.lastPathSegment?.toLongOrNull()
-                            if (sysId != null && e.locked) flagged.add(Triple(sysId, false, true))
                         }
                     } else {
-                        val sysId = insertSystemMms(context, e, convoAddrs, msgParts, tempDir, own)
+                        val dupKey = (e.date / 1000) * 10 +
+                            (if (e.isMine) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_INBOX)
+                        if (dupKey in mmsSeen) continue
+                        mmsSeen.add(dupKey)
+                        val sysId = insertSystemMms(context, e, convoAddrs, msgParts, tempDir, own,
+                            ::threadIdFor) { fileName ->
+                            currentFile = fileName
+                            reportWriting(done, total)
+                        }
+                        currentFile = ""
                         if (sysId != null && e.locked) flagged.add(Triple(sysId, true, true))
                     }
                 } catch (_: Exception) {
                     // one bad message must not sink the restore
                 }
             }
+            flushSmsBatch()
+            reportWriting(total, total, force = true)
 
             // ---- Phase 2: wipe the app database and re-derive it with the FIXED
             //      import — blanks filtered, groups computed correctly, subjects read ----
@@ -485,10 +603,13 @@ object BackupHelper {
                 File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
             } catch (_: Exception) {}
             repo.syncSuspended = false
-            repo.importFromTelephony { pct -> progress.report(50 + pct * 45 / 100, null) }
+            val rebuilding = context.getString(
+                io.github.theonionsarewatching.nova.R.string.restore_rebuilding)
+            repo.importFromTelephony { pct -> progress.report(50 + pct * 45 / 100, rebuilding) }
 
             // ---- Phase 3: re-apply what only the app knows ----
-            progress.report(95, null)
+            progress.report(95, context.getString(
+                io.github.theonionsarewatching.nova.R.string.restore_finishing))
             for ((sysId, isMms, locked) in flagged) {
                 if (!locked) continue
                 repo.db.messages().byTelephonyId(sysId, isMms)?.let {
@@ -536,16 +657,6 @@ object BackupHelper {
         }
     }
 
-    private fun smsExists(resolver: android.content.ContentResolver, address: String, body: String, date: Long): Boolean {
-        return try {
-            resolver.query(
-                Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID),
-                "${Telephony.Sms.DATE} = ? AND ${Telephony.Sms.BODY} = ?",
-                arrayOf(date.toString(), body), null
-            )?.use { it.count > 0 } ?: false
-        } catch (_: Exception) { false }
-    }
-
     /** Insert an MMS (pdu + addr rows + parts) into the system store.
      *  The addr rows are written the way our importer expects, so re-import
      *  groups everything correctly. Returns the new system id. */
@@ -555,20 +666,12 @@ object BackupHelper {
         convoAddrs: List<String>,
         msgParts: List<RestorePart>,
         tempDir: File,
-        own: Set<String>
+        own: Set<String>,
+        threadIdFor: (Collection<String>) -> Long,
+        onFile: (String) -> Unit
     ): Long? {
         val resolver = context.contentResolver
-        // duplicate check: same second + same box
         val dateSec = e.date / 1000
-        try {
-            resolver.query(
-                Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID),
-                "${Telephony.Mms.DATE} = ? AND ${Telephony.Mms.MESSAGE_BOX} = ?",
-                arrayOf(dateSec.toString(),
-                    (if (e.isMine) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_INBOX).toString()),
-                null
-            )?.use { if (it.count > 0) return null }
-        } catch (_: Exception) {}
 
         val participants = if (e.isMine)
             e.address.split("|").filter { it.isNotBlank() }.ifEmpty { convoAddrs }
@@ -576,16 +679,26 @@ object BackupHelper {
         val threadAddrs = participants.filter { PhoneUtils.normalize(it) !in own }
             .ifEmpty { participants }
 
+        // column set mirrors what long-standing restore tools write, so strict
+        // stock messengers (old-AOSP derivatives like Sonim's) accept the rows
         val v = android.content.ContentValues().apply {
             put(Telephony.Mms.DATE, dateSec)
+            put(Telephony.Mms.DATE_SENT, dateSec)
             put(Telephony.Mms.MESSAGE_BOX,
                 if (e.isMine) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_INBOX)
             put(Telephony.Mms.READ, 1)
+            put(Telephony.Mms.SEEN, 1)
             put(Telephony.Mms.MESSAGE_TYPE, if (e.isMine) 128 else 132)
             put(Telephony.Mms.MMS_VERSION, 18)
             put(Telephony.Mms.CONTENT_TYPE, "application/vnd.wap.multipart.related")
-            put(Telephony.Mms.THREAD_ID,
-                Telephony.Threads.getOrCreateThreadId(context, threadAddrs.toSet()))
+            put(Telephony.Mms.MESSAGE_CLASS, "personal")
+            put(Telephony.Mms.PRIORITY, 129)
+            put(Telephony.Mms.READ_REPORT, 129)
+            put(Telephony.Mms.DELIVERY_REPORT, 129)
+            put(Telephony.Mms.MESSAGE_ID, "R$dateSec${(1000..9999).random()}")
+            put(Telephony.Mms.TRANSACTION_ID, "T$dateSec${(1000..9999).random()}")
+            put(Telephony.Mms.TEXT_ONLY, if (msgParts.isEmpty()) 1 else 0)
+            put(Telephony.Mms.THREAD_ID, threadIdFor(threadAddrs))
         }
         val mmsUri = resolver.insert(Telephony.Mms.CONTENT_URI, v) ?: return null
         val sysId = mmsUri.lastPathSegment?.toLongOrNull() ?: return null
@@ -623,6 +736,7 @@ object BackupHelper {
         }
         for (p in msgParts) {
             try {
+                onFile(p.name)
                 val src = File(tempDir, p.storedName)
                 if (!src.exists()) continue
                 val partUri = resolver.insert(Uri.parse("content://mms/$sysId/part"),
