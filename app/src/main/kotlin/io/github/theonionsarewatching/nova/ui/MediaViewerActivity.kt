@@ -9,6 +9,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import coil.load
+import coil.request.videoFrameMillis
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.PartEntity
 import io.github.theonionsarewatching.nova.data.Repo
@@ -77,6 +78,11 @@ class MediaViewerActivity : BaseActivity() {
 
     /** id of the part whose video session is active (playing OR paused) */
     private var activeVideoPartId = -1L
+
+    /** the live player behind the VideoView — needed for PRECISE seeking:
+     *  default seeks snap BACKWARD to the previous keyframe, so a forward hop
+     *  smaller than the keyframe gap lands where it started (looked dead) */
+    private var activeMediaPlayer: android.media.MediaPlayer? = null
 
     private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val progressTicker = object : Runnable {
@@ -162,7 +168,8 @@ class MediaViewerActivity : BaseActivity() {
                 return
             }
             vv.setVideoPath(p.filePath)
-            vv.setOnPreparedListener {
+            vv.setOnPreparedListener { mp ->
+                activeMediaPlayer = mp
                 // the still frame sits ABOVE the video surface — hide it now
                 poster?.visibility = View.GONE
                 updateMediaSoftkeys(forcePlaying = true)
@@ -170,12 +177,14 @@ class MediaViewerActivity : BaseActivity() {
             vv.setOnCompletionListener {
                 poster?.visibility = View.VISIBLE
                 activeVideoPartId = -1L
+                activeMediaPlayer = null
                 updateMediaSoftkeys()
                 binding.videoProgressRow.visibility = View.GONE
             }
             vv.setOnErrorListener { _, _, _ ->
                 poster?.visibility = View.VISIBLE
                 activeVideoPartId = -1L
+                activeMediaPlayer = null
                 updateMediaSoftkeys()
                 openWithSystemPlayer(p)
                 true
@@ -203,7 +212,15 @@ class MediaViewerActivity : BaseActivity() {
             val ceiling = (dur - 1500).coerceAtLeast(0)
             val target = (vv.currentPosition + if (forward) delta else -delta)
                 .coerceIn(0, ceiling)
-            vv.seekTo(target)
+            val mp = activeMediaPlayer
+            if (mp != null && android.os.Build.VERSION.SDK_INT >= 26) {
+                // SEEK_CLOSEST decodes forward from the prior keyframe to land
+                // exactly where asked — forward taps actually move now
+                mp.seekTo(target.toLong(), android.media.MediaPlayer.SEEK_CLOSEST)
+            } else {
+                vv.seekTo(target)
+            }
+            updateVideoProgress()
         } catch (_: Exception) {}
     }
 
@@ -243,6 +260,7 @@ class MediaViewerActivity : BaseActivity() {
                 ?.visibility = View.VISIBLE
         }
         activeVideoPartId = -1L
+        activeMediaPlayer = null
         updateMediaSoftkeys()
         progressHandler.removeCallbacks(progressTicker)
         binding.videoProgressRow.visibility = View.GONE
@@ -329,7 +347,9 @@ class MediaViewerActivity : BaseActivity() {
                     holder.b.pageVideo.tag = "video_${p.id}"
                     holder.b.pageImage.visibility = View.VISIBLE
                     holder.b.pageImage.tag = "poster_${p.id}"
-                    holder.b.pageImage.load(File(p.filePath)) // first frame via VideoFrameDecoder
+                    holder.b.pageImage.load(File(p.filePath)) {
+                        videoFrameMillis(1000) // frame zero is often black
+                    }
                 }
                 else -> {
                     holder.b.pageLabel.visibility = View.VISIBLE

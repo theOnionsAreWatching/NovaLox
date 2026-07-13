@@ -626,7 +626,17 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
-    suspend fun onSmsDelivered(messageId: Long, recipient: String, ok: Boolean) {
+    suspend fun onSmsDelivered(
+        messageId: Long, recipient: String, ok: Boolean,
+        tpStatus: Int = -1, resultCode: Int = 0
+    ) {
+        // diagnostic trail: proves whether reports ARRIVE (carrier side) and what
+        // they said — shown in the message's Details
+        val stamp = android.text.format.DateFormat.format("MM-dd HH:mm", System.currentTimeMillis())
+        db.messages().appendDeliveryDebug(
+            messageId,
+            "[$stamp] report tp=$tpStatus rc=$resultCode -> ${if (ok) "delivered" else "not delivered"}\n"
+        )
         val m = db.messages().byId(messageId) ?: return
         if (!ok) { refreshAndPing(m.convoId); return }
         if (m.recipientStatuses.isNotBlank()) {

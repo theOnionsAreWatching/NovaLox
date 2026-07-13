@@ -76,7 +76,9 @@ object Sender {
                         context, requestCode(messageId, dest, i, false), sent, piFlags()
                     )
                 )
-                if (wantDelivery && isLast) {
+                if (wantDelivery) {
+                    // attach to EVERY part: some radio stacks only honor the
+                    // status-report request per-part, and report per-part too
                     val del = Intent(context, SmsDeliveredStatusReceiver::class.java).apply {
                         putExtra(EXTRA_MESSAGE_ID, messageId)
                         putExtra(EXTRA_RECIPIENT, dest)

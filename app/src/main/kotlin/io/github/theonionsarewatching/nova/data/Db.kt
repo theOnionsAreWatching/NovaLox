@@ -105,6 +105,8 @@ data class MessageEntity(
     val blockedByKeyword: Boolean = false,
     // JSON-ish "addr=status,addr=status" per-recipient status for broadcast sends
     val recipientStatuses: String = "",
+    /** raw trail of delivery reports received for this message (diagnostics) */
+    val deliveryDebug: String = "",
     val elementsExtracted: Boolean = false,
     // reconciliation link to the system telephony provider
     val telephonyId: Long? = null,
@@ -301,6 +303,9 @@ interface MessageDao {
     @Query("UPDATE messages SET locked = :locked WHERE id = :id")
     suspend fun setLocked(id: Long, locked: Boolean)
 
+    @Query("UPDATE messages SET deliveryDebug = deliveryDebug || :line WHERE id = :id")
+    suspend fun appendDeliveryDebug(id: Long, line: String)
+
     @Query("UPDATE messages SET recipientStatuses = :v WHERE id = :id")
     suspend fun setRecipientStatuses(id: Long, v: String)
 
@@ -477,6 +482,12 @@ interface ContactNameDao {
 
 // ============================== Database ==============================
 
+val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN deliveryDebug TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE conversations ADD COLUMN customTone TEXT NOT NULL DEFAULT ''")
@@ -489,7 +500,7 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -504,7 +515,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }

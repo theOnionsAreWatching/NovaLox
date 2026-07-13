@@ -376,4 +376,8 @@
     <string name="bg_color">Color…</string>
     <string name="bg_picture">Picture…</string>
     <string name="no_file_picker">This phone has no file picker app</string>
+
+    <!-- v0.9.14 additions -->
+    <string name="detail_delivery_header">Delivery reports received:</string>
+    <string name="detail_no_reports">(none arrived — the carrier did not send a report)</string>
 </resources>

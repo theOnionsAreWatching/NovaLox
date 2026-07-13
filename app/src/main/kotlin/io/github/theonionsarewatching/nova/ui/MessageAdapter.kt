@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import coil.load
+import coil.request.videoFrameMillis
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ElementEntity
 import io.github.theonionsarewatching.nova.data.MessageEntity
@@ -162,6 +163,21 @@ class MessageAdapter(
             holder.b.thumb.visibility = View.VISIBLE
             holder.b.thumb.load(File(visual.filePath)) {
                 size(dp(220), dp(220))
+                // videos: grab a frame from 1s in — frame zero is often black
+                if (visual.isVideo()) videoFrameMillis(1000)
+            }
+            // play badge over video thumbnails
+            if (visual.isVideo()) {
+                val badge = androidx.core.content.ContextCompat.getDrawable(
+                    ctx, io.github.theonionsarewatching.nova.R.drawable.ic_play_badge
+                )
+                val layer = android.graphics.drawable.LayerDrawable(arrayOf(badge))
+                val sz = dp(40)
+                layer.setLayerGravity(0, Gravity.CENTER)
+                layer.setLayerSize(0, sz, sz)
+                holder.b.thumb.foreground = layer
+            } else {
+                holder.b.thumb.foreground = null
             }
         } else {
             holder.b.thumb.visibility = View.GONE
