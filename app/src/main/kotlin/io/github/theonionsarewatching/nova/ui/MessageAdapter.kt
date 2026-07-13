@@ -59,6 +59,12 @@ class MessageAdapter(
                     old[o].msg.id == newRows[n].msg.id
                 override fun areContentsTheSame(o: Int, n: Int) =
                     old[o].signature() == newRows[n].signature()
+                override fun getChangePayload(o: Int, n: Int): Any? {
+                    // if everything EXCEPT the meta line (status/time) is equal,
+                    // send a lightweight payload so only the meta text updates
+                    val a = old[o]; val b = newRows[n]
+                    return if (a.bodySignature() == b.bodySignature()) "meta" else null
+                }
             }, false
         )
         rows = newRows
@@ -78,6 +84,31 @@ class MessageAdapter(
     }
 
     override fun getItemCount(): Int = rows.size
+
+    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
+        if (payloads.contains("meta")) {
+            // status/time-only change: repaint just the meta line, leave the
+            // bubble and thumbnail untouched so the row doesn't flash
+            val row = rows[position]
+            val m = row.msg
+            val ctx = holder.itemView.context
+            val time = if (m.status == MsgStatus.SCHEDULED && m.scheduledAt != null)
+                ctx.getString(R.string.scheduled_for, Formatters.full(m.scheduledAt))
+            else Formatters.messageStamp(m.date)
+            val status = if (m.isMine) Sender.statusLabel(ctx, m.status) else ""
+            holder.b.metaLine.text = if (status.isNotBlank()) "$time \u00B7 $status" else time
+            holder.b.metaLine.setTextColor(
+                when (m.status) {
+                    MsgStatus.FAILED, MsgStatus.CANCELED -> Color.RED
+                    else -> Color.GRAY
+                }
+            )
+            holder.b.iconScheduled.visibility =
+                if (m.status == MsgStatus.SCHEDULED) View.VISIBLE else View.GONE
+            return
+        }
+        onBindViewHolder(holder, position)
+    }
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val row = rows[position]
@@ -270,4 +301,13 @@ fun MessageRow.signature(): String = buildString {
     append(msg.locked); append('|')
     append(msg.scheduledAt ?: 0L); append('|')
     append(parts.size)
+}
+
+/** Signature of everything the full bind renders EXCEPT the meta line, so a
+ *  status/time-only change can be applied as a partial update (no flash). */
+fun MessageRow.bodySignature(): String = buildString {
+    append(msg.body); append('|')
+    append(msg.locked); append('|')
+    append(parts.size); append('|')
+    append(msg.isMine)
 }

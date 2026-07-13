@@ -56,7 +56,8 @@ object SystemMmsSender {
         addresses: List<String>,
         attachments: List<Triple<ByteArray, String, String>>, // bytes, mime, name
         requestDeliveryReport: Boolean,
-        groupMms: Boolean
+        groupMms: Boolean,
+        linkRow: (Long) -> Unit = {}
     ): Long? {
         // ---- build the send request (mirror of Transaction.buildPdu) ----
         val req = SendReq()
@@ -107,6 +108,11 @@ object SystemMmsSender {
             Settings.DEFAULT_SUBSCRIPTION_ID
         )
         val telephonyId = messageUri?.lastPathSegment?.toLongOrNull()
+
+        // Link our app row to this store row NOW, synchronously, before the
+        // system starts sending and before any content-observer pass can see an
+        // unlinked outgoing row (that race spawned the retry duplicate).
+        if (telephonyId != null) linkRow(telephonyId)
 
         // ---- stage the composed bytes for the system to read ----
         val fileName = "send." + abs(Random.nextLong()) + ".dat"

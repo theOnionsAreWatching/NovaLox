@@ -225,6 +225,20 @@ class SettingsActivity : BaseActivity() {
                     io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS, host
                 )
             }
+            find("about_footer") {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/theOnionsAreWatching")))
+                } catch (_: Exception) {}
+            }
+            // fill the About summary with the live version name
+            findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
+                val v = try {
+                    requireContext().packageManager
+                        .getPackageInfo(requireContext().packageName, 0).versionName
+                } catch (_: Exception) { "" }
+                pref.summary = getString(R.string.about_summary_fmt, v)
+            }
             find("save_diag_log") {
                 val ctx = requireContext()
                 viewLifecycleOwner.lifecycleScope.launch {

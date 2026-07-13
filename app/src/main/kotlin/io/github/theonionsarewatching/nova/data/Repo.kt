@@ -799,11 +799,17 @@ class Repo private constructor(private val context: Context) {
                 val base = if (m.telephonyIsMms) "content://mms/" else "content://sms/"
                 context.contentResolver.delete(Uri.parse(base + tid), null, null)
             } catch (_: Exception) {}
-            // purge any OTHER app row that was ingested from that same failed
-            // store copy — otherwise it lingers as a duplicate after resend
             db.messages().deleteOthersByTelephony(tid, m.telephonyIsMms, messageId)
             db.messages().clearTelephonyId(messageId)
         }
+        // Belt beyond the link: remove any OTHER app row in this conversation
+        // that is a twin of this one (same mine-ness, same body, within a few
+        // minutes) — covers duplicates ingested from the failed store copy even
+        // when the failed row never carried a telephonyId. This is what made the
+        // retry duplicate survive earlier fixes.
+        db.messages().deleteTwins(
+            m.convoId, m.isMine, m.body, m.date - 300_000, m.date + 300_000, messageId
+        )
         db.messages().setDate(messageId, System.currentTimeMillis())
         if (m.recipientStatuses.isNotBlank()) {
             val reset = addresses.joinToString(",") { "${PhoneUtils.normalize(it)}=${MsgStatus.SENDING}" }

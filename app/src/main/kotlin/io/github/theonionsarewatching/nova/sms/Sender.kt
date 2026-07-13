@@ -194,20 +194,21 @@ object Sender {
             //      immediate store-row link). Engine path below as fallback. ----
             try {
                 val wantReport = Prefs.get(context).deliveryReports
+                val repo0 = Repo.get(context)
                 val tid = com.klinker.android.send_message.SystemMmsSender.send(
                     context, messageId, text, addresses, finalAtts,
-                    requestDeliveryReport = wantReport, groupMms = true
+                    requestDeliveryReport = wantReport, groupMms = true,
+                    linkRow = { linkedTid ->
+                        // synchronous link before the store row can be observed
+                        kotlinx.coroutines.runBlocking {
+                            repo0.db.messages().setTelephonyId(messageId, linkedTid, true)
+                        }
+                    }
                 )
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-send",
                     "own builder: msg=$messageId tid=$tid d_rpt=${if (wantReport) "YES" else "no"} parts=${finalAtts.size}"
                 )
-                if (tid != null) {
-                    val repo0 = Repo.get(context)
-                    repo0.scope.launch {
-                        repo0.db.messages().setTelephonyId(messageId, tid, true)
-                    }
-                }
                 return
             } catch (e: Exception) {
                 io.github.theonionsarewatching.nova.util.DiagLog.log(

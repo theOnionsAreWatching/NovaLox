@@ -199,4 +199,13 @@
             android:selectable="false"
             android:summary="@string/softkey_trouble_hint" />
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/about_title">
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="about_footer"
+            android:selectable="true"
+            android:title="@string/about_app_name"
+            android:summary="@string/about_summary" />
+    </PreferenceCategory>
 </PreferenceScreen>

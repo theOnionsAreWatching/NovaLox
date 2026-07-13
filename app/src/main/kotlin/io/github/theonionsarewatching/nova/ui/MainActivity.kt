@@ -468,6 +468,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 GroupParticipants.show(this, c)
             }
         }
+        items += getString(R.string.schedule_send) to { scheduleForConvo(c) }
         items += getString(R.string.chat_background) to {
             bgTargetConvoId = c.id
             io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
@@ -525,6 +526,45 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             onRight = { optionsMenu() },
             onMenu = { optionsMenu() }
         )
+    }
+
+    private fun scheduleForConvo(c: ConversationEntity) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.compose_hint)
+            setSingleLine(false)
+            maxLines = 5
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0); addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.schedule_send)
+            .setView(wrap)
+            .setPositiveButton(R.string.next) { _, _ ->
+                val body = input.text?.toString()?.trim().orEmpty()
+                if (body.isEmpty()) {
+                    android.widget.Toast.makeText(this, R.string.schedule_needs_text,
+                        android.widget.Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MINUTE, 30) }
+                android.app.DatePickerDialog(this, { _, y, mo, d ->
+                    android.app.TimePickerDialog(this, { _, h, mi ->
+                        cal.set(y, mo, d, h, mi, 0)
+                        val at = cal.timeInMillis
+                        if (at <= System.currentTimeMillis()) {
+                            android.widget.Toast.makeText(this, R.string.schedule_in_past,
+                                android.widget.Toast.LENGTH_SHORT).show()
+                            return@TimePickerDialog
+                        }
+                        lifecycleScope.launch { repo.scheduleMessage(c.id, body, at) }
+                    }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
+                }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
+                   cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // ---------------- chat background (from long-press) ----------------

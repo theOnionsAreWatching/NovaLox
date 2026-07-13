@@ -322,6 +322,21 @@ interface MessageDao {
     @Query("UPDATE messages SET deletedAt = :now, locked = 0 WHERE convoId = :convoId AND deletedAt IS NULL AND (:includeLocked = 1 OR locked = 0)")
     suspend fun softDeleteThread(convoId: Long, now: Long, includeLocked: Int)
 
+    @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0")
+    suspend fun countInConvo(convoId: Long): Int
+
+    @Query(
+        """SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL
+           AND blockedByKeyword = 0 AND (date < :beforeDate OR (date = :beforeDate AND id < :beforeId))"""
+    )
+    suspend fun countOlderThan(convoId: Long, beforeDate: Long, beforeId: Long): Int
+
+    @Query(
+        """SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL
+           AND blockedByKeyword = 0 AND (date > :afterDate OR (date = :afterDate AND id > :afterId))"""
+    )
+    suspend fun countNewerThan(convoId: Long, afterDate: Long, afterId: Long): Int
+
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND locked = 1")
     suspend fun lockedCount(convoId: Long): Int
 
@@ -386,6 +401,15 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms AND id != :keepId")
     suspend fun deleteOthersByTelephony(tId: Long, isMms: Boolean, keepId: Long)
+
+    @Query(
+        """DELETE FROM messages WHERE convoId = :convoId AND isMine = :isMine
+           AND body = :body AND date BETWEEN :lo AND :hi AND id != :keepId
+           AND deletedAt IS NULL"""
+    )
+    suspend fun deleteTwins(
+        convoId: Long, isMine: Boolean, body: String, lo: Long, hi: Long, keepId: Long
+    )
 
     @Query("UPDATE messages SET date = :date WHERE id = :id")
     suspend fun setDate(id: Long, date: Long)

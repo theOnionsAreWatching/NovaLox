@@ -317,6 +317,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
+    private suspend fun updateScrollExtent() {
+        val lm = binding.msgList.layoutManager as? BoundedLinearLayoutManager ?: return
+        if (rows.isEmpty()) { lm.totalBefore = 0; lm.totalAfter = 0; return }
+        val first = rows.first().msg
+        val last = rows.last().msg
+        lm.totalBefore = repo.db.messages().countOlderThan(convoId, first.date, first.id)
+        lm.totalAfter = repo.db.messages().countNewerThan(convoId, last.date, last.id)
+        binding.msgList.invalidate()
+    }
+
     private fun loadLatest(focusBottom: Boolean) {
         if (loading) return
         loading = true
@@ -328,6 +338,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             adapter.rows = rows
             adapter.notifyDataSetChanged()
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+            updateScrollExtent()
             if (focusBottom) {
                 binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
                 enterComposeMode()
@@ -355,6 +366,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 rows.addAll(0, newRows)
                 adapter.rows = rows
                 adapter.notifyItemRangeInserted(0, newRows.size)
+                updateScrollExtent()
                 if (anchorPos >= 0) {
                     (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
                         ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
@@ -377,6 +389,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 rows.addAll(newRows)
                 adapter.rows = rows
                 adapter.notifyItemRangeInserted(start, newRows.size)
+                updateScrollExtent()
             }
             loading = false
         }
@@ -401,6 +414,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             adapter.notifyDataSetChanged()
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             val pos = rows.indexOfFirst { it.msg.id == targetId }.coerceAtLeast(0)
+            updateScrollExtent()
             enterScrollMode(focusPos = pos)
             loading = false
         }
@@ -422,6 +436,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             hasMoreOlder = latest.size >= requested
             adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+            updateScrollExtent()
             if (wasCompose) {
                 binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
             } else if (focusedId != null) {

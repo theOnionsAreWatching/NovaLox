@@ -18,6 +18,28 @@ class BoundedLinearLayoutManager(
     private val maxStepPx: () -> Int
 ) : LinearLayoutManager(context) {
 
+    // Honest scrollbar for a lazily-paged list. The default computation counts
+    // only LOADED items, so when loadOlder() inserts a page the reported range
+    // leaps and the thumb jumps ("hits the top early, then realigns"). We report
+    // the range in terms of the WHOLE conversation: [totalBefore] rows exist
+    // above the loaded window, so the range is (loaded + totalBefore) and the
+    // offset is shifted by totalBefore. The thumb then stays proportional to the
+    // entire thread and grows smoothly as pages load in.
+    var totalBefore: Int = 0          // messages older than the loaded window
+    var totalAfter: Int = 0           // messages newer than the loaded window
+    private val avgRowPx get() = maxStepPx().coerceAtLeast(24) * 3
+
+    override fun computeVerticalScrollRange(state: RecyclerView.State): Int {
+        val base = super.computeVerticalScrollRange(state)
+        return base + (totalBefore + totalAfter) * avgRowPx
+    }
+
+    override fun computeVerticalScrollOffset(state: RecyclerView.State): Int {
+        val base = super.computeVerticalScrollOffset(state)
+        return base + totalBefore * avgRowPx
+    }
+
+
     override fun requestChildRectangleOnScreen(
         parent: RecyclerView, child: View, rect: Rect, immediate: Boolean, focusedChildVisible: Boolean
     ): Boolean {

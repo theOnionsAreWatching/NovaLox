@@ -59,19 +59,30 @@ object ChatBackground {
     }
 
     private fun pickFromGallery(activity: Activity, convoId: Long) {
+        val req = if (convoId == ALL_THREADS) REQ_BG_GALLERY_ALL else REQ_BG_GALLERY
         try {
-            val i = Intent(Intent.ACTION_PICK).apply {
-                setDataAndType(
-                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*"
-                )
+            // GET_CONTENT + a chooser so EVERY gallery/photos app is offered,
+            // not just the system default (same pattern as picking attachments)
+            val base = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
             }
-            activity.startActivityForResult(
-                i, if (convoId == ALL_THREADS) REQ_BG_GALLERY_ALL else REQ_BG_GALLERY
-            )
+            val chooser = Intent.createChooser(base, activity.getString(R.string.bg_pick_app))
+            activity.startActivityForResult(chooser, req)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(
-                activity, R.string.no_gallery, android.widget.Toast.LENGTH_LONG
-            ).show()
+            // fall back to a direct gallery pick if no chooser can be built
+            try {
+                val i = Intent(Intent.ACTION_PICK).apply {
+                    setDataAndType(
+                        android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*"
+                    )
+                }
+                activity.startActivityForResult(i, req)
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(
+                    activity, R.string.no_gallery, android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -96,11 +107,20 @@ object ChatBackground {
                     layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
                         setMargins(dp(5), dp(5), dp(5), dp(5))
                     }
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(hex))
-                        setStroke(dp(1), 0x55000000)
-                    }
+                    // ring visible on any swatch: a light halo + dark hairline,
+                    // so pale colors show a dark edge and dark colors a light one
+                    background = android.graphics.drawable.LayerDrawable(arrayOf(
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(Color.parseColor(hex))
+                            setStroke(dp(2), 0x66FFFFFF.toInt())
+                        },
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(Color.TRANSPARENT)
+                            setStroke(dp(1), 0x66000000)
+                        }
+                    ))
                     isFocusable = true
                     setOnClickListener {
                         prefs.setChatBg(convoId, hex)

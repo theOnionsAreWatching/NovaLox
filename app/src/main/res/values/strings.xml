@@ -399,4 +399,12 @@
     <string name="respond_delivery">Respond to delivery requests</string>
     <string name="respond_delivery_summary">Send a delivery confirmation when others request one</string>
     <string name="compressing_video">Compressing video…</string>
+
+    <!-- v0.9.23 additions -->
+    <string name="bg_pick_app">Choose an app</string>
+    <string name="next">Next</string>
+    <string name="about_title">About</string>
+    <string name="about_app_name">D-SMS (NovaLox)</string>
+    <string name="about_summary">by github.com/theOnionsAreWatching</string>
+    <string name="about_summary_fmt">Version %1$s · by github.com/theOnionsAreWatching</string>
 </resources>
