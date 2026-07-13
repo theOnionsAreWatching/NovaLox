@@ -133,7 +133,14 @@ object Sender {
             // ---- fit the carrier's size budget (engine enforces 800 KB) ----
             // Raw camera photos are megabytes; oversize PDUs fail with the
             // system's IO error (rc=5). Shrink images; refuse what can't shrink.
-            val cap = 700 * 1024 // safety margin under the 800 KB enforcement
+            // the carrier's own limit for this SIM (the AOSP Messaging approach),
+            // minus slop for headers + the SMIL compatibility part
+            val limits = io.github.theonionsarewatching.nova.util.CarrierMms.limits(context)
+            val cap = limits.maxBytes - 30 * 1024
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-send",
+                "carrier limits: max=${limits.maxBytes / 1024} KB imgW=${limits.maxImageWidth} imgH=${limits.maxImageHeight}"
+            )
             data class Att(val bytes: ByteArray, val mime: String, val name: String)
             val loaded = ArrayList<Att>()
             for ((path, mime, name) in attachments) {
@@ -166,8 +173,10 @@ object Sender {
             val finalAtts = ArrayList<Triple<ByteArray, String, String>>()
             for (a in loaded) {
                 if (shrinkable(a) && a.bytes.size > perImageBudget) {
+                    val edge = maxOf(limits.maxImageWidth, limits.maxImageHeight)
+                        .takeIf { it > 0 }?.coerceAtMost(1600) ?: 1600
                     val shrunk = io.github.theonionsarewatching.nova.util
-                        .MediaShrink.shrinkToBudget(a.bytes, perImageBudget)
+                        .MediaShrink.shrinkToBudget(a.bytes, perImageBudget, edge)
                     if (shrunk != null) {
                         val jpgName = a.name.substringBeforeLast('.', a.name) + ".jpg"
                         io.github.theonionsarewatching.nova.util.DiagLog.log(

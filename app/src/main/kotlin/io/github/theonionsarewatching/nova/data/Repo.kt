@@ -293,8 +293,8 @@ class Repo private constructor(private val context: Context) {
         // delivery-ind (134): the carrier's "your picture message was delivered"
         // notice. Match it to the sent message via the MMS Message-ID and mark
         // that message delivered, then skip ingesting the notice itself.
-        if (mType == 134) {
-            handleMmsDeliveryInd(mmsId)
+        if (mType == 134 || mType == 136) {
+            handleMmsIndication(mmsId, mType)
             return null
         }
 
@@ -645,7 +645,7 @@ class Repo private constructor(private val context: Context) {
 
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
-    private suspend fun handleMmsDeliveryInd(indId: Long) {
+    private suspend fun handleMmsIndication(indId: Long, mType: Int) {
         try {
             var origMessageId: String? = null
             var st = -1
@@ -659,7 +659,8 @@ class Repo private constructor(private val context: Context) {
                 }
             }
             io.github.theonionsarewatching.nova.util.DiagLog.log(
-                context, "mms-delivery", "delivery-ind: m_id=$origMessageId st=$st"
+                context, "mms-delivery",
+                "${if (mType == 136) "read-orig-ind" else "delivery-ind"}: m_id=$origMessageId st=$st"
             )
             val mid = origMessageId ?: return
             // find the SENT telephony row carrying that Message-ID
@@ -673,10 +674,13 @@ class Repo private constructor(private val context: Context) {
             val m = db.messages().byTelephonyMms(tId) ?: return
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
-            // X-Mms-Status: 129 = Retrieved (delivered); others noted in the trail
-            val delivered = st == 129
+            // delivery-ind X-Mms-Status: 129 = Retrieved (delivered).
+            // read-orig-ind means the recipient READ it — delivered a fortiori.
+            val delivered = st == 129 || mType == 136
             db.messages().appendDeliveryDebug(
-                m.id, "[$stamp] MMS delivery report st=$st -> ${if (delivered) "delivered" else "not delivered"}\n"
+                m.id,
+                "[$stamp] MMS ${if (mType == 136) "READ report" else "delivery report"} st=$st -> " +
+                    "${if (delivered) "delivered" else "not delivered"}\n"
             )
             if (delivered && m.status == MsgStatus.SENT) {
                 setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)

@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.telephony.SmsManager
-import com.android.mms.MmsConfig
 import com.android.mms.dom.smil.parser.SmilXmlSerializer
 import com.google.android.mms.smil.SmilHelper
 import com.google.android.mms.ContentType
@@ -121,7 +120,10 @@ object SystemMmsSender {
 
         val overrides = Bundle().apply {
             putBoolean(SmsManager.MMS_CONFIG_GROUP_MMS_ENABLED, groupMms)
-            putInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE, MmsConfig.getMaxMessageSize())
+            putInt(
+                SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
+                io.github.theonionsarewatching.nova.util.CarrierMms.limits(context).maxBytes
+            )
         }
 
         val sentIntent = Intent(

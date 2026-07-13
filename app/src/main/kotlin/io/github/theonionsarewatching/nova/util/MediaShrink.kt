@@ -19,14 +19,14 @@ object MediaShrink {
      * Returns JPEG bytes no larger than [budget], or null when the input can't
      * be decoded (caller then sends the original and lets the engine decide).
      */
-    fun shrinkToBudget(input: ByteArray, budget: Int): ByteArray? {
+    fun shrinkToBudget(input: ByteArray, budget: Int, maxEdge: Int = MAX_EDGE): ByteArray? {
         return try {
             // pass 1: bounds only, choose a power-of-two sample size
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(input, 0, input.size, bounds)
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
             var sample = 1
-            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_EDGE) {
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxEdge) {
                 sample *= 2
             }
             var bmp = BitmapFactory.decodeByteArray(
