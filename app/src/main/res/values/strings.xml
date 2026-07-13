@@ -348,9 +348,11 @@
 
     <!-- v0.9.6 additions -->
     <string name="restore_writing_detail">Message %1$d of %2$d</string>
-    <string name="restore_eta">about %1$s left</string>
-    <string name="eta_seconds">%1$d sec</string>
-    <string name="eta_minutes">%1$d min</string>
     <string name="restore_rebuilding">Rebuilding conversations…</string>
     <string name="restore_finishing">Restoring locks and settings…</string>
+
+    <!-- v0.9.7 additions -->
+    <string name="run_in_background">Run in background</string>
+    <string name="background_warning">Continuing in the background — messages may look incomplete until it finishes</string>
+    <string name="search_hint">Search messages</string>
 </resources>

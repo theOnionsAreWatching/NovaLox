@@ -60,10 +60,18 @@
             android:layout_height="wrap_content"
             android:focusable="false"
             android:focusableInTouchMode="false"
-            android:hint="@string/menu_search"
+            android:hint="@string/search_hint"
             android:imeOptions="actionSearch"
             android:inputType="text"
             android:maxLines="1"
+            android:background="@drawable/bg_search"
+            android:drawableStart="@drawable/ic_search"
+            android:drawablePadding="10dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textSize="14sp"
             android:importantForAutofill="no" />
     </LinearLayout>
 

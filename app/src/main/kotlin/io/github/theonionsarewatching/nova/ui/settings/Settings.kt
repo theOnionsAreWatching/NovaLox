@@ -81,6 +81,9 @@ class SettingsActivity : BaseActivity() {
                 startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SearchActivity::class.java))
             }
             find("backup_now") {
+                if (io.github.theonionsarewatching.nova.util.BackgroundTasks.running) {
+                    attachTaskDialog(); return@find
+                }
                 val name = "nova-backup-" + java.text.SimpleDateFormat(
                     "yyyyMMdd-HHmm", java.util.Locale.US
                 ).format(java.util.Date()) + ".zip"
@@ -99,6 +102,9 @@ class SettingsActivity : BaseActivity() {
                 }
             }
             find("restore_backup") {
+                if (io.github.theonionsarewatching.nova.util.BackgroundTasks.running) {
+                    attachTaskDialog(); return@find
+                }
                 AlertDialog.Builder(requireContext())
                     .setTitle(R.string.restore_title)
                     .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessage(
@@ -125,14 +131,19 @@ class SettingsActivity : BaseActivity() {
                         requireActivity(), R.string.reimport_warning))
                     .setPositiveButton(R.string.pref_reimport) { _, _ ->
                         val ctx = requireContext()
-                        val ui = ProgressUi(ctx, R.string.reimporting)
-                        viewLifecycleOwner.lifecycleScope.launch {
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                io.github.theonionsarewatching.nova.data.Repo.get(ctx)
-                                    .reimportAll { pct -> ui.bar.post { ui.update(pct, null) } }
+                        val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
+                        if (bt.running) { attachTaskDialog(); return@setPositiveButton }
+                        if (!bt.start(ctx, R.string.reimporting,
+                                R.string.reimport_done, R.string.reimport_done)) return@setPositiveButton
+                        attachTaskDialog()
+                        bt.scope.launch {
+                            try {
+                                io.github.theonionsarewatching.nova.data.Repo.get(ctx.applicationContext)
+                                    .reimportAll { pct -> bt.report(pct, null) }
+                                bt.finish(true)
+                            } catch (_: Exception) {
+                                bt.finish(false)
                             }
-                            ui.dismiss()
-                            Toast.makeText(ctx, R.string.reimport_done, Toast.LENGTH_LONG).show()
                         }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -316,7 +327,10 @@ class SettingsActivity : BaseActivity() {
         }
 
         /** Progress dialog with a determinate bar + a small detail line. */
-        private class ProgressUi(ctx: android.content.Context, titleRes: Int) {
+        private class ProgressUi(
+            ctx: android.content.Context, titleRes: Int,
+            onBackground: (() -> Unit)? = null
+        ) {
             val bar = android.widget.ProgressBar(
                 ctx, null, android.R.attr.progressBarStyleHorizontal
             ).apply { max = 100; isIndeterminate = true }
@@ -335,6 +349,11 @@ class SettingsActivity : BaseActivity() {
                     addView(detail)
                 })
                 .setCancelable(false)
+                .apply {
+                    if (onBackground != null) {
+                        setNeutralButton(R.string.run_in_background) { _, _ -> onBackground() }
+                    }
+                }
                 .show()
 
             fun update(percent: Int, text: String?) {
@@ -389,28 +408,47 @@ class SettingsActivity : BaseActivity() {
                 .show()
         }
 
+        /** Progress dialog for the app-wide task, detachable to the background. */
+        private fun attachTaskDialog() {
+            val ctx = requireContext()
+            val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
+            var ui: ProgressUi? = null
+            ui = ProgressUi(ctx, bt.titleRes) {
+                // "Run in background": detach the viewer, keep the task going
+                bt.attach(null, null)
+                ui?.dismiss()
+                Toast.makeText(ctx, R.string.background_warning, Toast.LENGTH_LONG).show()
+            }
+            bt.attach(
+                update = { p, d -> ui?.update(p, d) },
+                done = { ok ->
+                    ui?.dismiss()
+                    Toast.makeText(ctx,
+                        if (ok) bt.toastOk else bt.toastFail, Toast.LENGTH_LONG).show()
+                }
+            )
+        }
+
         private fun runBackupTask(exporting: Boolean, uri: android.net.Uri) {
             val ctx = requireContext()
-            val ui = ProgressUi(ctx, if (exporting) R.string.backing_up else R.string.restoring)
-            viewLifecycleOwner.lifecycleScope.launch {
-                val reporter = progressReporter(ui)
-                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx, uri, reporter)
-                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx, uri, reporter)
+            val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
+            if (bt.running) { attachTaskDialog(); return }
+            val okRes = if (exporting) R.string.backup_done else R.string.restore_done
+            val failRes = if (exporting) R.string.backup_failed else R.string.restore_failed
+            if (!bt.start(ctx, if (exporting) R.string.backing_up else R.string.restoring, okRes, failRes)) return
+            attachTaskDialog()
+            bt.scope.launch {
+                val reporter = io.github.theonionsarewatching.nova.data.BackupHelper.Progress { p, d ->
+                    bt.report(p, d)
                 }
-                ui.dismiss()
-                Toast.makeText(
-                    ctx,
-                    when {
-                        exporting && ok -> R.string.backup_done
-                        exporting -> R.string.backup_failed
-                        ok -> R.string.restore_done
-                        else -> R.string.restore_failed
-                    },
-                    Toast.LENGTH_LONG
-                ).show()
+                val ok = try {
+                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx.applicationContext, uri, reporter)
+                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx.applicationContext, uri, reporter)
+                } catch (_: Exception) { false }
+                bt.finish(ok)
             }
         }
+
     }
 }
 

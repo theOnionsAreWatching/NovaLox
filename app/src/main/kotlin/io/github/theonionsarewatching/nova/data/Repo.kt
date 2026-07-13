@@ -265,18 +265,41 @@ class Repo private constructor(private val context: Context) {
         }
 
         // not downloaded yet (notification-ind): show a placeholder, not a blank row
-        val mType = try {
-            resolver.query(Uri.parse("content://mms"), arrayOf("m_type"),
+        var mType = 0
+        var trId: String? = null
+        try {
+            resolver.query(Uri.parse("content://mms"), arrayOf("m_type", "tr_id"),
                 "_id = ?", arrayOf(mmsId.toString()), null)?.use { c ->
-                if (c.moveToFirst()) c.getInt(0) else 0
-            } ?: 0
-        } catch (_: Exception) { 0 }
+                if (c.moveToFirst()) { mType = c.getInt(0); trId = c.getString(1) }
+            }
+        } catch (_: Exception) {}
+        // when auto-download is ON, the notification-ind is transient bookkeeping —
+        // the downloaded copy (132) arrives moments later. Ingesting it created a
+        // phantom "not downloaded" message next to every MMS.
+        if (mType == 130 && Prefs.get(context).autoDownloadMms) return null
         val notDownloaded = mType == 130
         // the mms table also holds protocol rows with no content — delivery reports,
         // read reports, acknowledgements (m_type 129/131/133/134/135/136...). These
         // imported as BLANK messages next to the real MMS. Only actual messages pass:
         // 128 = outgoing send-request, 132 = downloaded incoming, 130 = placeholder.
         if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return null
+
+        // a downloaded copy replaces its own notification placeholder (matched by
+        // transaction id) — covers users who toggled auto-download mid-stream
+        if (mType == 132 && !trId.isNullOrBlank()) {
+            try {
+                resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                    "m_type = 130 AND tr_id = ?", arrayOf(trId), null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val nid = c.getLong(0)
+                        db.messages().byTelephonyMms(nid)?.let { ph ->
+                            db.messages().hardDelete(ph.id)
+                            refreshConversation(ph.convoId)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         // addresses
         val from = ArrayList<String>()

@@ -24,6 +24,8 @@ class Prefs(context: Context) {
         get() = (sp.getString("learned_own_numbers", "") ?: "")
             .split(",").filter { it.isNotBlank() }.toSet()
         set(v) = sp.edit().putString("learned_own_numbers", v.joinToString(",")).apply()
+    val autoDownloadMms: Boolean
+        get() = sp.getBoolean("auto_download_mms", true)
     val deleteApkAfterUpdate: Boolean
         get() = sp.getBoolean("delete_apk_after_update", true)
     var pendingUpdateDownloadId: Long

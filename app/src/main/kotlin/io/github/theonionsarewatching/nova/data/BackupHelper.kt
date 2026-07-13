@@ -485,7 +485,6 @@ object BackupHelper {
             }
 
             // live progress with an estimate
-            val phaseStart = System.currentTimeMillis()
             var lastReport = 0L
             var currentFile = ""
             fun reportWriting(done: Int, total: Int, force: Boolean = false) {
@@ -495,16 +494,6 @@ object BackupHelper {
                 var detail = context.getString(
                     io.github.theonionsarewatching.nova.R.string.restore_writing_detail, done, total)
                 if (currentFile.isNotBlank()) detail += " \u00B7 " + currentFile
-                if (done >= 20) {
-                    val remainMs = (now - phaseStart) * (total - done) / done
-                    val eta = if (remainMs < 60_000)
-                        context.getString(io.github.theonionsarewatching.nova.R.string.eta_seconds,
-                            (remainMs / 1000).coerceAtLeast(1))
-                    else context.getString(io.github.theonionsarewatching.nova.R.string.eta_minutes,
-                        remainMs / 60_000 + 1)
-                    detail += " \u00B7 " + context.getString(
-                        io.github.theonionsarewatching.nova.R.string.restore_eta, eta)
-                }
                 progress.report(done * 50 / total, detail)
             }
 

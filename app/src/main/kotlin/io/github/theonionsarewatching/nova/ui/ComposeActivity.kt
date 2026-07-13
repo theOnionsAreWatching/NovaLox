@@ -43,7 +43,6 @@ class ComposeActivity : BaseActivity() {
         binding.suggestionList.adapter = suggestionAdapter
 
         binding.btnBack.setOnClickListener { finish() }
-        binding.btnAddRecipient.setOnClickListener { addTypedRecipient() }
         binding.btnGroupMode.setOnClickListener { pickGroupMode() }
         binding.btnStart.setOnClickListener { start() }
         binding.btnComposeAttach.setOnClickListener { pickAttachment() }
@@ -69,7 +68,7 @@ class ComposeActivity : BaseActivity() {
             binding.sendRow.visibility = View.GONE
         }
 
-        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnAddRecipient, binding.btnComposeAttach)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnComposeAttach)
         ThemeUtils.applyButtonFocus(binding.btnStart)
         ThemeUtils.applyFocusHighlight(
             binding.recipientInput, binding.bodyInput, binding.recipientChips,
@@ -111,6 +110,18 @@ class ComposeActivity : BaseActivity() {
             }
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let { binding.bodyInput.setText(it) }
             intent.getStringExtra("prefill_body")?.let { binding.bodyInput.setText(it) }
+
+            // shared FROM other apps (gallery etc.): stage the media as attachments
+            val streams = ArrayList<Uri>()
+            if (intent.action == Intent.ACTION_SEND) {
+                @Suppress("DEPRECATION")
+                (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)?.let { streams.add(it) }
+            } else if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    ?.let { streams.addAll(it) }
+            }
+            if (streams.isNotEmpty()) stageIncomingUris(streams)
         } catch (_: Exception) {
             // never crash on a malformed external intent — open blank instead
         }
@@ -210,6 +221,12 @@ class ComposeActivity : BaseActivity() {
         data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
         data?.data?.let { if (uris.isEmpty()) uris.add(it) }
         if (uris.isEmpty()) return
+        stageIncomingUris(uris)
+    }
+
+    /** Copies content URIs into app storage and stages them as attachments.
+     *  Used by the attach picker AND by media shared from other apps. */
+    private fun stageIncomingUris(uris: List<Uri>) {
         lifecycleScope.launch {
             for (uri in uris) {
                 try {

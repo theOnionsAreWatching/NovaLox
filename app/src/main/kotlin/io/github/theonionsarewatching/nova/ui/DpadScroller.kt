@@ -80,7 +80,7 @@ class DpadScroller(
             } else {
                 lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 }
             } ?: if (down) count - 1 else 0
-            focusPosition(anchor)
+            focusPosition(anchor, down)
             return true
         }
 
@@ -113,18 +113,24 @@ class DpadScroller(
             // at the boundary
             return onEdge?.invoke(down) == true
         }
-        focusPosition(finalTarget)
+        focusPosition(finalTarget, down)
         return true
     }
 
-    fun focusPosition(position: Int) {
+    fun focusPosition(position: Int) = focusPosition(position, null)
+
+    /** towardBottom: when jumping to a not-yet-laid-out row during fast scroll,
+     *  place it at the bottom edge (scrolling down) or top edge (scrolling up),
+     *  so the focus stays on the leading edge of the movement. */
+    fun focusPosition(position: Int, towardBottom: Boolean?) {
         val lm = rv.layoutManager as? LinearLayoutManager ?: return
         val existing = rv.findViewHolderForAdapterPosition(position)
         if (existing != null) {
             // the (bounded) layout manager handles keeping it in view
             existing.itemView.requestFocus()
         } else {
-            lm.scrollToPositionWithOffset(position, 0)
+            val offset = if (towardBottom == true) (rv.height * 2 / 3).coerceAtLeast(0) else 0
+        lm.scrollToPositionWithOffset(position, offset)
             rv.post {
                 rv.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
             }

@@ -80,16 +80,6 @@
             android:maxLines="1"
             android:imeOptions="actionDone"
             android:importantForAutofill="no" />
-
-        <ImageButton
-            android:id="@+id/btnAddRecipient"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:layout_marginStart="4dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/add"
-            android:scaleType="centerInside"
-            android:src="@drawable/ic_add" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
