@@ -799,6 +799,9 @@ class Repo private constructor(private val context: Context) {
                 val base = if (m.telephonyIsMms) "content://mms/" else "content://sms/"
                 context.contentResolver.delete(Uri.parse(base + tid), null, null)
             } catch (_: Exception) {}
+            // purge any OTHER app row that was ingested from that same failed
+            // store copy — otherwise it lingers as a duplicate after resend
+            db.messages().deleteOthersByTelephony(tid, m.telephonyIsMms, messageId)
             db.messages().clearTelephonyId(messageId)
         }
         db.messages().setDate(messageId, System.currentTimeMillis())

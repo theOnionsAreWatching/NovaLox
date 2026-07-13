@@ -47,6 +47,24 @@ class MessageAdapter(
 
     var rows: List<MessageRow> = emptyList()
 
+    /** Replace the data with a minimal diff — only genuinely changed rows
+     *  rebind, so a status tick no longer repaints (and flashes) the screen. */
+    fun submit(newRows: List<MessageRow>) {
+        val old = rows
+        val diff = androidx.recyclerview.widget.DiffUtil.calculateDiff(
+            object : androidx.recyclerview.widget.DiffUtil.Callback() {
+                override fun getOldListSize() = old.size
+                override fun getNewListSize() = newRows.size
+                override fun areItemsTheSame(o: Int, n: Int) =
+                    old[o].msg.id == newRows[n].msg.id
+                override fun areContentsTheSame(o: Int, n: Int) =
+                    old[o].signature() == newRows[n].signature()
+            }, false
+        )
+        rows = newRows
+        diff.dispatchUpdatesTo(this)
+    }
+
     override fun getItemId(position: Int): Long = rows[position].msg.id
 
     class VH(val b: ItemMessageBinding) : androidx.recyclerview.widget.RecyclerView.ViewHolder(b.root)
@@ -215,19 +233,24 @@ class MessageAdapter(
         )
         holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
-        // selection is a FOREGROUND wash + accent outline, drawn over whatever
-        // the background shows — so a focused row still shows its focus shade
-        // and a selected row is unmistakable even while focused
+        // focus shade stays on the row; SELECTION now outlines the bubble itself
+        // (or the plain/accent content), so the highlight hugs the message shape
         holder.b.root.background = ThemeUtils.focusFill(ctx)
+        holder.b.root.foreground = null
         if (isSelected(m.id)) {
             val accent2 = ThemeUtils.accentColor(ctx)
-            val strokePx = (3 * ctx.resources.displayMetrics.density).toInt()
-            holder.b.root.foreground = android.graphics.drawable.GradientDrawable().apply {
-                setColor(withAlpha(accent2, 96))
+            val strokePx = (2 * ctx.resources.displayMetrics.density).toInt()
+            val base = holder.b.bubbleBox.background
+            val sel = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                // faint fill only when there's no bubble behind (plain style),
+                // otherwise just the outline so the bubble color shows through
+                setColor(if (base == null) withAlpha(accent2, 40) else Color.TRANSPARENT)
                 setStroke(strokePx, accent2)
             }
+            holder.b.bubbleBox.foreground = sel
         } else {
-            holder.b.root.foreground = null
+            holder.b.bubbleBox.foreground = null
         }
 
         holder.itemView.setOnClickListener { onPress(row) }
@@ -236,4 +259,15 @@ class MessageAdapter(
 
     private fun withAlpha(color: Int, alpha: Int): Int =
         Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+}
+
+/** Content fingerprint for DiffUtil: any field the row DISPLAYS. When two
+ *  rows share an id but differ here, exactly that row rebinds. */
+fun MessageRow.signature(): String = buildString {
+    append(msg.status); append('|')
+    append(msg.body); append('|')
+    append(msg.date); append('|')
+    append(msg.locked); append('|')
+    append(msg.scheduledAt ?: 0L); append('|')
+    append(parts.size)
 }

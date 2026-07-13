@@ -25,8 +25,9 @@ import io.github.theonionsarewatching.nova.data.ConversationEntity
 import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
+import java.io.File
 
-class MainActivity : BaseActivity() {
+class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.ChatBackground.Host {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: ConversationAdapter
@@ -160,6 +161,14 @@ class MainActivity : BaseActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if ((requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL ||
+             requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_GALLERY ||
+             requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_GALLERY_ALL)
+            && resultCode == RESULT_OK
+        ) {
+            data?.data?.let { copyBackgroundFrom(it) }
+            return
+        }
         if (requestCode == 101 && resultCode == Activity.RESULT_OK) {
             // onResume will pick it up
         }
@@ -459,6 +468,10 @@ class MainActivity : BaseActivity() {
                 GroupParticipants.show(this, c)
             }
         }
+        items += getString(R.string.chat_background) to {
+            bgTargetConvoId = c.id
+            io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
+        }
         items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         items += getString(R.string.hide_conversation) to {
@@ -512,6 +525,42 @@ class MainActivity : BaseActivity() {
             onRight = { optionsMenu() },
             onMenu = { optionsMenu() }
         )
+    }
+
+    // ---------------- chat background (from long-press) ----------------
+    private var bgTargetConvoId = -1L
+
+    override fun applyBackgroundForCurrent() {
+        // the main list has no backdrop of its own; nothing to repaint here.
+        // The chosen background shows when the thread opens.
+    }
+
+    override fun startPicturePickerForBackground(convoId: Long) {
+        bgTargetConvoId = convoId
+        try {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            }
+            startActivityForResult(i, io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, R.string.no_file_picker,
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun copyBackgroundFrom(uri: Uri) {
+        lifecycleScope.launch {
+            try {
+                val dir = File(filesDir, "backgrounds").apply { mkdirs() }
+                val dest = File(dir, "bg_$bgTargetConvoId")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { input.copyTo(it) }
+                }
+                if (dest.exists() && dest.length() > 0) {
+                    prefs.setChatBg(bgTargetConvoId, dest.absolutePath)
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     // ---------------- conversation multi-select ----------------

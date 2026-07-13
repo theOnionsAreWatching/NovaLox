@@ -384,6 +384,9 @@ interface MessageDao {
     @Query("UPDATE messages SET telephonyId = NULL WHERE id = :id")
     suspend fun clearTelephonyId(id: Long)
 
+    @Query("DELETE FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms AND id != :keepId")
+    suspend fun deleteOthersByTelephony(tId: Long, isMms: Boolean, keepId: Long)
+
     @Query("UPDATE messages SET date = :date WHERE id = :id")
     suspend fun setDate(id: Long, date: Long)
 

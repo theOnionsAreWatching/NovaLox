@@ -24,9 +24,17 @@ class Prefs(context: Context) {
         get() = (sp.getString("learned_own_numbers", "") ?: "")
             .split(",").filter { it.isNotBlank() }.toSet()
         set(v) = sp.edit().putString("learned_own_numbers", v.joinToString(",")).apply()
-    fun chatBg(convoId: Long): String = sp.getString("chat_bg_$convoId", "") ?: ""
-    fun setChatBg(convoId: Long, v: String) =
-        sp.edit().putString("chat_bg_$convoId", v).apply()
+    fun chatBg(convoId: Long): String {
+        if (convoId == -1L) return sp.getString("chat_bg_all", "") ?: ""
+        val own = sp.getString("chat_bg_$convoId", null)
+        // a thread with no setting of its own inherits the app-wide default
+        if (own != null) return own
+        return sp.getString("chat_bg_all", "") ?: ""
+    }
+    fun setChatBg(convoId: Long, v: String) {
+        val key = if (convoId == -1L) "chat_bg_all" else "chat_bg_$convoId"
+        sp.edit().putString(key, v).apply()
+    }
     val autoDownloadMms: Boolean
         get() = sp.getBoolean("auto_download_mms", true)
     val deleteApkAfterUpdate: Boolean
@@ -72,6 +80,7 @@ class Prefs(context: Context) {
     // ---- behavior ----
     val showSearchBar: Boolean get() = sp.getBoolean("show_search_bar", false)
     val deliveryReports: Boolean get() = sp.getBoolean("delivery_reports", true)
+    val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     // broadcast / group_mms : default for NEW group conversations
     val defaultGroupMode: String get() = sp.getString("default_group_mode", "group_mms") ?: "group_mms"
     // auto / ask / never

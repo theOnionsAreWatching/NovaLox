@@ -78,11 +78,23 @@
             app:iconSpaceReserved="false"
             android:key="open_search"
             android:title="@string/open_search_pref" />
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="all_backgrounds"
+            android:title="@string/pref_all_backgrounds"
+            android:summary="@string/pref_all_backgrounds_summary" />
         <SwitchPreferenceCompat
             app:singleLineTitle="false"
             app:iconSpaceReserved="false"
             android:key="delivery_reports"
             android:title="@string/pref_delivery_reports"
+            android:defaultValue="true" />
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="respond_delivery"
+            android:title="@string/respond_delivery"
+            android:summary="@string/respond_delivery_summary"
             android:defaultValue="true" />
         <ListPreference
             app:iconSpaceReserved="false"

@@ -75,6 +75,11 @@ class SmsDeliverReceiver : BroadcastReceiver() {
 
 /** The engine's PushReceiver downloads the MMS, persists it into the telephony
  *  provider and then hands off here (located via the MMS_RECEIVED taskAffinity). */
+// Whether we send a delivery confirmation back when an incoming message
+// requests one is governed by Prefs.respondToDeliveryRequests. The library's
+// received-receiver performs the mandatory DOWNLOAD acknowledgment (needed to
+// complete reception) unconditionally; that is separate from a delivery report
+// to the sender. We honor the user's choice for the latter.
 class MmsReceiver : MmsReceivedReceiver() {
 
     override fun isAddressBlocked(context: Context, address: String): Boolean =

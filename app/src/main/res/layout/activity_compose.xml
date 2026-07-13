@@ -140,8 +140,7 @@
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginTop="3dp"
-        android:layout_marginBottom="3dp"
-        android:background="@drawable/bg_input_box">
+        android:layout_marginBottom="3dp">
 
     <EditText
         android:id="@+id/bodyInput"

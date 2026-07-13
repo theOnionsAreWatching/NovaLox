@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Calendar
 
-class ThreadActivity : BaseActivity() {
+class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.ChatBackground.Host {
 
     companion object {
         const val EXTRA_CONVO_ID = "convo_id"
@@ -420,8 +420,7 @@ class ThreadActivity : BaseActivity() {
             val latest = repo.db.messages().latest(convoId, requested).reversed()
             rows = ArrayList(buildRows(latest))
             hasMoreOlder = latest.size >= requested
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
+            adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             if (wasCompose) {
                 binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
@@ -704,7 +703,10 @@ class ThreadActivity : BaseActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_CHAT_BG && resultCode == RESULT_OK) {
+        if ((requestCode == REQ_CHAT_BG ||
+             requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_GALLERY)
+            && resultCode == RESULT_OK
+        ) {
             val uri = data?.data ?: return
             lifecycleScope.launch {
                 try {
@@ -999,71 +1001,11 @@ class ThreadActivity : BaseActivity() {
         }
     }
 
-    private fun chatBackgroundDialog() {
-        AlertDialog.Builder(this)
-            .setItems(arrayOf(
-                getString(R.string.bg_default),
-                getString(R.string.bg_color),
-                getString(R.string.bg_picture)
-            )) { _, which ->
-                when (which) {
-                    0 -> {
-                        prefs.setChatBg(convoId, "")
-                        File(filesDir, "backgrounds/bg_$convoId").delete()
-                        applyChatBackground()
-                    }
-                    1 -> chatBgColorPicker()
-                    2 -> pickChatBgPicture()
-                }
-            }
-            .show()
-    }
 
-    private fun chatBgColorPicker() {
-        val colors = arrayOf(
-            "#101418", "#1A2633", "#14261A", "#2A1A1A",
-            "#F4EFE6", "#E7EEF6", "#EAF4EA", "#F6E7EA"
-        )
-        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
-        val grid = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-        }
-        var dialog: AlertDialog? = null
-        for (rowStart in colors.indices step 4) {
-            val row = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-            }
-            for (i in rowStart until minOf(rowStart + 4, colors.size)) {
-                val hex = colors[i]
-                val swatch = View(this).apply {
-                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-                        setMargins(dp(6), dp(6), dp(6), dp(6))
-                    }
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        shape = android.graphics.drawable.GradientDrawable.OVAL
-                        setColor(android.graphics.Color.parseColor(hex))
-                        setStroke(dp(1), 0x33000000)
-                    }
-                    isFocusable = true
-                    setOnClickListener {
-                        prefs.setChatBg(convoId, hex)
-                        applyChatBackground()
-                        dialog?.dismiss()
-                    }
-                }
-                row.addView(swatch)
-            }
-            grid.addView(row)
-        }
-        dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.bg_color)
-            .setView(grid)
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
 
-    private fun pickChatBgPicture() {
+    override fun applyBackgroundForCurrent() { applyChatBackground() }
+
+    override fun startPicturePickerForBackground(convoId: Long) {
         try {
             val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -1120,7 +1062,9 @@ class ThreadActivity : BaseActivity() {
                 GroupParticipants.show(this, c)
             }
         }
-        items += getString(R.string.chat_background) to { chatBackgroundDialog() }
+        items += getString(R.string.chat_background) to {
+            io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, convoId, this)
+        }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 

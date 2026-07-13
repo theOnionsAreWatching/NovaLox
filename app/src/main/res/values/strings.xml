@@ -389,4 +389,14 @@
 
     <!-- v0.9.16 additions -->
     <string name="attachment_too_large">Attachment is too large to send by MMS (limit is about 800 KB). Videos usually need to be shared another way.</string>
+
+    <!-- v0.9.22 additions -->
+    <string name="bg_gallery">Pick from gallery</string>
+    <string name="bg_all_title">Background for all chats</string>
+    <string name="no_gallery">No gallery app found</string>
+    <string name="pref_all_backgrounds">Chat background (all chats)</string>
+    <string name="pref_all_backgrounds_summary">Set one background for every conversation</string>
+    <string name="respond_delivery">Respond to delivery requests</string>
+    <string name="respond_delivery_summary">Send a delivery confirmation when others request one</string>
+    <string name="compressing_video">Compressing video…</string>
 </resources>

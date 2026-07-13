@@ -46,6 +46,44 @@ class SettingsActivity : BaseActivity() {
         // theme / accent / direction changes apply on next activity creation
     }
 
+    /** Launch a document picker whose result is copied into the app-wide
+     *  "all chats" background file. */
+    fun pickAllThreadsBackground() {
+        try {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            }
+            startActivityForResult(i, io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, R.string.no_file_picker,
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if ((requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL ||
+             requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_GALLERY_ALL)
+            && resultCode == RESULT_OK
+        ) {
+            val uri = data?.data ?: return
+            lifecycleScope.launch {
+                try {
+                    val dir = java.io.File(filesDir, "backgrounds").apply { mkdirs() }
+                    val dest = java.io.File(dir, "bg_-1")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        dest.outputStream().use { input.copyTo(it) }
+                    }
+                    if (dest.exists() && dest.length() > 0) {
+                        io.github.theonionsarewatching.nova.util.Prefs.get(this@SettingsActivity)
+                            .setChatBg(io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS,
+                                dest.absolutePath)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     class SettingsFragment : PreferenceFragmentCompat() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.preferences, rootKey)
@@ -171,6 +209,22 @@ class SettingsActivity : BaseActivity() {
                     false // we persist manually after the confirmation
                 }
 
+            find("all_backgrounds") {
+                val act = requireActivity()
+                val host = object : io.github.theonionsarewatching.nova.ui.ChatBackground.Host {
+                    override fun applyBackgroundForCurrent() {}
+                    override fun startPicturePickerForBackground(convoId: Long) {
+                        // route through the hosting activity's picker (SettingsActivity
+                        // forwards the result to copy into bg_all)
+                        (act as? io.github.theonionsarewatching.nova.ui.settings.SettingsActivity)
+                            ?.pickAllThreadsBackground()
+                    }
+                }
+                io.github.theonionsarewatching.nova.ui.ChatBackground.show(
+                    act, io.github.theonionsarewatching.nova.util.Prefs.get(act),
+                    io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS, host
+                )
+            }
             find("save_diag_log") {
                 val ctx = requireContext()
                 viewLifecycleOwner.lifecycleScope.launch {
