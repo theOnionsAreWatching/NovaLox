@@ -649,7 +649,7 @@ class Repo private constructor(private val context: Context) {
         try {
             var origMessageId: String? = null
             var st = -1
-            resolver.query(
+            context.contentResolver.query(
                 Uri.parse("content://mms"), arrayOf("m_id", "st"),
                 "_id = ?", arrayOf(indId.toString()), null
             )?.use { c ->
@@ -664,7 +664,7 @@ class Repo private constructor(private val context: Context) {
             val mid = origMessageId ?: return
             // find the SENT telephony row carrying that Message-ID
             var sentTelephonyId: Long? = null
-            resolver.query(
+            context.contentResolver.query(
                 Uri.parse("content://mms"), arrayOf(Telephony.Mms._ID),
                 "m_id = ? AND ${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_SENT}",
                 arrayOf(mid), "date DESC"
@@ -793,7 +793,7 @@ class Repo private constructor(private val context: Context) {
         m.telephonyId?.let { tid ->
             try {
                 val base = if (m.telephonyIsMms) "content://mms/" else "content://sms/"
-                resolver.delete(Uri.parse(base + tid), null, null)
+                context.contentResolver.delete(Uri.parse(base + tid), null, null)
             } catch (_: Exception) {}
             db.messages().clearTelephonyId(messageId)
         }
