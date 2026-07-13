@@ -284,8 +284,15 @@ class MessageAdapter(
             holder.b.bubbleBox.foreground = null
         }
 
-        holder.itemView.setOnClickListener { onPress(row) }
-        holder.itemView.setOnLongClickListener { onHold(row); true }
+        holder.itemView.setOnClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onPress(rows[pos])
+        }
+        holder.itemView.setOnLongClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onHold(rows[pos])
+            true
+        }
     }
 
     private fun withAlpha(color: Int, alpha: Int): Int =

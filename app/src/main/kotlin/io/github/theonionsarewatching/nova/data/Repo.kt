@@ -307,6 +307,26 @@ class Repo private constructor(private val context: Context) {
         // transaction id) — covers users who toggled auto-download mid-stream
         if (mType == 132 && !trId.isNullOrBlank()) {
             try {
+                var alreadyHave = false
+                resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                    "m_type = 132 AND tr_id = ? AND _id != ?",
+                    arrayOf(trId, mmsId.toString()), null)?.use { c ->
+                    while (c.moveToNext()) {
+                        if (db.messages().byTelephonyMms(c.getLong(0)) != null) {
+                            alreadyHave = true
+                        }
+                    }
+                }
+                if (alreadyHave) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-ingest",
+                        "duplicate incoming copy tr_id=$trId tid=$mmsId — deleted (carrier push retry)"
+                    )
+                    try { resolver.delete(Uri.parse("content://mms/$mmsId"), null, null) } catch (_: Exception) {}
+                    return null
+                }
+            } catch (_: Exception) {}
+            try {
                 resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
                     "m_type = 130 AND tr_id = ?", arrayOf(trId), null)?.use { c ->
                     while (c.moveToNext()) {
@@ -554,7 +574,23 @@ class Repo private constructor(private val context: Context) {
 
         // email addresses can only be reached over MMS; SMS to them fails silently
         val hasEmail = addresses.any { it.contains("@") }
-        val asGroupMms = hasEmail || (convo.isGroup && convo.groupMode == GroupMode.GROUP_MMS)
+        // very long texts: concatenated SMS beyond a few segments gets dropped by
+        // some carrier/handset pairs (sender still sees "sent") — convert to MMS
+        // past the carrier's own threshold, like the stock app does
+        val segments = try {
+            @Suppress("DEPRECATION")
+            android.telephony.SmsManager.getDefault().divideMessage(text)?.size ?: 1
+        } catch (_: Exception) { 1 }
+        val threshold = io.github.theonionsarewatching.nova.util.CarrierMms.smsToMmsThreshold(context)
+        val asLongMms = segments > threshold
+        if (asLongMms) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "sms-send",
+                "long text: $segments segments > threshold $threshold — sending as MMS"
+            )
+        }
+        val asGroupMms = hasEmail || asLongMms ||
+            (convo.isGroup && convo.groupMode == GroupMode.GROUP_MMS)
         val now = System.currentTimeMillis()
         val initialStatuses =
             if (convo.isGroup && !asGroupMms)

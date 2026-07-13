@@ -14,6 +14,17 @@ object CarrierMms {
 
     private const val FALLBACK_MAX = 800 * 1024
 
+    /** Segment count above which a long text should be sent as MMS. Carrier
+     *  value when published; the common default (4) otherwise. */
+    fun smsToMmsThreshold(context: Context): Int {
+        return try {
+            @Suppress("DEPRECATION")
+            val values = SmsManager.getDefault().carrierConfigValues
+            values?.getInt(SmsManager.MMS_CONFIG_SMS_TO_MMS_TEXT_THRESHOLD, -1)
+                ?.takeIf { it > 0 } ?: 4
+        } catch (_: Exception) { 4 }
+    }
+
     fun limits(context: Context): Limits {
         return try {
             @Suppress("DEPRECATION")

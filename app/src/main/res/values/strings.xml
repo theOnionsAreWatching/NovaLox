@@ -417,4 +417,13 @@
     <string name="sched_day">Day</string>
     <string name="sched_hour">Hour</string>
     <string name="sched_min">Minute</string>
+
+    <!-- v0.9.25 additions -->
+    <string name="sched_today">Today</string>
+    <string name="sched_change_date">Change date</string>
+    <string name="sched_year">Year</string>
+    <string name="sched_month">Month</string>
+    <string name="sched_ampm">AM / PM</string>
+    <string name="sched_am">AM</string>
+    <string name="sched_pm">PM</string>
 </resources>

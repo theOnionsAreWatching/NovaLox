@@ -99,7 +99,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ThemeUtils.applyFocusHighlightRound(
             binding.btnBack, binding.btnOverflow, binding.btnAttach, binding.btnSend
         )
-        ThemeUtils.applyFocusHighlightPill(binding.composeInput)
+        // reply field: no focus ring (it never tracked the growing text
+        // reliably) — the shaded pill is the field's own visual, and the
+        // blinking cursor marks focus
         ThemeUtils.applyRowFocus(binding.attachmentRow)
 
         binding.composeInput.maxLines = prefs.composeMaxLines
