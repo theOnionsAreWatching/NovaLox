@@ -101,9 +101,21 @@ class MmsReceiver : MmsReceivedReceiver() {
 class MmsSentReceiverImpl : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ok = resultCode == Activity.RESULT_OK
+        val rcName = when (resultCode) {
+            android.app.Activity.RESULT_OK -> "OK"
+            1 -> "UNSPECIFIED"
+            2 -> "INVALID_APN"
+            3 -> "UNABLE_TO_CONNECT_MMS"
+            4 -> "HTTP_FAILURE"
+            5 -> "IO_ERROR (usually: message over the carrier size cap, or staged file unreadable)"
+            6 -> "RETRY"
+            7 -> "CONFIGURATION_ERROR"
+            8 -> "NO_DATA_NETWORK"
+            else -> "code $resultCode"
+        }
         io.github.theonionsarewatching.nova.util.DiagLog.log(
             context, "mms-sent",
-            "engine result: ok=$ok rc=$resultCode msg=${intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)}"
+            "engine result: ok=$ok rc=$resultCode ($rcName) msg=${intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)}"
         )
         val messageId = intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)
 

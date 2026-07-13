@@ -386,4 +386,7 @@
     <string name="pref_save_log_summary">Saves a small technical log to Downloads — send it to the developer when reporting a problem</string>
     <string name="log_saved">Log saved to Downloads as novalox-log.txt</string>
     <string name="log_empty">Nothing logged yet</string>
+
+    <!-- v0.9.16 additions -->
+    <string name="attachment_too_large">Attachment is too large to send by MMS (limit is about 800 KB). Videos usually need to be shared another way.</string>
 </resources>

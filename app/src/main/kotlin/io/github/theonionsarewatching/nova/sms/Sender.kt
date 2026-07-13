@@ -11,6 +11,7 @@ import com.klinker.android.send_message.Message
 import com.klinker.android.send_message.Settings
 import com.klinker.android.send_message.Transaction
 import io.github.theonionsarewatching.nova.data.MsgStatus
+import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.util.Prefs
 import kotlinx.coroutines.launch
@@ -128,11 +129,55 @@ object Sender {
             }
             val transaction = Transaction(context, settings)
             val message = Message(text, addresses.toTypedArray())
+
+            // ---- fit the carrier's size budget (engine enforces 800 KB) ----
+            // Raw camera photos are megabytes; oversize PDUs fail with the
+            // system's IO error (rc=5). Shrink images; refuse what can't shrink.
+            val cap = 700 * 1024 // safety margin under the 800 KB enforcement
+            data class Att(val bytes: ByteArray, val mime: String, val name: String)
+            val loaded = ArrayList<Att>()
             for ((path, mime, name) in attachments) {
                 try {
-                    val bytes = File(path).readBytes()
-                    message.addMedia(bytes, mime, name, name)
+                    loaded.add(Att(File(path).readBytes(), mime, name))
                 } catch (_: Exception) {}
+            }
+            val shrinkable = { a: Att ->
+                a.mime.startsWith("image/") && !a.mime.equals("image/gif", true)
+            }
+            val fixedBytes = text.toByteArray().size +
+                loaded.filter { !shrinkable(it) }.sumOf { it.bytes.size }
+            if (fixedBytes > cap) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-send",
+                    "REFUSED: non-image attachments total ${fixedBytes / 1024} KB, over the ~800 KB MMS limit (msg=$messageId)"
+                )
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        context, R.string.attachment_too_large, android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                val repo = Repo.get(context)
+                repo.scope.launch { repo.onMmsSent(messageId, ok = false) }
+                return
+            }
+            val imageCount = loaded.count { shrinkable(it) }
+            val perImageBudget = if (imageCount == 0) 0
+                else ((cap - fixedBytes) / imageCount).coerceAtLeast(60 * 1024)
+            for (a in loaded) {
+                if (shrinkable(a) && a.bytes.size > perImageBudget) {
+                    val shrunk = io.github.theonionsarewatching.nova.util
+                        .MediaShrink.shrinkToBudget(a.bytes, perImageBudget)
+                    if (shrunk != null) {
+                        val jpgName = a.name.substringBeforeLast('.', a.name) + ".jpg"
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-send",
+                            "shrunk ${a.name}: ${a.bytes.size / 1024} KB -> ${shrunk.size / 1024} KB"
+                        )
+                        message.addMedia(shrunk, "image/jpeg", jpgName, jpgName)
+                        continue
+                    }
+                }
+                message.addMedia(a.bytes, a.mime, a.name, a.name)
             }
             val sentIntent = Intent(context, MmsSentReceiverImpl::class.java).apply {
                 putExtra(EXTRA_MESSAGE_ID, messageId)
