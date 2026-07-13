@@ -53,15 +53,47 @@ class ConversationAdapter(
         val ctx = holder.itemView.context
         val prefs = Prefs.get(ctx)
 
+        // avatar sized from scaledDensity: shrinks/grows with BOTH the whole-app
+        // resize (density) and the text-size resize (fontScale)
+        run {
+            val px = (42 * holder.itemView.resources.displayMetrics.scaledDensity).toInt()
+            holder.b.avatarFrame.layoutParams = holder.b.avatarFrame.layoutParams.apply {
+                width = px; height = px
+            }
+        }
+
         // ---- avatar: contact photo, or colored letter circle ----
         val title = c.displayTitle()
         if (c.cachedPhotoUri.isNotBlank()) {
             holder.b.convoAvatar.visibility = android.view.View.VISIBLE
             holder.b.avatarLetter.visibility = android.view.View.GONE
+            holder.b.convoAvatar.background = null
+            holder.b.convoAvatar.imageTintList = null
+            holder.b.convoAvatar.setPadding(0, 0, 0, 0)
             holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri)) {
                 transformations(CircleCropTransformation())
                 size(128) // fixed request size: identical result at every app zoom
             }
+        } else if (c.isGroup) {
+            // groups: a people glyph on the colored circle
+            holder.b.avatarLetter.visibility = android.view.View.GONE
+            holder.b.convoAvatar.visibility = android.view.View.VISIBLE
+            val color2 = run {
+                val palette2 = intArrayOf(
+                    0xFF1565C0.toInt(), 0xFF00796B.toInt(), 0xFF2E7D32.toInt(), 0xFFE65100.toInt(),
+                    0xFFC62828.toInt(), 0xFF6A1B9A.toInt(), 0xFFAD1457.toInt(), 0xFF546E7A.toInt()
+                )
+                palette2[kotlin.math.abs(c.convoKey.hashCode()) % palette2.size]
+            }
+            holder.b.convoAvatar.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(color2)
+            }
+            val pad = (9 * holder.itemView.resources.displayMetrics.density).toInt()
+            holder.b.convoAvatar.setPadding(pad, pad, pad, pad)
+            holder.b.convoAvatar.imageTintList =
+                android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
+            holder.b.convoAvatar.setImageResource(io.github.theonionsarewatching.nova.R.drawable.ic_group)
         } else {
             holder.b.convoAvatar.visibility = android.view.View.GONE
             holder.b.avatarLetter.visibility = android.view.View.VISIBLE
@@ -111,9 +143,9 @@ class ConversationAdapter(
         // selection wash + outline over the focus shade (same scheme as messages)
         if (isSelected(c.id)) {
             val a = io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(holder.itemView.context)
-            val strokePx = (2 * holder.itemView.resources.displayMetrics.density).toInt()
+            val strokePx = (3 * holder.itemView.resources.displayMetrics.density).toInt()
             holder.itemView.foreground = android.graphics.drawable.GradientDrawable().apply {
-                setColor(android.graphics.Color.argb(46, android.graphics.Color.red(a),
+                setColor(android.graphics.Color.argb(96, android.graphics.Color.red(a),
                     android.graphics.Color.green(a), android.graphics.Color.blue(a)))
                 setStroke(strokePx, a)
             }

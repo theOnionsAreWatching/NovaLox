@@ -154,7 +154,9 @@ class MediaViewerActivity : BaseActivity() {
     private fun seekBy(forward: Boolean, repeatCount: Int) {
         val vv = currentVideoView() ?: return
         try {
-            val delta = if (repeatCount == 0) 5_000 else 10_000
+            // taps use a large stride because seeking snaps to keyframes — a
+            // small hop can land back on the same frame and look like nothing
+            val delta = if (repeatCount == 0) 10_000 else 15_000
             val target = (vv.currentPosition + if (forward) delta else -delta)
                 .coerceIn(0, vv.duration.coerceAtLeast(0))
             vv.seekTo(target)
@@ -203,10 +205,10 @@ class MediaViewerActivity : BaseActivity() {
     private fun saveCurrent() {
         val p = currentPart() ?: return
         lifecycleScope.launch {
-            val ok = Saver.saveToDownloads(this@MediaViewerActivity, File(p.filePath), p.fileName, p.mimeType)
+            val loc = Saver.save(this@MediaViewerActivity, File(p.filePath), p.fileName, p.mimeType)
             android.widget.Toast.makeText(
                 this@MediaViewerActivity,
-                if (ok) R.string.saved_to_downloads else R.string.save_failed,
+                if (loc != null) getString(R.string.saved_to, loc) else getString(R.string.save_failed),
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }

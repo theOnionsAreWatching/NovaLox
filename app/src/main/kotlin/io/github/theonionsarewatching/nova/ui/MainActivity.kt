@@ -45,7 +45,7 @@ class MainActivity : BaseActivity() {
                 if (selectingConvos) toggleConvoSelection(c.id) else openThread(c.id)
             },
             onOptions = { c ->
-                if (!selectingConvos) convoOptions(c)
+                if (selectingConvos) convoSelectionActions() else convoOptions(c)
             },
             isSelected = { id -> selectingConvos && id in selectedConvoIds }
         )
@@ -515,6 +515,9 @@ class MainActivity : BaseActivity() {
         selectedConvoIds.add(initialId)
         adapter.notifyDataSetChanged()
         updateSelectionSoftkeys()
+        binding.mainSelectionBar.visibility = View.VISIBLE
+        binding.btnSelCancelMain.setOnClickListener { exitConvoSelection() }
+        binding.btnSelDeleteMain.setOnClickListener { deleteSelectedConvos() }
     }
 
     private fun exitConvoSelection() {
@@ -522,12 +525,29 @@ class MainActivity : BaseActivity() {
         selectedConvoIds.clear()
         adapter.notifyDataSetChanged()
         setupDefaultSoftkeys()
+        binding.mainSelectionBar.visibility = View.GONE
     }
 
     private fun toggleConvoSelection(id: Long) {
         if (id in selectedConvoIds) selectedConvoIds.remove(id) else selectedConvoIds.add(id)
         adapter.notifyDataSetChanged()
         updateSelectionSoftkeys()
+        binding.btnSelDeleteMain.text = getString(R.string.delete_n, selectedConvoIds.size)
+    }
+
+    /** Long-press while selecting (touch users): the actions as a dialog. */
+    private fun convoSelectionActions() {
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.delete_n, selectedConvoIds.size),
+                getString(R.string.cancel_selection)
+            )) { _, which ->
+                when (which) {
+                    0 -> deleteSelectedConvos()
+                    1 -> exitConvoSelection()
+                }
+            }
+            .show()
     }
 
     private fun focusedConvo(): ConversationEntity? {

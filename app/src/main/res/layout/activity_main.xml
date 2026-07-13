@@ -86,6 +86,35 @@
             android:layout_height="match_parent"
             android:orientation="vertical">
 
+
+            <LinearLayout
+                android:id="@+id/mainSelectionBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:padding="6dp"
+                android:visibility="gone"
+                android:background="?attr/colorSurfaceContainerHigh">
+
+                <Button
+                    android:id="@+id/btnSelCancelMain"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:text="@android:string/cancel" />
+
+                <Button
+                    android:id="@+id/btnSelDeleteMain"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/delete" />
+            </LinearLayout>
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/convoList"
                 android:layout_width="match_parent"

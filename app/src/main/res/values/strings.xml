@@ -365,4 +365,15 @@
     <string name="select">Select</string>
     <string name="delete_n">Delete (%1$d)</string>
     <string name="delete_convos_confirm">Delete the selected conversations? All their messages are deleted, including locked ones.</string>
+
+    <!-- v0.9.11 additions -->
+    <string name="cancel_selection">Cancel selection</string>
+
+    <!-- v0.9.12 additions -->
+    <string name="saved_to">Saved to %1$s</string>
+    <string name="chat_background">Chat background…</string>
+    <string name="bg_default">App default</string>
+    <string name="bg_color">Color…</string>
+    <string name="bg_picture">Picture…</string>
+    <string name="no_file_picker">This phone has no file picker app</string>
 </resources>

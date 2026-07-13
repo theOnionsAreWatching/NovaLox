@@ -35,6 +35,7 @@ class ThreadActivity : BaseActivity() {
 
     companion object {
         const val EXTRA_CONVO_ID = "convo_id"
+        private const val REQ_CHAT_BG = 207
         const val EXTRA_TARGET_MESSAGE_ID = "target_message_id"
         const val PAGE = 60
         var visibleConvoId: Long = -1L
@@ -131,6 +132,7 @@ class ThreadActivity : BaseActivity() {
                 isSelected = { id -> selecting && id in selectedIds }
             )
             binding.msgList.adapter = adapter
+            applyChatBackground()
             binding.composeInput.setText(c.draft)
             if (c.draft.isNotBlank()) binding.composeInput.setSelection(c.draft.length)
 
@@ -186,6 +188,24 @@ class ThreadActivity : BaseActivity() {
         selectedIds.add(first.msg.id)
         adapter.notifyDataSetChanged()
         updateSelectionUi()
+        binding.threadSelectionBar.visibility = View.VISIBLE
+        binding.btnSelCancelThread.setOnClickListener { exitSelection() }
+        binding.btnSelDeleteThread.setOnClickListener { deleteSelected() }
+    }
+
+    /** Long-press while selecting (touch users): the actions as a dialog. */
+    private fun selectionActionsDialog() {
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.delete_n, selectedIds.size),
+                getString(R.string.cancel_selection)
+            )) { _, which ->
+                when (which) {
+                    0 -> deleteSelected()
+                    1 -> exitSelection()
+                }
+            }
+            .show()
     }
 
     private fun toggleSelected(row: MessageRow) {
@@ -200,6 +220,7 @@ class ThreadActivity : BaseActivity() {
         selecting = false
         selectedIds.clear()
         adapter.notifyDataSetChanged()
+        binding.threadSelectionBar.visibility = View.GONE
         binding.threadSubtitle.text = convo?.let { c ->
             if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
             else c.addressList().firstOrNull() ?: ""
@@ -209,6 +230,7 @@ class ThreadActivity : BaseActivity() {
 
     private fun updateSelectionUi() {
         binding.threadSubtitle.text = getString(R.string.n_selected, selectedIds.size)
+        binding.btnSelDeleteThread.text = getString(R.string.delete_n, selectedIds.size)
         softkeys?.set(
             getString(R.string.softkey_cancel), getString(R.string.softkey_select),
             getString(R.string.delete),
@@ -660,6 +682,23 @@ class ThreadActivity : BaseActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_CHAT_BG && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            lifecycleScope.launch {
+                try {
+                    val dir = File(filesDir, "backgrounds").apply { mkdirs() }
+                    val dest = File(dir, "bg_$convoId")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        dest.outputStream().use { input.copyTo(it) }
+                    }
+                    if (dest.exists() && dest.length() > 0) {
+                        prefs.setChatBg(convoId, dest.absolutePath)
+                        applyChatBackground()
+                    }
+                } catch (_: Exception) {}
+            }
+            return
+        }
         if (requestCode == 201 && resultCode == RESULT_OK) {
             val uris = ArrayList<android.net.Uri>()
             data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
@@ -781,7 +820,7 @@ class ThreadActivity : BaseActivity() {
 
     private fun holdMessage(row: MessageRow) {
         if (row.isSystemLine) return
-        if (selecting) { toggleSelected(row); return }
+        if (selecting) { selectionActionsDialog(); return }
         val m = row.msg
         val items = ArrayList<Pair<String, () -> Unit>>()
         items += getString(R.string.select_messages) to { enterSelection(row) }
@@ -907,12 +946,113 @@ class ThreadActivity : BaseActivity() {
         android.widget.Toast.makeText(this, R.string.forwarded, android.widget.Toast.LENGTH_SHORT).show()
     }
 
+    // ---------------- chat background ----------------
+
+    private fun applyChatBackground() {
+        val v = prefs.chatBg(convoId)
+        when {
+            v.isBlank() -> {
+                binding.chatBackdrop.visibility = View.GONE
+            }
+            v.startsWith("#") -> {
+                binding.chatBackdrop.setImageDrawable(null)
+                binding.chatBackdrop.colorFilter = null
+                binding.chatBackdrop.setBackgroundColor(android.graphics.Color.parseColor(v))
+                binding.chatBackdrop.visibility = View.VISIBLE
+            }
+            else -> {
+                binding.chatBackdrop.background = null
+                binding.chatBackdrop.load(File(v))
+                // slight dim so bubbles stay readable over busy photos
+                binding.chatBackdrop.setColorFilter(0x2E000000)
+                binding.chatBackdrop.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun chatBackgroundDialog() {
+        AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.bg_default),
+                getString(R.string.bg_color),
+                getString(R.string.bg_picture)
+            )) { _, which ->
+                when (which) {
+                    0 -> {
+                        prefs.setChatBg(convoId, "")
+                        File(filesDir, "backgrounds/bg_$convoId").delete()
+                        applyChatBackground()
+                    }
+                    1 -> chatBgColorPicker()
+                    2 -> pickChatBgPicture()
+                }
+            }
+            .show()
+    }
+
+    private fun chatBgColorPicker() {
+        val colors = arrayOf(
+            "#101418", "#1A2633", "#14261A", "#2A1A1A",
+            "#F4EFE6", "#E7EEF6", "#EAF4EA", "#F6E7EA"
+        )
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val grid = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        var dialog: AlertDialog? = null
+        for (rowStart in colors.indices step 4) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+            }
+            for (i in rowStart until minOf(rowStart + 4, colors.size)) {
+                val hex = colors[i]
+                val swatch = View(this).apply {
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                        setMargins(dp(6), dp(6), dp(6), dp(6))
+                    }
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(android.graphics.Color.parseColor(hex))
+                        setStroke(dp(1), 0x33000000)
+                    }
+                    isFocusable = true
+                    setOnClickListener {
+                        prefs.setChatBg(convoId, hex)
+                        applyChatBackground()
+                        dialog?.dismiss()
+                    }
+                }
+                row.addView(swatch)
+            }
+            grid.addView(row)
+        }
+        dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.bg_color)
+            .setView(grid)
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun pickChatBgPicture() {
+        try {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/*"
+            }
+            startActivityForResult(i, REQ_CHAT_BG)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, R.string.no_file_picker,
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun savePart(part: io.github.theonionsarewatching.nova.data.PartEntity) {
         lifecycleScope.launch {
-            val ok = Saver.saveToDownloads(this@ThreadActivity, File(part.filePath), part.fileName, part.mimeType)
+            val loc = Saver.save(this@ThreadActivity, File(part.filePath), part.fileName, part.mimeType)
             android.widget.Toast.makeText(
                 this@ThreadActivity,
-                if (ok) R.string.saved_to_downloads else R.string.save_failed,
+                if (loc != null) getString(R.string.saved_to, loc) else getString(R.string.save_failed),
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }
@@ -951,6 +1091,7 @@ class ThreadActivity : BaseActivity() {
                 GroupParticipants.show(this, c)
             }
         }
+        items += getString(R.string.chat_background) to { chatBackgroundDialog() }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 

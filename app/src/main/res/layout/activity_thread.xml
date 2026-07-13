@@ -69,6 +69,14 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
+        <ImageView
+            android:id="@+id/chatBackdrop"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            android:importantForAccessibility="no" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/msgList"
             android:layout_width="match_parent"
@@ -200,6 +208,35 @@
             android:contentDescription="@string/softkey_send"
             android:scaleType="centerInside"
             android:src="@drawable/ic_send" />
+    </LinearLayout>
+
+
+    <LinearLayout
+        android:id="@+id/threadSelectionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="6dp"
+        android:visibility="gone"
+        android:background="?attr/colorSurfaceContainerHigh">
+
+        <Button
+            android:id="@+id/btnSelCancelThread"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="@android:string/cancel" />
+
+        <Button
+            android:id="@+id/btnSelDeleteThread"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/delete" />
     </LinearLayout>
 
     <include

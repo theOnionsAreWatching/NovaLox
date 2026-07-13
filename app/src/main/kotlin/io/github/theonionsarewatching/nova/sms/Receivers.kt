@@ -132,7 +132,24 @@ class SmsSentStatusReceiver : BroadcastReceiver() {
 
 class SmsDeliveredStatusReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val ok = resultCode == Activity.RESULT_OK
+        // the delivery result lives in the status-report PDU, not the resultCode:
+        // the broadcast fires when the REPORT arrives, even if the report says
+        // the message failed — and some phones never set resultCode at all
+        val ok = try {
+            val pdu = intent.getByteArrayExtra("pdu")
+            if (pdu != null) {
+                val format = intent.getStringExtra("format")
+                val sms = if (format != null)
+                    android.telephony.SmsMessage.createFromPdu(pdu, format)
+                else @Suppress("DEPRECATION") android.telephony.SmsMessage.createFromPdu(pdu)
+                // TP-Status: 0 = delivered; 32+ = temporary/permanent failures
+                (sms?.status ?: 0) < 32
+            } else {
+                resultCode == Activity.RESULT_OK
+            }
+        } catch (_: Exception) {
+            resultCode == Activity.RESULT_OK
+        }
         val messageId = intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)
         val recipient = intent.getStringExtra(Sender.EXTRA_RECIPIENT) ?: ""
         if (messageId <= 0) return

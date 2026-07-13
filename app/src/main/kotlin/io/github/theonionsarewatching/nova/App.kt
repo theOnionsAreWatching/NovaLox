@@ -57,7 +57,15 @@ class App : Application(), ImageLoaderFactory {
     /** Coil loader: disk/decode only, NO in-memory bitmap cache (low-RAM keypad devices). */
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
-            .components { add(VideoFrameDecoder.Factory()) }
+            .components {
+                add(VideoFrameDecoder.Factory())
+                // animated GIFs in bubbles and the viewer
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    add(coil.decode.ImageDecoderDecoder.Factory())
+                } else {
+                    add(coil.decode.GifDecoder.Factory())
+                }
+            }
             .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
             .crossfade(false)
             .build()

@@ -205,9 +205,9 @@ class MessageAdapter(
         holder.b.root.background = ThemeUtils.focusFill(ctx)
         if (isSelected(m.id)) {
             val accent2 = ThemeUtils.accentColor(ctx)
-            val strokePx = (2 * ctx.resources.displayMetrics.density).toInt()
+            val strokePx = (3 * ctx.resources.displayMetrics.density).toInt()
             holder.b.root.foreground = android.graphics.drawable.GradientDrawable().apply {
-                setColor(withAlpha(accent2, 46))
+                setColor(withAlpha(accent2, 96))
                 setStroke(strokePx, accent2)
             }
         } else {

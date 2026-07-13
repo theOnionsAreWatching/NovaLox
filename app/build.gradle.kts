@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.theonionsarewatching.nova"
         minSdk = 23
         targetSdk = 34
-        versionCode = 24
-        versionName = "0.9.10"
+        versionCode = 26
+        versionName = "0.9.12"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -73,6 +73,7 @@ dependencies {
 
     implementation("io.coil-kt:coil:2.6.0")
     implementation("io.coil-kt:coil-video:2.6.0")
+    implementation("io.coil-kt:coil-gif:2.6.0")
 
     // SMS/MMS engine: maintained fork of klinker41/android-smsmms (Apache-2.0),
     // the same engine + version used by Simple SMS Messenger (minSdk 23 compatible).
