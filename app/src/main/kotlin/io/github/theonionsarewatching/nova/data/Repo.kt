@@ -1037,9 +1037,6 @@ class Repo private constructor(private val context: Context) {
                         val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
                         val convo = getOrCreateConversation(listOf(address))
                         if (db.messages().existsSimilar(convo.id, isMine, body, date - 5000, date + 5000)) continue
-                        // honest status from the actual message box — outgoing rows were all
-        // labeled "sent" before, even ones sitting in outbox or marked failed
-        if (msgBox == Telephony.Mms.MESSAGE_BOX_DRAFTS) return null
                         if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue
                         val status = when (type) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> MsgStatus.RECEIVED
