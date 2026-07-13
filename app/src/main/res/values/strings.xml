@@ -355,4 +355,7 @@
     <string name="run_in_background">Run in background</string>
     <string name="background_warning">Continuing in the background — messages may look incomplete until it finishes</string>
     <string name="search_hint">Search messages</string>
+
+    <!-- v0.9.8 additions -->
+    <string name="import_finished">Import complete</string>
 </resources>

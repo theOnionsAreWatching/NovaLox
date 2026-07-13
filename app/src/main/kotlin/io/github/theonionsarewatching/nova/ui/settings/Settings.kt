@@ -326,69 +326,18 @@ class SettingsActivity : BaseActivity() {
             }
         }
 
-        /** Progress dialog with a determinate bar + a small detail line. */
-        private class ProgressUi(
-            ctx: android.content.Context, titleRes: Int,
-            onBackground: (() -> Unit)? = null
-        ) {
-            val bar = android.widget.ProgressBar(
-                ctx, null, android.R.attr.progressBarStyleHorizontal
-            ).apply { max = 100; isIndeterminate = true }
-            val detail = android.widget.TextView(ctx).apply {
-                textSize = 11f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-            }
-            val dialog: AlertDialog = AlertDialog.Builder(ctx)
-                .setTitle(titleRes)
-                .setView(android.widget.LinearLayout(ctx).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL
-                    val pad = (18 * ctx.resources.displayMetrics.density).toInt()
-                    setPadding(pad, pad / 2, pad, 0)
-                    addView(bar)
-                    addView(detail)
-                })
-                .setCancelable(false)
-                .apply {
-                    if (onBackground != null) {
-                        setNeutralButton(R.string.run_in_background) { _, _ -> onBackground() }
-                    }
-                }
-                .show()
-
-            fun update(percent: Int, text: String?) {
-                if (percent < 0) {
-                    bar.isIndeterminate = true
-                } else {
-                    bar.isIndeterminate = false
-                    bar.progress = percent
-                }
-                if (text != null) detail.text = text
-            }
-
-            fun dismiss() = runCatching { dialog.dismiss() }
-        }
-
-        private fun progressReporter(ui: ProgressUi) =
-            io.github.theonionsarewatching.nova.data.BackupHelper.Progress { pct, det ->
-                ui.bar.post { ui.update(pct, det) }
-            }
-
         private fun backupToDownloads() {
             val ctx = requireContext()
-            val ui = ProgressUi(ctx, R.string.backing_up)
-            viewLifecycleOwner.lifecycleScope.launch {
-                val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
+            if (bt.running) { attachTaskDialog(); return }
+            if (!bt.start(ctx, R.string.backing_up, R.string.backup_done, R.string.backup_failed)) return
+            attachTaskDialog()
+            bt.scope.launch {
+                val name = try {
                     io.github.theonionsarewatching.nova.data.BackupHelper
-                        .exportToDownloads(ctx, progressReporter(ui))
-                }
-                ui.dismiss()
-                Toast.makeText(
-                    ctx,
-                    if (name != null) getString(R.string.backup_saved_to, name)
-                    else getString(R.string.backup_failed),
-                    Toast.LENGTH_LONG
-                ).show()
+                        .exportToDownloads(ctx.applicationContext) { p, d -> bt.report(p, d) }
+                } catch (_: Exception) { null }
+                bt.finish(name != null)
             }
         }
 
@@ -410,23 +359,7 @@ class SettingsActivity : BaseActivity() {
 
         /** Progress dialog for the app-wide task, detachable to the background. */
         private fun attachTaskDialog() {
-            val ctx = requireContext()
-            val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
-            var ui: ProgressUi? = null
-            ui = ProgressUi(ctx, bt.titleRes) {
-                // "Run in background": detach the viewer, keep the task going
-                bt.attach(null, null)
-                ui?.dismiss()
-                Toast.makeText(ctx, R.string.background_warning, Toast.LENGTH_LONG).show()
-            }
-            bt.attach(
-                update = { p, d -> ui?.update(p, d) },
-                done = { ok ->
-                    ui?.dismiss()
-                    Toast.makeText(ctx,
-                        if (ok) bt.toastOk else bt.toastFail, Toast.LENGTH_LONG).show()
-                }
-            )
+            io.github.theonionsarewatching.nova.ui.TaskDialogs.attach(requireActivity())
         }
 
         private fun runBackupTask(exporting: Boolean, uri: android.net.Uri) {

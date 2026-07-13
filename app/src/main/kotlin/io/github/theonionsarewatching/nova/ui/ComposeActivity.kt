@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
@@ -69,6 +70,8 @@ class ComposeActivity : BaseActivity() {
         }
 
         ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnComposeAttach)
+        binding.recipientChips.isFocusable = true
+        binding.recipientChips.isFocusableInTouchMode = false
         ThemeUtils.applyButtonFocus(binding.btnStart)
         ThemeUtils.applyFocusHighlight(
             binding.recipientInput, binding.bodyInput, binding.recipientChips,
@@ -214,6 +217,34 @@ class ComposeActivity : BaseActivity() {
     }
 
     @Deprecated("Deprecated in Java")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val chipsVisible = binding.recipientChips.isShown && recipients.isNotEmpty()
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (binding.btnBack.hasFocus() && chipsVisible &&
+                        binding.recipientChips.requestFocus()
+                    ) return true
+                    if (binding.recipientChips.hasFocus() &&
+                        binding.recipientInput.requestFocus()
+                    ) return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (binding.recipientInput.hasFocus() && chipsVisible &&
+                        binding.recipientChips.requestFocus()
+                    ) return true
+                    if (binding.recipientChips.hasFocus() &&
+                        binding.btnBack.requestFocus()
+                    ) return true
+                    if (binding.btnGroupMode.hasFocus() &&
+                        binding.recipientInput.requestFocus()
+                    ) return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != 211 || resultCode != RESULT_OK) return

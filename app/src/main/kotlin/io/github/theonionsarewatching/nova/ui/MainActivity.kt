@@ -32,7 +32,6 @@ class MainActivity : BaseActivity() {
     private lateinit var adapter: ConversationAdapter
     private lateinit var repo: Repo
     private var scroller: DpadScroller? = null
-    private var importing = false
     private val changeListener: () -> Unit = { loadConversations() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -213,46 +212,37 @@ class MainActivity : BaseActivity() {
     // ============================== first import ==============================
 
     private fun maybeImport() {
-        if (importing) return
+        val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
         if (prefs.importDone) {
             // DB may have been recreated (schema upgrade): re-import if it's empty
             lifecycleScope.launch {
-                if (repo.db.messages().count() == 0) {
+                if (repo.db.messages().count() == 0 && !bt.running) {
                     prefs.importDone = false
                     maybeImport()
                 }
             }
             return
         }
-        importing = true
-        val view = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val pad = ThemeUtils.dp(context, 20)
-            setPadding(pad, pad, pad, pad)
+        if (bt.running) {
+            TaskDialogs.attach(this)
+            return
         }
-        val label = TextView(this).apply { setText(R.string.import_running) }
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100; progress = 0
-        }
-        view.addView(label)
-        view.addView(bar)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.import_title)
-            .setView(view)
-            .setCancelable(false)
-            .show()
-        lifecycleScope.launch {
+        if (!bt.start(this, R.string.import_title, R.string.import_finished, R.string.import_finished)) return
+        bt.report(-1, getString(R.string.import_running))
+        TaskDialogs.attach(this)
+        bt.scope.launch {
             try {
-                repo.importFromTelephony { p -> runOnUiThread { bar.progress = p } }
+                repo.importFromTelephony { p -> bt.report(p, null) }
                 prefs.importDone = true
                 repo.runElementBacklog()
-            } finally {
-                importing = false
-                runCatching { dialog.dismiss() }
-                loadConversations()
+                bt.finish(true)
+            } catch (_: Exception) {
+                bt.finish(false)
             }
+            runOnUiThread { loadConversations() }
         }
     }
+
 
     // ============================== list ==============================
 
