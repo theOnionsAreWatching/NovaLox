@@ -81,13 +81,13 @@ sending/receiving MMS through your carrier, of course).
 
 ## License
 
-Licensed under either of
+NovaLox is free to use, copy, and share for **noncommercial purposes** —
+personal use, family, schools, charities, and the like — under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md).
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
+Using or distributing it **commercially** (for example, preinstalling it on
+phones you sell, or bundling it with a paid service) requires permission —
+open an issue on this page to ask.
 
-at your option.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall
-be dual licensed as above, without any additional terms or conditions.
+Required Notice: Copyright theOnionsAreWatching
+(https://github.com/theOnionsAreWatching/NovaLox)
