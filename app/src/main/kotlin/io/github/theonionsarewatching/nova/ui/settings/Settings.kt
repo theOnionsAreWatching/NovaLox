@@ -158,8 +158,12 @@ class SettingsActivity : BaseActivity() {
                         .setTitle(R.string.pref_resize)
                         .setMessage(getString(R.string.resize_restart_confirm, label))
                         .setPositiveButton(R.string.resize_and_restart) { _, _ ->
+                            // commit(), not apply(): apply() writes to disk on a
+                            // background thread and the restart kills the process
+                            // before the write lands — the classic reason the new
+                            // size "didn't take"
                             io.github.theonionsarewatching.nova.util.Prefs.get(requireContext())
-                                .sp.edit().putString("app_zoom", newValue.toString()).apply()
+                                .sp.edit().putString("app_zoom", newValue.toString()).commit()
                             restartApp()
                         }
                         .setNegativeButton(android.R.string.cancel, null)

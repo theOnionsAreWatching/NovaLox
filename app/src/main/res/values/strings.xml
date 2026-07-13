@@ -358,4 +358,5 @@
 
     <!-- v0.9.8 additions -->
     <string name="import_finished">Import complete</string>
+    <string name="pause">Pause</string>
 </resources>

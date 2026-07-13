@@ -98,7 +98,9 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
             val repo = Repo.get(context)
             repo.scope.launch {
                 try {
-                    repo.onMmsSent(messageId, ok)
+                    val tId = intent.getStringExtra("content_uri")
+                        ?.let { android.net.Uri.parse(it).lastPathSegment?.toLongOrNull() }
+                    repo.onMmsSent(messageId, ok, tId)
                 } finally {
                     pending.finish()
                 }

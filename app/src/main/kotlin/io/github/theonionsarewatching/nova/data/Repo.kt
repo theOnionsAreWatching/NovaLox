@@ -252,6 +252,30 @@ class Repo private constructor(private val context: Context) {
         // each telephony row exactly once — and if the first pass caught it before
         // its text parts were written (blank body), heal it now instead.
         db.messages().byTelephonyMms(mmsId)?.let { existing ->
+            if (existing.isMine) {
+                // the engine moves the box (outbox -> sent/failed) after we linked:
+                // reflect reality on our row
+                val boxNow = try {
+                    resolver.query(Uri.parse("content://mms"), arrayOf("msg_box"),
+                        "_id = ?", arrayOf(mmsId.toString()), null)?.use { c ->
+                        if (c.moveToFirst()) c.getInt(0) else 0
+                    } ?: 0
+                } catch (_: Exception) { 0 }
+                val mapped = when (boxNow) {
+                    Telephony.Mms.MESSAGE_BOX_SENT -> MsgStatus.SENT
+                    5 -> MsgStatus.FAILED
+                    else -> null
+                }
+                if (mapped == MsgStatus.SENT && existing.status in
+                    listOf(MsgStatus.SENDING, MsgStatus.FAILED)
+                ) {
+                    setStatusRespectingCancel(existing.id, MsgStatus.SENT)
+                    refreshConversation(existing.convoId); ChangeBus.ping()
+                } else if (mapped == MsgStatus.FAILED && existing.status == MsgStatus.SENDING) {
+                    setStatusRespectingCancel(existing.id, MsgStatus.FAILED)
+                    refreshConversation(existing.convoId); ChangeBus.ping()
+                }
+            }
             if (existing.body.isBlank()) {
                 val healed = mmsBodyFor(mmsId)
                 if (healed.isNotBlank()) {
@@ -392,7 +416,47 @@ class Repo private constructor(private val context: Context) {
         val convo = getOrCreateConversation(participants)
         val blocked = !isMine && matchesKeyword(bodyText)
         val senderAddress = if (isMine) participants.joinToString("|") else (from.firstOrNull() ?: "Unknown")
-        val status = if (isMine) MsgStatus.SENT else MsgStatus.RECEIVED
+        // honest status from the actual message box — outgoing rows were all
+        // labeled "sent" before, even ones sitting in outbox or marked failed
+        if (msgBox == Telephony.Mms.MESSAGE_BOX_DRAFTS) return null
+        val status = when {
+            !isMine -> MsgStatus.RECEIVED
+            msgBox == 5 /* MESSAGE_BOX_FAILED */ -> MsgStatus.FAILED
+            msgBox == Telephony.Mms.MESSAGE_BOX_OUTBOX ->
+                // a fresh outbox row is mid-send; an old one is a stuck failure
+                if (System.currentTimeMillis() - dateMs < 10 * 60 * 1000) MsgStatus.SENDING
+                else MsgStatus.FAILED
+            else -> MsgStatus.SENT
+        }
+
+        // RECONCILIATION — the root of the outgoing-MMS duplicates: our app row is
+        // created at send time with no telephony id, and the engine persists the
+        // telephony row moments later. The content observer then saw a telephony
+        // row it "didn't know" and ingested a second copy. If an unlinked outgoing
+        // app row matches this telephony row (same conversation, close in time,
+        // same text), LINK them instead of inserting a doppelgänger.
+        if (isMine) {
+            val candidates = db.messages().unlinkedOutgoing(
+                convo.id, true, dateMs - 120_000, dateMs + 120_000
+            )
+            val match = candidates
+                .filter { it.body.trim() == bodyText.trim() || (it.body.isBlank() && bodyText.isBlank()) }
+                .minByOrNull { kotlin.math.abs(it.date - dateMs) }
+            if (match != null) {
+                db.messages().setTelephonyId(match.id, mmsId, true)
+                // upgrade status only in the honest directions
+                if (status == MsgStatus.SENT && match.status in
+                    listOf(MsgStatus.SENDING, MsgStatus.FAILED)
+                ) {
+                    setStatusRespectingCancel(match.id, MsgStatus.SENT)
+                } else if (status == MsgStatus.FAILED && match.status == MsgStatus.SENDING) {
+                    setStatusRespectingCancel(match.id, MsgStatus.FAILED)
+                }
+                refreshConversation(match.convoId)
+                ChangeBus.ping()
+                return null
+            }
+        }
         // received MMS start unread; our own sent MMS are read
         val fixed = MessageEntity(
             convoId = convo.id, address = senderAddress, body = bodyText, date = dateMs,
@@ -576,9 +640,16 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
-    suspend fun onMmsSent(messageId: Long, ok: Boolean) {
+    suspend fun onMmsSent(messageId: Long, ok: Boolean, telephonyId: Long? = null) {
         setStatusRespectingCancel(messageId, if (ok) MsgStatus.SENT else MsgStatus.FAILED)
-        db.messages().byId(messageId)?.let { refreshAndPing(it.convoId) }
+        db.messages().byId(messageId)?.let { m ->
+            // link the telephony row the engine persisted, so the content observer
+            // recognizes it as ours (closes the duplicate window from this side too)
+            if (telephonyId != null && m.telephonyId == null) {
+                db.messages().setTelephonyId(m.id, telephonyId, true)
+            }
+            refreshAndPing(m.convoId)
+        }
     }
 
     /** Reality wins: a sent confirmation flips CANCELED to SENT; a failure keeps CANCELED. */
@@ -885,6 +956,7 @@ class Repo private constructor(private val context: Context) {
                     val type = c.getInt(4)
                     val read = c.getInt(5) == 1
                     val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
+                    if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue
                     val status = when (type) {
                         Telephony.Sms.MESSAGE_TYPE_INBOX -> MsgStatus.RECEIVED
                         Telephony.Sms.MESSAGE_TYPE_FAILED -> MsgStatus.FAILED
@@ -965,7 +1037,18 @@ class Repo private constructor(private val context: Context) {
                         val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
                         val convo = getOrCreateConversation(listOf(address))
                         if (db.messages().existsSimilar(convo.id, isMine, body, date - 5000, date + 5000)) continue
-                        val status = if (isMine) MsgStatus.SENT else MsgStatus.RECEIVED
+                        // honest status from the actual message box — outgoing rows were all
+        // labeled "sent" before, even ones sitting in outbox or marked failed
+        if (msgBox == Telephony.Mms.MESSAGE_BOX_DRAFTS) return null
+                        if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue
+                        val status = when (type) {
+                            Telephony.Sms.MESSAGE_TYPE_INBOX -> MsgStatus.RECEIVED
+                            Telephony.Sms.MESSAGE_TYPE_FAILED -> MsgStatus.FAILED
+                            Telephony.Sms.MESSAGE_TYPE_OUTBOX, Telephony.Sms.MESSAGE_TYPE_QUEUED ->
+                                if (System.currentTimeMillis() - date < 10 * 60 * 1000) MsgStatus.SENDING
+                                else MsgStatus.FAILED
+                            else -> MsgStatus.SENT
+                        }
                         val id = db.messages().insert(
                             MessageEntity(
                                 convoId = convo.id, address = address, body = body, date = date,

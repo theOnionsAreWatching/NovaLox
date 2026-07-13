@@ -52,6 +52,7 @@ class MediaViewerActivity : BaseActivity() {
             override fun onPageSelected(position: Int) {
                 stopPlayback()
                 updateCounter(position)
+                updateMediaSoftkeys()
             }
         })
 
@@ -62,6 +63,7 @@ class MediaViewerActivity : BaseActivity() {
             val start = parts.indexOfFirst { it.id == partId }.coerceAtLeast(0)
             binding.pager.setCurrentItem(start, false)
             updateCounter(start)
+            updateMediaSoftkeys()
         }
     }
 
@@ -73,32 +75,89 @@ class MediaViewerActivity : BaseActivity() {
 
     private fun currentPart(): PartEntity? = parts.getOrNull(binding.pager.currentItem)
 
+    /** id of the part whose video session is active (playing OR paused) */
+    private var activeVideoPartId = -1L
+
+    private fun currentVideoView(): android.widget.VideoView? {
+        val p = currentPart() ?: return null
+        if (!p.isVideo()) return null
+        return binding.pager.findViewWithTag("video_${p.id}")
+    }
+
+    private fun isVideoPlaying(): Boolean =
+        try { currentVideoView()?.isPlaying == true } catch (_: Exception) { false }
+
+    /** Center softkey reads Play for a stopped/paused video, Pause while playing,
+     *  and nothing at all on images. */
+    private fun updateMediaSoftkeys() {
+        val p = currentPart()
+        val center = when {
+            p != null && p.isVideo() && isVideoPlaying() -> getString(R.string.pause)
+            p != null && p.isVideo() -> getString(R.string.play)
+            else -> ""
+        }
+        softkeys?.set(
+            getString(R.string.back), center, getString(R.string.save),
+            onLeft = { finish() },
+            onCenter = { playCurrent() },
+            onRight = { saveCurrent() }
+        )
+    }
+
     private fun playCurrent() {
         val p = currentPart() ?: return
         if (!p.isVideo()) return
         val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: return
         val poster = binding.pager.findViewWithTag<android.widget.ImageView>("poster_${p.id}")
-        if (vv.isPlaying) {
-            vv.stopPlayback()
-            poster?.visibility = View.VISIBLE
-            return
-        }
         try {
+            if (vv.isPlaying) {
+                // PAUSE, not stop: position is kept, poster stays hidden so the
+                // paused frame remains visible
+                vv.pause()
+                updateMediaSoftkeys()
+                return
+            }
+            if (activeVideoPartId == p.id) {
+                // resume a paused session
+                vv.start()
+                updateMediaSoftkeys()
+                return
+            }
             vv.setVideoPath(p.filePath)
             vv.setOnPreparedListener {
                 // the still frame sits ABOVE the video surface — hide it now
                 poster?.visibility = View.GONE
+                updateMediaSoftkeys()
             }
-            vv.setOnCompletionListener { poster?.visibility = View.VISIBLE }
+            vv.setOnCompletionListener {
+                poster?.visibility = View.VISIBLE
+                activeVideoPartId = -1L
+                updateMediaSoftkeys()
+            }
             vv.setOnErrorListener { _, _, _ ->
                 poster?.visibility = View.VISIBLE
+                activeVideoPartId = -1L
+                updateMediaSoftkeys()
                 openWithSystemPlayer(p)
                 true
             }
+            activeVideoPartId = p.id
             vv.start()
+            updateMediaSoftkeys()
         } catch (_: Exception) {
             openWithSystemPlayer(p)
         }
+    }
+
+    /** Skip a bit on a tap; hold for continuous fast-forward / rewind. */
+    private fun seekBy(forward: Boolean, repeatCount: Int) {
+        val vv = currentVideoView() ?: return
+        try {
+            val delta = if (repeatCount == 0) 5_000 else 10_000
+            val target = (vv.currentPosition + if (forward) delta else -delta)
+                .coerceIn(0, vv.duration.coerceAtLeast(0))
+            vv.seekTo(target)
+        } catch (_: Exception) {}
     }
 
     private fun openWithSystemPlayer(p: io.github.theonionsarewatching.nova.data.PartEntity) {
@@ -129,13 +188,15 @@ class MediaViewerActivity : BaseActivity() {
     }
 
     private fun stopPlayback() {
-        // stop whichever page's VideoView is playing, restore its poster frame
+        // stop whichever page's VideoView is active, restore its poster frame
         for (p in parts) {
             val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: continue
-            if (vv.isPlaying) try { vv.stopPlayback() } catch (_: Exception) {}
+            try { vv.stopPlayback() } catch (_: Exception) {}
             binding.pager.findViewWithTag<android.widget.ImageView>("poster_${p.id}")
                 ?.visibility = View.VISIBLE
         }
+        activeVideoPartId = -1L
+        updateMediaSoftkeys()
     }
 
     private fun saveCurrent() {
@@ -160,10 +221,20 @@ class MediaViewerActivity : BaseActivity() {
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (isVideoPlaying()) {
+                        // tap = skip back a bit; hold = rewind
+                        seekBy(forward = false, repeatCount = event.repeatCount)
+                        return true
+                    }
                     binding.pager.setCurrentItem((binding.pager.currentItem - 1).coerceAtLeast(0), true)
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (isVideoPlaying()) {
+                        // tap = skip forward a bit; hold = fast-forward
+                        seekBy(forward = true, repeatCount = event.repeatCount)
+                        return true
+                    }
                     binding.pager.setCurrentItem(
                         (binding.pager.currentItem + 1).coerceAtMost((parts.size - 1).coerceAtLeast(0)), true
                     )

@@ -361,6 +361,15 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms LIMIT 1")
     suspend fun byTelephonyId(tId: Long, isMms: Boolean): MessageEntity?
 
+    @Query(
+        """SELECT * FROM messages WHERE convoId = :convoId AND isMine = 1 AND isMms = :isMms
+           AND telephonyId IS NULL AND deletedAt IS NULL AND date BETWEEN :lo AND :hi"""
+    )
+    suspend fun unlinkedOutgoing(convoId: Long, isMms: Boolean, lo: Long, hi: Long): List<MessageEntity>
+
+    @Query("UPDATE messages SET telephonyId = :tId, telephonyIsMms = :isMms WHERE id = :id")
+    suspend fun setTelephonyId(id: Long, tId: Long, isMms: Boolean)
+
     @Query("UPDATE messages SET body = :body WHERE id = :id")
     suspend fun updateBody(id: Long, body: String)
 
