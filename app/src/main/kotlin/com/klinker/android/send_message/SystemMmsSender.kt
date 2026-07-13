@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.telephony.SmsManager
 import com.android.mms.MmsConfig
 import com.android.mms.dom.smil.parser.SmilXmlSerializer
+import com.google.android.mms.smil.SmilHelper
 import com.google.android.mms.ContentType
 import com.google.android.mms.pdu_alt.CharacterSets
 import com.google.android.mms.pdu_alt.EncodedStringValue
