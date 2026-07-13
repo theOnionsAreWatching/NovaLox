@@ -101,6 +101,50 @@ class MmsReceiver : MmsReceivedReceiver() {
 class MmsSentReceiverImpl : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ok = resultCode == Activity.RESULT_OK
+        // THE MISSING HALF of MMS delivery reports: the carrier's confirmation
+        // carries the Message-ID it assigned; the later delivery notice
+        // references that ID and the matcher looks it up on the sent row.
+        // Nobody in the klinker lineage ever stored it — every delivery notice
+        // failed the lookup and was silently dropped. The stock app stores it
+        // (Bugle ProcessSentMessageAction -> updateSentMmsMessageStatus).
+        if (ok) {
+            try {
+                val conf = intent.getByteArrayExtra(android.telephony.SmsManager.EXTRA_MMS_DATA)
+                if (conf != null) {
+                    val pdu = com.google.android.mms.pdu_alt.PduParser(conf, true).parse()
+                    val sendConf = pdu as? com.google.android.mms.pdu_alt.SendConf
+                    if (sendConf != null) {
+                        val mid = sendConf.messageId?.let { String(it) }
+                        val uriString2 = intent.getStringExtra("content_uri")
+                        if (!mid.isNullOrBlank() && uriString2 != null) {
+                            val values = ContentValues(2).apply {
+                                put(Telephony.Mms.MESSAGE_ID, mid)
+                                put(Telephony.Mms.RESPONSE_STATUS, sendConf.responseStatus)
+                            }
+                            context.contentResolver.update(Uri.parse(uriString2), values, null, null)
+                        }
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-sent",
+                            "send-conf: resp=${sendConf.responseStatus} m_id=$mid stored=${!mid.isNullOrBlank()}"
+                        )
+                    } else {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-sent", "send-conf payload present but not a SendConf"
+                        )
+                    }
+                } else {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-sent",
+                        "no send-conf payload from this stack — delivery matching not possible for this message"
+                    )
+                }
+            } catch (e: Exception) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-sent", "send-conf parse failed: ${e.message}"
+                )
+            }
+        }
+
         val rcName = when (resultCode) {
             android.app.Activity.RESULT_OK -> "OK"
             1 -> "UNSPECIFIED"
