@@ -103,6 +103,21 @@ class MmsReceiver : MmsReceivedReceiver() {
 
 // ============================== MMS sent ==============================
 
+private fun respName(code: Int): String = when (code) {
+    128 -> "OK"
+    129 -> "UNSPECIFIED ERROR"
+    130 -> "SERVICE DENIED"
+    131 -> "MESSAGE FORMAT CORRUPT"
+    132 -> "SENDING ADDRESS UNRESOLVED"
+    133 -> "MESSAGE NOT FOUND"
+    134 -> "NETWORK PROBLEM"
+    135 -> "CONTENT NOT ACCEPTED"
+    136 -> "UNSUPPORTED MESSAGE"
+    in 192..223 -> "TRANSIENT FAILURE ($code) — try again"
+    in 224..255 -> "PERMANENT FAILURE ($code)"
+    else -> "code $code"
+}
+
 class MmsSentReceiverImpl : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ok = resultCode == Activity.RESULT_OK
@@ -112,6 +127,11 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
         // Nobody in the klinker lineage ever stored it — every delivery notice
         // failed the lookup and was silently dropped. The stock app stores it
         // (Bugle ProcessSentMessageAction -> updateSentMmsMessageStatus).
+        // The carrier's own verdict lives in the send-confirmation. Android's
+        // resultCode only says the UPLOAD worked — the MMSC can still reject
+        // the message (resp != 128), and pretending that's "Sent" loses mail
+        // silently. Google fails the message on non-OK (Bugle MmsUtils:1817).
+        var carrierVerdict = -1   // -1 = no confirmation payload on this stack
         if (ok) {
             try {
                 val conf = intent.getByteArrayExtra(android.telephony.SmsManager.EXTRA_MMS_DATA)
@@ -119,18 +139,21 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
                     val pdu = com.google.android.mms.pdu_alt.PduParser(conf, true).parse()
                     val sendConf = pdu as? com.google.android.mms.pdu_alt.SendConf
                     if (sendConf != null) {
+                        carrierVerdict = sendConf.responseStatus
+                        val accepted = carrierVerdict == 128
                         val mid = sendConf.messageId?.let { String(it) }
                         val uriString2 = intent.getStringExtra("content_uri")
-                        if (!mid.isNullOrBlank() && uriString2 != null) {
+                        if (accepted && !mid.isNullOrBlank() && uriString2 != null) {
                             val values = ContentValues(2).apply {
                                 put(Telephony.Mms.MESSAGE_ID, mid)
-                                put(Telephony.Mms.RESPONSE_STATUS, sendConf.responseStatus)
+                                put(Telephony.Mms.RESPONSE_STATUS, carrierVerdict)
                             }
                             context.contentResolver.update(Uri.parse(uriString2), values, null, null)
                         }
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-sent",
-                            "send-conf: resp=${sendConf.responseStatus} m_id=$mid stored=${!mid.isNullOrBlank()}"
+                            "send-conf: resp=$carrierVerdict (${respName(carrierVerdict)}) " +
+                                "m_id=$mid stored=${accepted && !mid.isNullOrBlank()}"
                         )
                     } else {
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
@@ -170,6 +193,25 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
 
         // keep the system provider box in sync (mirrors the reference implementation)
         var okEffective = ok
+        // carrier said no -> the message did NOT go out, whatever the upload said
+        if (carrierVerdict != -1 && carrierVerdict != 128) {
+            okEffective = false
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-sent",
+                "carrier REJECTED the message: ${respName(carrierVerdict)} (resp=$carrierVerdict) -> marking FAILED"
+            )
+            // the reason belongs in the message's Details, not just the log
+            val repo0 = io.github.theonionsarewatching.nova.data.Repo.get(context)
+            repo0.scope.launch {
+                val stamp = java.text.SimpleDateFormat(
+                    "MM-dd HH:mm:ss", java.util.Locale.US
+                ).format(java.util.Date())
+                repo0.db.messages().appendDeliveryDebug(
+                    messageId,
+                    "[$stamp] carrier rejected: ${respName(carrierVerdict)} (resp=$carrierVerdict)\n"
+                )
+            }
+        }
         try {
             val uriString = intent.getStringExtra("content_uri")
             if (uriString != null) {
@@ -182,7 +224,7 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
                         null, null, null
                     )?.use { c -> if (c.moveToFirst()) c.getInt(0) else 0 } ?: 0
                     if (boxNow == Telephony.Mms.MESSAGE_BOX_SENT) {
-                        okEffective = true
+                        if (carrierVerdict == -1 || carrierVerdict == 128) okEffective = true
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-sent",
                             "rc=$resultCode but store box=SENT — treating as sent"

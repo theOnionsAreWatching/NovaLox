@@ -59,10 +59,33 @@ object SystemMmsSender {
         groupMms: Boolean,
         linkRow: (Long) -> Unit = {}
     ): Long? {
-        // ---- build the send request (mirror of Transaction.buildPdu) ----
+        // ---- build the send request (address handling mirrors AOSP Bugle) ----
         val req = SendReq()
-        req.prepareFromAddress(context, Utils.getMyPhoneNumber(context), Settings.DEFAULT_SUBSCRIPTION_ID)
-        for (r in addresses) req.addTo(EncodedStringValue(r))
+        // FROM: set only a clean self number; otherwise leave unset so the
+        // composer emits the insert-address-token and the CARRIER fills in the
+        // verified subscriber address. Strict MMSCs (Verizon/Visible) reject
+        // the whole message with resp=132 SENDING-ADDRESS-UNRESOLVED when the
+        // From doesn't match their records — the token path is immune to every
+        // line-number quirk. (Bugle MmsUtils.createSendReq:2076-2079.)
+        val rawSelf = try { Utils.getMyPhoneNumber(context) } catch (_: Exception) { null }
+        val selfNumber = rawSelf
+            ?.let { android.telephony.PhoneNumberUtils.stripSeparators(it) }
+            ?.takeIf { n -> n.count { it.isDigit() } >= 7 }
+        if (selfNumber != null) {
+            req.from = EncodedStringValue(selfNumber)
+        }
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "mms-send",
+            "from=" + (selfNumber ?: "insert-address-token")
+        )
+        // TO: emails pass through; phone numbers are stripped of spaces,
+        // dashes and parentheses — formatted numbers are another resp=132
+        // trigger on strict MMSCs.
+        for (r in addresses) {
+            val clean = if (r.contains("@")) r
+                else android.telephony.PhoneNumberUtils.stripSeparators(r)
+            if (!clean.isNullOrBlank()) req.addTo(EncodedStringValue(clean))
+        }
         req.date = System.currentTimeMillis() / 1000
 
         val body = PduBody()
