@@ -303,7 +303,15 @@ class Repo private constructor(private val context: Context) {
         if (mType == 130 && Prefs.get(context).autoDownloadMms) return null
         val notDownloaded = mType == 130
         // the mms table also holds protocol rows with no content — delivery reports,
-        // read reports, acknowledgements (m_type 129/131/133/134/135/136...). These
+        // delivery-ind (134): the carrier's "your picture message was delivered"
+        // notice. Match it to the sent message via the MMS Message-ID and mark
+        // that message delivered, then skip ingesting the notice itself.
+        if (mType == 134) {
+            handleMmsDeliveryInd(mmsId)
+            return null
+        }
+
+        // read reports, acknowledgements (m_type 129/131/133/135/136...). These
         // imported as BLANK messages next to the real MMS. Only actual messages pass:
         // 128 = outgoing send-request, 132 = downloaded incoming, 130 = placeholder.
         if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return null
@@ -626,6 +634,52 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
+    /** MMS delivery-ind: look up the original sent message by MMS Message-ID
+     *  and mark it delivered. */
+    private suspend fun handleMmsDeliveryInd(indId: Long) {
+        try {
+            var origMessageId: String? = null
+            var st = -1
+            resolver.query(
+                Uri.parse("content://mms"), arrayOf("m_id", "st"),
+                "_id = ?", arrayOf(indId.toString()), null
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    origMessageId = c.getString(0)
+                    st = try { c.getInt(1) } catch (_: Exception) { -1 }
+                }
+            }
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-delivery", "delivery-ind: m_id=$origMessageId st=$st"
+            )
+            val mid = origMessageId ?: return
+            // find the SENT telephony row carrying that Message-ID
+            var sentTelephonyId: Long? = null
+            resolver.query(
+                Uri.parse("content://mms"), arrayOf(Telephony.Mms._ID),
+                "m_id = ? AND ${Telephony.Mms.MESSAGE_BOX} = ${Telephony.Mms.MESSAGE_BOX_SENT}",
+                arrayOf(mid), "date DESC"
+            )?.use { c -> if (c.moveToFirst()) sentTelephonyId = c.getLong(0) }
+            val tId = sentTelephonyId ?: return
+            val m = db.messages().byTelephonyMms(tId) ?: return
+            val stamp = android.text.format.DateFormat.format(
+                "MM-dd HH:mm", System.currentTimeMillis())
+            // X-Mms-Status: 129 = Retrieved (delivered); others noted in the trail
+            val delivered = st == 129
+            db.messages().appendDeliveryDebug(
+                m.id, "[$stamp] MMS delivery report st=$st -> ${if (delivered) "delivered" else "not delivered"}\n"
+            )
+            if (delivered && m.status == MsgStatus.SENT) {
+                setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
+            }
+            refreshAndPing(m.convoId)
+        } catch (e: Exception) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-delivery", "delivery-ind handling failed: ${e.message}"
+            )
+        }
+    }
+
     /** A status report that arrived through the SMS_DELIVER pipeline: match it
      *  to the newest outgoing text to that number and apply it. */
     suspend fun onStatusReportViaInbox(address: String, tpStatus: Int) {
@@ -664,7 +718,12 @@ class Repo private constructor(private val context: Context) {
     }
 
     suspend fun onMmsSent(messageId: Long, ok: Boolean, telephonyId: Long? = null) {
+        val before = db.messages().byId(messageId)?.status
         setStatusRespectingCancel(messageId, if (ok) MsgStatus.SENT else MsgStatus.FAILED)
+        val after = db.messages().byId(messageId)?.status
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "mms-status", "msg=$messageId status $before -> $after (row ${if (after == null) "MISSING" else "ok"})"
+        )
         db.messages().byId(messageId)?.let { m ->
             // link the telephony row the engine persisted, so the content observer
             // recognizes it as ours (closes the duplicate window from this side too)
