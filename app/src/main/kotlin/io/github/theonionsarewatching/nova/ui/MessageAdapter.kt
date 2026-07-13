@@ -199,14 +199,19 @@ class MessageAdapter(
         )
         holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
-        // bulk-selection tint (solid row) vs normal focus shade (behind content only)
+        // selection is a FOREGROUND wash + accent outline, drawn over whatever
+        // the background shows — so a focused row still shows its focus shade
+        // and a selected row is unmistakable even while focused
+        holder.b.root.background = ThemeUtils.focusFill(ctx)
         if (isSelected(m.id)) {
             val accent2 = ThemeUtils.accentColor(ctx)
-            holder.b.root.setBackgroundColor(
-                Color.argb(56, Color.red(accent2), Color.green(accent2), Color.blue(accent2))
-            )
+            val strokePx = (2 * ctx.resources.displayMetrics.density).toInt()
+            holder.b.root.foreground = android.graphics.drawable.GradientDrawable().apply {
+                setColor(withAlpha(accent2, 46))
+                setStroke(strokePx, accent2)
+            }
         } else {
-            holder.b.root.background = ThemeUtils.focusFill(ctx)
+            holder.b.root.foreground = null
         }
 
         holder.itemView.setOnClickListener { onPress(row) }

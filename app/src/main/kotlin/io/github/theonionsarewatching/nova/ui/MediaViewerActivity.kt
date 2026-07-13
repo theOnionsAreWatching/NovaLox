@@ -89,10 +89,11 @@ class MediaViewerActivity : BaseActivity() {
 
     /** Center softkey reads Play for a stopped/paused video, Pause while playing,
      *  and nothing at all on images. */
-    private fun updateMediaSoftkeys() {
+    private fun updateMediaSoftkeys(forcePlaying: Boolean? = null) {
         val p = currentPart()
+        val playing = forcePlaying ?: isVideoPlaying()
         val center = when {
-            p != null && p.isVideo() && isVideoPlaying() -> getString(R.string.pause)
+            p != null && p.isVideo() && playing -> getString(R.string.pause)
             p != null && p.isVideo() -> getString(R.string.play)
             else -> ""
         }
@@ -114,20 +115,20 @@ class MediaViewerActivity : BaseActivity() {
                 // PAUSE, not stop: position is kept, poster stays hidden so the
                 // paused frame remains visible
                 vv.pause()
-                updateMediaSoftkeys()
+                updateMediaSoftkeys(forcePlaying = false)
                 return
             }
             if (activeVideoPartId == p.id) {
                 // resume a paused session
                 vv.start()
-                updateMediaSoftkeys()
+                updateMediaSoftkeys(forcePlaying = true)
                 return
             }
             vv.setVideoPath(p.filePath)
             vv.setOnPreparedListener {
                 // the still frame sits ABOVE the video surface — hide it now
                 poster?.visibility = View.GONE
-                updateMediaSoftkeys()
+                updateMediaSoftkeys(forcePlaying = true)
             }
             vv.setOnCompletionListener {
                 poster?.visibility = View.VISIBLE
@@ -143,7 +144,7 @@ class MediaViewerActivity : BaseActivity() {
             }
             activeVideoPartId = p.id
             vv.start()
-            updateMediaSoftkeys()
+            updateMediaSoftkeys(forcePlaying = true)
         } catch (_: Exception) {
             openWithSystemPlayer(p)
         }

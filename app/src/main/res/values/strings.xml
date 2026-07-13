@@ -359,4 +359,10 @@
     <!-- v0.9.8 additions -->
     <string name="import_finished">Import complete</string>
     <string name="pause">Pause</string>
+
+    <!-- v0.9.10 additions -->
+    <string name="select_conversations">Select conversations…</string>
+    <string name="select">Select</string>
+    <string name="delete_n">Delete (%1$d)</string>
+    <string name="delete_convos_confirm">Delete the selected conversations? All their messages are deleted, including locked ones.</string>
 </resources>

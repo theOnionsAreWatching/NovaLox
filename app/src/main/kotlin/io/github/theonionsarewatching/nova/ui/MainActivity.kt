@@ -41,8 +41,13 @@ class MainActivity : BaseActivity() {
         repo = Repo.get(this)
 
         adapter = ConversationAdapter(
-            onOpen = { openThread(it.id) },
-            onOptions = { convoOptions(it) }
+            onOpen = { c ->
+                if (selectingConvos) toggleConvoSelection(c.id) else openThread(c.id)
+            },
+            onOptions = { c ->
+                if (!selectingConvos) convoOptions(c)
+            },
+            isSelected = { id -> selectingConvos && id in selectedConvoIds }
         )
         binding.convoList.layoutManager = LinearLayoutManager(this)
         binding.convoList.adapter = adapter
@@ -78,15 +83,8 @@ class MainActivity : BaseActivity() {
             true
         }
 
-        softkeys = Softkeys(this, binding.softkeyBar).also {
-            it.set(
-                getString(R.string.softkey_new_message), getString(R.string.softkey_open), getString(R.string.softkey_options),
-                onLeft = { startActivity(Intent(this, ComposeActivity::class.java)) },
-                onCenter = { (binding.convoList.focusedChild)?.performClick() },
-                onRight = { optionsMenu() },
-                onMenu = { optionsMenu() }
-            )
-        }
+        softkeys = Softkeys(this, binding.softkeyBar)
+        setupDefaultSoftkeys()
         ThemeUtils.applyFocusHighlightRound(binding.btnSettings, binding.btnCompose)
         ThemeUtils.applyButtonFocus(binding.gateButton)
         ThemeUtils.applyFocusHighlight(binding.searchInput)
@@ -452,6 +450,7 @@ class MainActivity : BaseActivity() {
                 GroupParticipants.show(this, c)
             }
         }
+        items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         items += getString(R.string.hide_conversation) to {
             AlertDialog.Builder(this)
@@ -493,6 +492,74 @@ class MainActivity : BaseActivity() {
         AlertDialog.Builder(this)
             .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .show()
+    }
+
+    private fun setupDefaultSoftkeys() {
+        softkeys?.set(
+            getString(R.string.softkey_new_message), getString(R.string.softkey_open), getString(R.string.softkey_options),
+            onLeft = { startActivity(Intent(this, ComposeActivity::class.java)) },
+            onCenter = { (binding.convoList.focusedChild)?.performClick() },
+            onRight = { optionsMenu() },
+            onMenu = { optionsMenu() }
+        )
+    }
+
+    // ---------------- conversation multi-select ----------------
+    private var selectingConvos = false
+    private val selectedConvoIds = HashSet<Long>()
+
+    private fun enterConvoSelection(initialId: Long) {
+        selectingConvos = true
+        selectedConvoIds.clear()
+        selectedConvoIds.add(initialId)
+        adapter.notifyDataSetChanged()
+        updateSelectionSoftkeys()
+    }
+
+    private fun exitConvoSelection() {
+        selectingConvos = false
+        selectedConvoIds.clear()
+        adapter.notifyDataSetChanged()
+        setupDefaultSoftkeys()
+    }
+
+    private fun toggleConvoSelection(id: Long) {
+        if (id in selectedConvoIds) selectedConvoIds.remove(id) else selectedConvoIds.add(id)
+        adapter.notifyDataSetChanged()
+        updateSelectionSoftkeys()
+    }
+
+    private fun focusedConvo(): ConversationEntity? {
+        val v = binding.convoList.focusedChild ?: return null
+        val pos = binding.convoList.getChildAdapterPosition(v)
+        return adapter.items.getOrNull(pos)
+    }
+
+    private fun updateSelectionSoftkeys() {
+        softkeys?.set(
+            getString(R.string.cancel), getString(R.string.select),
+            getString(R.string.delete_n, selectedConvoIds.size),
+            onLeft = { exitConvoSelection() },
+            onCenter = { focusedConvo()?.let { toggleConvoSelection(it.id) } },
+            onRight = { deleteSelectedConvos() },
+            onMenu = { exitConvoSelection() }
+        )
+    }
+
+    private fun deleteSelectedConvos() {
+        if (selectedConvoIds.isEmpty()) return
+        val ids = selectedConvoIds.toList()
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.delete_n, ids.size))
+            .setMessage(R.string.delete_convos_confirm)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                lifecycleScope.launch {
+                    for (id in ids) repo.deleteThread(id, includeLocked = true)
+                    exitConvoSelection()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -552,10 +619,17 @@ class MainActivity : BaseActivity() {
                     }
                 }
             }
-        } else if (binding.btnSettings.isFocusable) {
+        }
+        else if (binding.btnSettings.isFocusable) {
             // focus left the header by other means (touch, dialogs): relock it,
             // so a list refresh can never park focus up there
             setHeaderFocusable(false)
+        }
+        if (selectingConvos && event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_BACK
+        ) {
+            exitConvoSelection()
+            return true
         }
         if (binding.contentView.visibility == View.VISIBLE && scroller?.onKey(event) == true) return true
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_CALL) {

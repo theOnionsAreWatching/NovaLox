@@ -128,6 +128,8 @@
         android:background="@drawable/bg_input_box"
         android:padding="9dp"
         android:gravity="top|start"
+        android:maxLines="6"
+        android:scrollbars="vertical"
         android:textSize="14sp"
         android:hint="@string/compose_hint"
         android:inputType="textCapSentences|textMultiLine"

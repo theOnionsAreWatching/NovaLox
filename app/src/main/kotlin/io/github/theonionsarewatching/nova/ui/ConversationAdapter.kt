@@ -15,7 +15,8 @@ import io.github.theonionsarewatching.nova.util.Prefs
 
 class ConversationAdapter(
     private val onOpen: (ConversationEntity) -> Unit,
-    private val onOptions: (ConversationEntity) -> Unit
+    private val onOptions: (ConversationEntity) -> Unit,
+    private val isSelected: (Long) -> Boolean = { false }
 ) : RecyclerView.Adapter<ConversationAdapter.VH>() {
 
     init {
@@ -59,6 +60,7 @@ class ConversationAdapter(
             holder.b.avatarLetter.visibility = android.view.View.GONE
             holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri)) {
                 transformations(CircleCropTransformation())
+                size(128) // fixed request size: identical result at every app zoom
             }
         } else {
             holder.b.convoAvatar.visibility = android.view.View.GONE
@@ -105,6 +107,19 @@ class ConversationAdapter(
         holder.b.convoUnread.text = if (c.unreadCount > 0) "(${c.unreadCount})" else ""
         holder.b.convoUnread.textSize = prefs.timeTextSp
         holder.b.convoUnread.setTextColor(ThemeUtils.accentColor(ctx))
+
+        // selection wash + outline over the focus shade (same scheme as messages)
+        if (isSelected(c.id)) {
+            val a = io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(holder.itemView.context)
+            val strokePx = (2 * holder.itemView.resources.displayMetrics.density).toInt()
+            holder.itemView.foreground = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.argb(46, android.graphics.Color.red(a),
+                    android.graphics.Color.green(a), android.graphics.Color.blue(a)))
+                setStroke(strokePx, a)
+            }
+        } else {
+            holder.itemView.foreground = null
+        }
 
         holder.itemView.setOnClickListener { onOpen(c) }
         holder.itemView.setOnLongClickListener { onOptions(c); true }

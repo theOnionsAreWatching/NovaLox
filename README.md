@@ -8,29 +8,26 @@ No app store needed. No Google account. Nothing leaves your phone.
 
 ---
 
-## Highlights
+## Features
 
-- **Instant** — conversations open immediately, even with years of history
-- **Everything works with the D-pad** — hold to scroll fast, a date bubble shows
-  where you are, and the selected item always has a clear outline
-- **Physical softkeys supported** — quick setup (press left, press right, save),
-  with on-screen buttons as a fallback for phones whose softkeys don't cooperate
-- **Press a message to act on what's inside it** — call a phone number, open a
-  link, save a contact, straight from the message
-- **Group messages done right** — one group conversation, or individual replies:
-  your choice per group. See all participants, message any of them privately
-- **Sound control per contact** — each conversation can have its own tone,
-  vibration setting, or silence. Block messages by keywords you choose
-- **Lock messages** so nothing deletes them; deleted messages go to a recycle
-  bin first; schedule messages to send later
-- **Send pictures, videos, voice notes, contact cards** — several at once, and
-  share straight from the gallery
-- **Resize everything** from 70% to 150% for unusual screens, plus fine-grained
-  text sizes
-- **Updates itself** — checks the releases page and installs updates with your
-  permission, built to work behind filtered networks
-- **Full backup & restore** — one file with all messages and attachments, moves
-  cleanly between phones
+- Conversations open immediately, even with years of history
+- Full D-pad operation: hold to scroll fast, a date bubble shows your place,
+  the selected item has a clear outline
+- Physical softkey support with a setup screen (press left, press right, save);
+  on-screen buttons as a fallback for phones whose softkeys don't reach apps
+- Press a message to act on its contents: call a number, open a link, save a
+  contact
+- Group messages as one group conversation or as individual replies, set per
+  group; view all participants and message or call any of them
+- Per-conversation notification tone, vibration, or silence; keyword blocking
+- Lock messages against deletion; recycle bin for deleted messages; scheduled
+  sending
+- Attach pictures, videos, audio, and contact cards — several at once; share
+  into the app from the gallery
+- Whole-app resize from 70% to 150%, plus separate text size settings
+- Built-in update check and installer that works behind filtered networks
+- Backup and restore to a single file, including attachments; restore writes
+  into the phone's message storage
 
 ## Installing
 
