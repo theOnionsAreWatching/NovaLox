@@ -163,6 +163,7 @@ object Sender {
             val imageCount = loaded.count { shrinkable(it) }
             val perImageBudget = if (imageCount == 0) 0
                 else ((cap - fixedBytes) / imageCount).coerceAtLeast(60 * 1024)
+            val finalAtts = ArrayList<Triple<ByteArray, String, String>>()
             for (a in loaded) {
                 if (shrinkable(a) && a.bytes.size > perImageBudget) {
                     val shrunk = io.github.theonionsarewatching.nova.util
@@ -173,11 +174,41 @@ object Sender {
                             context, "mms-send",
                             "shrunk ${a.name}: ${a.bytes.size / 1024} KB -> ${shrunk.size / 1024} KB"
                         )
-                        message.addMedia(shrunk, "image/jpeg", jpgName, jpgName)
+                        finalAtts.add(Triple(shrunk, "image/jpeg", jpgName))
                         continue
                     }
                 }
-                message.addMedia(a.bytes, a.mime, a.name, a.name)
+                finalAtts.add(Triple(a.bytes, a.mime, a.name))
+            }
+
+            // ---- preferred path: our own builder (honest delivery-report flag,
+            //      immediate store-row link). Engine path below as fallback. ----
+            try {
+                val wantReport = Prefs.get(context).deliveryReports
+                val tid = com.klinker.android.send_message.SystemMmsSender.send(
+                    context, messageId, text, addresses, finalAtts,
+                    requestDeliveryReport = wantReport, groupMms = true
+                )
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-send",
+                    "own builder: msg=$messageId tid=$tid d_rpt=${if (wantReport) "YES" else "no"} parts=${finalAtts.size}"
+                )
+                if (tid != null) {
+                    val repo0 = Repo.get(context)
+                    repo0.scope.launch {
+                        repo0.db.messages().setTelephonyId(messageId, tid, true)
+                    }
+                }
+                return
+            } catch (e: Exception) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-send",
+                    "own builder failed (${e::class.java.simpleName}: ${e.message}) — falling back to engine"
+                )
+            }
+
+            for ((bytes, mime, name) in finalAtts) {
+                message.addMedia(bytes, mime, name, name)
             }
             val sentIntent = Intent(context, MmsSentReceiverImpl::class.java).apply {
                 putExtra(EXTRA_MESSAGE_ID, messageId)

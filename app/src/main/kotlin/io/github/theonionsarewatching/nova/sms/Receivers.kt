@@ -120,12 +120,32 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
         val messageId = intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)
 
         // keep the system provider box in sync (mirrors the reference implementation)
+        var okEffective = ok
         try {
             val uriString = intent.getStringExtra("content_uri")
             if (uriString != null) {
-                val box = if (ok) Telephony.Mms.MESSAGE_BOX_SENT else Telephony.Mms.MESSAGE_BOX_FAILED
-                val values = ContentValues(1).apply { put(Telephony.Mms.MESSAGE_BOX, box) }
-                context.contentResolver.update(Uri.parse(uriString), values, null, null)
+                if (!ok) {
+                    // some stacks return an error code for messages that actually
+                    // went out — if the system already moved the row to SENT,
+                    // trust the store over the code
+                    val boxNow = context.contentResolver.query(
+                        Uri.parse(uriString), arrayOf(Telephony.Mms.MESSAGE_BOX),
+                        null, null, null
+                    )?.use { c -> if (c.moveToFirst()) c.getInt(0) else 0 } ?: 0
+                    if (boxNow == Telephony.Mms.MESSAGE_BOX_SENT) {
+                        okEffective = true
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-sent",
+                            "rc=$resultCode but store box=SENT — treating as sent"
+                        )
+                    }
+                }
+                if (!(okEffective && !ok)) {
+                    val box = if (okEffective) Telephony.Mms.MESSAGE_BOX_SENT
+                        else Telephony.Mms.MESSAGE_BOX_FAILED
+                    val values = ContentValues(1).apply { put(Telephony.Mms.MESSAGE_BOX, box) }
+                    context.contentResolver.update(Uri.parse(uriString), values, null, null)
+                }
             }
         } catch (_: SQLiteException) {
         } catch (_: Exception) {
@@ -141,7 +161,7 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
                 try {
                     val tId = intent.getStringExtra("content_uri")
                         ?.let { android.net.Uri.parse(it).lastPathSegment?.toLongOrNull() }
-                    repo.onMmsSent(messageId, ok, tId)
+                    repo.onMmsSent(messageId, okEffective, tId)
                 } finally {
                     pending.finish()
                 }
