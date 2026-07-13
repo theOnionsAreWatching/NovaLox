@@ -337,6 +337,9 @@ interface MessageDao {
     )
     suspend fun countNewerThan(convoId: Long, afterDate: Long, afterId: Long): Int
 
+    @Query("SELECT DISTINCT convoId FROM messages WHERE status = 6 AND deletedAt IS NULL")
+    suspend fun convoIdsWithScheduled(): List<Long>
+
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND locked = 1")
     suspend fun lockedCount(convoId: Long): Int
 

@@ -148,7 +148,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minLines="2"
-        android:background="@null"
+        android:background="@drawable/bg_input_box"
         android:padding="9dp"
         android:gravity="top|start"
         android:textSize="14sp"

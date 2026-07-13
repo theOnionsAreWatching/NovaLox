@@ -48,7 +48,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             onOptions = { c ->
                 if (selectingConvos) convoSelectionActions() else convoOptions(c)
             },
-            isSelected = { id -> selectingConvos && id in selectedConvoIds }
+            isSelected = { id -> selectingConvos && id in selectedConvoIds },
+            hasScheduled = { id -> id in scheduledConvoIds }
         )
         binding.convoList.layoutManager = LinearLayoutManager(this)
         binding.convoList.adapter = adapter
@@ -287,6 +288,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         .thenByDescending { it.snippetDate })
             }
             adapter.submit(list)
+            refreshScheduledIds()
             binding.emptyLabel.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         }
     }
@@ -548,23 +550,24 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         android.widget.Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MINUTE, 30) }
-                android.app.DatePickerDialog(this, { _, y, mo, d ->
-                    android.app.TimePickerDialog(this, { _, h, mi ->
-                        cal.set(y, mo, d, h, mi, 0)
-                        val at = cal.timeInMillis
-                        if (at <= System.currentTimeMillis()) {
-                            android.widget.Toast.makeText(this, R.string.schedule_in_past,
-                                android.widget.Toast.LENGTH_SHORT).show()
-                            return@TimePickerDialog
-                        }
-                        lifecycleScope.launch { repo.scheduleMessage(c.id, body, at) }
-                    }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
-                }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH),
-                   cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+                io.github.theonionsarewatching.nova.ui.ScheduleTimePicker.show(this) { at ->
+                    lifecycleScope.launch { repo.scheduleMessage(c.id, body, at) }
+                }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private val scheduledConvoIds = HashSet<Long>()
+
+    private fun refreshScheduledIds() {
+        lifecycleScope.launch {
+            val ids = repo.db.messages().convoIdsWithScheduled().toHashSet()
+            if (ids != scheduledConvoIds) {
+                scheduledConvoIds.clear(); scheduledConvoIds.addAll(ids)
+                adapter.notifyDataSetChanged()
+            }
+        }
     }
 
     // ---------------- chat background (from long-press) ----------------

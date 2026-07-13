@@ -4,6 +4,8 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:background="?attr/colorSurfaceContainerHigh"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:minHeight="30dp">
 
     <TextView
@@ -36,11 +38,14 @@
         android:focusable="false"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:layout_weight="1.15"
         android:gravity="end|center_vertical"
         android:maxLines="1"
-        android:paddingStart="4dp"
-        android:paddingEnd="12dp"
+        android:ellipsize="none"
+        android:clipToPadding="false"
+        android:includeFontPadding="false"
+        android:paddingStart="2dp"
+        android:paddingEnd="10dp"
         android:paddingTop="5dp"
         android:paddingBottom="5dp"
         android:textSize="13sp"

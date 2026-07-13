@@ -66,11 +66,15 @@ class ComposeActivity : BaseActivity() {
             )
         }
         if (softkeys?.shouldShow() == true) {
-            // softkeys carry Attach + Send; free the vertical space on small screens
-            binding.sendRow.visibility = View.GONE
+            // softkeys carry Attach + Send — hide only those; the schedule
+            // button has no softkey slot, so it stays visible for everyone
+            binding.btnComposeAttach.visibility = View.GONE
+            binding.btnStart.visibility = View.GONE
         }
 
-        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnComposeAttach)
+        ThemeUtils.applyFocusHighlightRound(
+            binding.btnBack, binding.btnComposeAttach, binding.btnSchedule
+        )
         binding.recipientChips.isFocusable = true
         binding.recipientChips.isFocusableInTouchMode = false
         ThemeUtils.applyButtonFocus(binding.btnStart)
@@ -78,14 +82,9 @@ class ComposeActivity : BaseActivity() {
             binding.recipientInput, binding.recipientChips,
             binding.btnGroupMode, binding.attachChip
         )
-        // the compose body's focus ring lives on its WRAPPER, which sizes to the
-        // text — so the ring grows line by line instead of staying a fixed
-        // 2-line box that drifts away from what's typed. Focus lands on the
-        // EditText; mirror its focus state onto the frame.
-        binding.bodyInputFrame.foreground = ThemeUtils.focusForeground(this)
-        binding.bodyInput.setOnFocusChangeListener { _, hasFocus ->
-            binding.bodyInputFrame.isSelected = hasFocus
-        }
+        // compose body: NO focus ring at all (it never tracked the text
+        // reliably). The shaded box background is the field's own visual and
+        // grows with the text; the blinking cursor marks focus.
 
         lifecycleScope.launch {
             contacts = withContext(Dispatchers.IO) { ContactsHelper.loadAll(this@ComposeActivity) }
@@ -345,27 +344,18 @@ class ComposeActivity : BaseActivity() {
             android.widget.Toast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        val cal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MINUTE, 30) }
-        android.app.DatePickerDialog(this, { _, y, mo, d ->
-            android.app.TimePickerDialog(this, { _, h, mi ->
-                cal.set(y, mo, d, h, mi, 0)
-                val at = cal.timeInMillis
-                if (at <= System.currentTimeMillis()) {
-                    android.widget.Toast.makeText(this, R.string.schedule_in_past, android.widget.Toast.LENGTH_SHORT).show()
-                    return@TimePickerDialog
+        io.github.theonionsarewatching.nova.ui.ScheduleTimePicker.show(this) { at ->
+            lifecycleScope.launch {
+                val convo = repo.getOrCreateConversation(recipients)
+                if (convo.isGroup && convo.groupMode != groupMode) {
+                    repo.db.conversations().setGroupMode(convo.id, groupMode)
                 }
-                lifecycleScope.launch {
-                    val convo = repo.getOrCreateConversation(recipients)
-                    if (convo.isGroup && convo.groupMode != groupMode) {
-                        repo.db.conversations().setGroupMode(convo.id, groupMode)
-                    }
-                    repo.scheduleMessage(convo.id, body, at)
-                    startActivity(Intent(this@ComposeActivity, ThreadActivity::class.java)
-                        .putExtra(ThreadActivity.EXTRA_CONVO_ID, convo.id))
-                    finish()
-                }
-            }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
-        }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).show()
+                repo.scheduleMessage(convo.id, body, at)
+                startActivity(Intent(this@ComposeActivity, ThreadActivity::class.java)
+                    .putExtra(ThreadActivity.EXTRA_CONVO_ID, convo.id))
+                finish()
+            }
+        }
     }
 
     private fun start() {

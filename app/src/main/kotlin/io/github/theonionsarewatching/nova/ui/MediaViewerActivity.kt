@@ -151,6 +151,7 @@ class MediaViewerActivity : BaseActivity() {
         if (!p.isVideo()) return
         val vv = binding.pager.findViewWithTag<android.widget.VideoView>("video_${p.id}") ?: return
         val poster = binding.pager.findViewWithTag<android.widget.ImageView>("poster_${p.id}")
+        val badge = binding.pager.findViewWithTag<android.widget.ImageView>("badge_${p.id}")
         try {
             if (vv.isPlaying) {
                 // PAUSE, not stop: position is kept, poster stays hidden so the
@@ -172,10 +173,12 @@ class MediaViewerActivity : BaseActivity() {
                 activeMediaPlayer = mp
                 // the still frame sits ABOVE the video surface — hide it now
                 poster?.visibility = View.GONE
+                badge?.visibility = View.GONE
                 updateMediaSoftkeys(forcePlaying = true)
             }
             vv.setOnCompletionListener {
                 poster?.visibility = View.VISIBLE
+                badge?.visibility = View.VISIBLE
                 activeVideoPartId = -1L
                 activeMediaPlayer = null
                 updateMediaSoftkeys()
@@ -339,7 +342,7 @@ class MediaViewerActivity : BaseActivity() {
             holder.b.pageLabel.visibility = View.GONE
             when {
                 p.isImage() -> {
-                    holder.b.pageImage.foreground = null
+                    holder.b.pagePlayBadge.visibility = View.GONE
                     holder.b.pageImage.visibility = View.VISIBLE
                     holder.b.pageImage.load(File(p.filePath))
                 }
@@ -351,17 +354,11 @@ class MediaViewerActivity : BaseActivity() {
                     holder.b.pageImage.load(File(p.filePath)) {
                         videoFrameMillis(1000) // frame zero is often black
                     }
-                    // play badge so a video page is obvious while browsing;
-                    // it lives on the poster, which hides during playback
-                    val ctx = holder.itemView.context
-                    val badge = androidx.core.content.ContextCompat.getDrawable(
-                        ctx, R.drawable.ic_play_badge
-                    )
-                    val layer = android.graphics.drawable.LayerDrawable(arrayOf(badge))
-                    val sz = (56 * ctx.resources.displayMetrics.density).toInt()
-                    layer.setLayerGravity(0, android.view.Gravity.CENTER)
-                    layer.setLayerSize(0, sz, sz)
-                    holder.b.pageImage.foreground = layer
+                    // play badge on a DEDICATED overlay view (not a foreground on
+                    // the async-loaded poster, which didn't render reliably). The
+                    // overlay is tagged so playback can hide it.
+                    holder.b.pagePlayBadge.visibility = View.VISIBLE
+                    holder.b.pagePlayBadge.tag = "badge_${p.id}"
                 }
                 else -> {
                     holder.b.pageLabel.visibility = View.VISIBLE

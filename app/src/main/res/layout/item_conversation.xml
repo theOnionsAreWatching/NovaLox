@@ -77,6 +77,15 @@
                 android:visibility="gone"
                 android:contentDescription="@string/block_notifications" />
 
+            <ImageView
+                android:id="@+id/iconScheduled"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_schedule"
+                android:visibility="gone"
+                android:contentDescription="@string/schedule_send" />
+
             <TextView
                 android:id="@+id/convoUnread"
                 android:layout_width="wrap_content"

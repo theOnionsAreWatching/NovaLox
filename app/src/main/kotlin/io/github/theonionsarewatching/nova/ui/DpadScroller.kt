@@ -18,25 +18,35 @@ class BoundedLinearLayoutManager(
     private val maxStepPx: () -> Int
 ) : LinearLayoutManager(context) {
 
-    // Honest scrollbar for a lazily-paged list. The default computation counts
-    // only LOADED items, so when loadOlder() inserts a page the reported range
-    // leaps and the thumb jumps ("hits the top early, then realigns"). We report
-    // the range in terms of the WHOLE conversation: [totalBefore] rows exist
-    // above the loaded window, so the range is (loaded + totalBefore) and the
-    // offset is shifted by totalBefore. The thumb then stays proportional to the
-    // entire thread and grows smoothly as pages load in.
+    // Honest, steady scrollbar for a lazily-paged list of variable-height rows.
+    // Item-unit metrics: every message in the WHOLE conversation counts as one
+    // unit (loaded or not), so the thumb (a) spans the entire thread, (b) moves
+    // at a constant average pace instead of leaping over tall messages, and
+    // (c) reaches the ends exactly at the first/last message.
     var totalBefore: Int = 0          // messages older than the loaded window
     var totalAfter: Int = 0           // messages newer than the loaded window
-    private val avgRowPx get() = maxStepPx().coerceAtLeast(24) * 3
+    private val UNIT = 1000
 
-    override fun computeVerticalScrollRange(state: RecyclerView.State): Int {
-        val base = super.computeVerticalScrollRange(state)
-        return base + (totalBefore + totalAfter) * avgRowPx
+    override fun computeVerticalScrollRange(state: RecyclerView.State): Int =
+        (totalBefore + itemCount + totalAfter).coerceAtLeast(1) * UNIT
+
+    override fun computeVerticalScrollExtent(state: RecyclerView.State): Int {
+        val first = findFirstVisibleItemPosition()
+        val last = findLastVisibleItemPosition()
+        if (first < 0 || last < 0) return UNIT
+        return ((last - first + 1) * UNIT)
     }
 
     override fun computeVerticalScrollOffset(state: RecyclerView.State): Int {
-        val base = super.computeVerticalScrollOffset(state)
-        return base + totalBefore * avgRowPx
+        val first = findFirstVisibleItemPosition()
+        if (first < 0) return 0
+        // fractional progress through the first visible row, so the thumb
+        // glides within a row instead of stepping row by row
+        val v = findViewByPosition(first)
+        val frac = if (v != null && v.height > 0) {
+            ((-v.top).coerceAtLeast(0).toFloat() / v.height).coerceIn(0f, 1f)
+        } else 0f
+        return ((totalBefore + first) * UNIT + (frac * UNIT).toInt())
     }
 
 

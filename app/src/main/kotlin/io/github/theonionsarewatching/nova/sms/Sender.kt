@@ -47,7 +47,10 @@ object Sender {
         val dest = PhoneNumberUtils.stripSeparators(address)
         if (dest.isNullOrBlank() || text.isBlank()) return false
         return try {
-            // system provider row (OS compatibility)
+            // system provider row (OS compatibility). Capture its id and LINK it
+            // to our app message right away — otherwise the content observer sees
+            // an unowned outgoing SMS and ingests a duplicate (this is the SMS
+            // retry-duplicate: the MMS path links, the SMS path never did).
             try {
                 val values = ContentValues().apply {
                     put(Telephony.Sms.ADDRESS, dest)
@@ -56,7 +59,19 @@ object Sender {
                     put(Telephony.Sms.READ, 1)
                     put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
                 }
-                context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+                val uri = context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values)
+                val tid = uri?.lastPathSegment?.toLongOrNull()
+                if (tid != null) {
+                    val repo0 = Repo.get(context)
+                    // only link the FIRST recipient's row to this message (group
+                    // sends fan out; the message represents the thread's send)
+                    kotlinx.coroutines.runBlocking {
+                        val existing = repo0.db.messages().byId(messageId)
+                        if (existing != null && existing.telephonyId == null) {
+                            repo0.db.messages().setTelephonyId(messageId, tid, false)
+                        }
+                    }
+                }
             } catch (_: Exception) {}
 
             val smsManager = Repo.smsManagerFor(context, -1)

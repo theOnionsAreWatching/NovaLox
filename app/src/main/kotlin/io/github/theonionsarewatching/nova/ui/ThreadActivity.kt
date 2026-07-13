@@ -1,7 +1,5 @@
 package io.github.theonionsarewatching.nova.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -29,7 +27,6 @@ import io.github.theonionsarewatching.nova.util.Formatters
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import kotlinx.coroutines.launch
 import java.io.File
-import java.util.Calendar
 
 class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.ChatBackground.Host {
 
@@ -1125,22 +1122,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             android.widget.Toast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        val cal = Calendar.getInstance().apply { add(Calendar.MINUTE, 30) }
-        DatePickerDialog(this, { _, y, mo, d ->
-            TimePickerDialog(this, { _, h, mi ->
-                cal.set(y, mo, d, h, mi, 0)
-                val at = cal.timeInMillis
-                if (at <= System.currentTimeMillis()) {
-                    android.widget.Toast.makeText(this, R.string.schedule_in_past, android.widget.Toast.LENGTH_SHORT).show()
-                    return@TimePickerDialog
-                }
-                binding.composeInput.setText("")
-                lifecycleScope.launch {
-                    repo.db.conversations().setDraft(convoId, "")
-                    repo.scheduleMessage(convoId, text, at)
-                }
-            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true).show()
-        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+        io.github.theonionsarewatching.nova.ui.ScheduleTimePicker.show(this) { at ->
+            binding.composeInput.setText("")
+            lifecycleScope.launch {
+                repo.db.conversations().setDraft(convoId, "")
+                repo.scheduleMessage(convoId, text, at)
+            }
+        }
     }
 
     private fun deleteThreadFlow(c: ConversationEntity) {

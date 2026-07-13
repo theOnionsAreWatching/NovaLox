@@ -15,7 +15,8 @@ import io.github.theonionsarewatching.nova.util.Prefs
 class ConversationAdapter(
     private val onOpen: (ConversationEntity) -> Unit,
     private val onOptions: (ConversationEntity) -> Unit,
-    private val isSelected: (Long) -> Boolean = { false }
+    private val isSelected: (Long) -> Boolean = { false },
+    private val hasScheduled: (Long) -> Boolean = { false }
 ) : RecyclerView.Adapter<ConversationAdapter.VH>() {
 
     init {
@@ -132,6 +133,8 @@ class ConversationAdapter(
             if (c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.iconMuted.visibility =
             if (c.muted && !c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
+        holder.b.iconScheduled.visibility =
+            if (hasScheduled(c.id)) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.convoTitle.textSize = prefs.msgTextSp
         holder.b.convoTitle.setTypeface(null, if (c.unreadCount > 0) Typeface.BOLD else Typeface.NORMAL)
 

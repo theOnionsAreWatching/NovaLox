@@ -21,6 +21,10 @@ import io.github.theonionsarewatching.nova.util.Prefs
  */
 object ChatBackground {
 
+    private fun accentOf(activity: Activity): Int =
+        io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(activity)
+
+
     const val ALL_THREADS = -1L
 
     /** A broad, ordered palette — dark tones first, then light. Scrollable. */
@@ -122,6 +126,17 @@ object ChatBackground {
                         }
                     ))
                     isFocusable = true
+                    isFocusableInTouchMode = false
+                    // a bright focus ring appears on the D-pad-selected swatch
+                    val focusRing = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor(hex))
+                        setStroke(dp(3), accentOf(activity))
+                    }
+                    val normal = background
+                    setOnFocusChangeListener { v, has ->
+                        v.background = if (has) focusRing else normal
+                    }
                     setOnClickListener {
                         prefs.setChatBg(convoId, hex)
                         host.applyBackgroundForCurrent()

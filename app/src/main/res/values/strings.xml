@@ -407,4 +407,14 @@
     <string name="about_app_name">D-SMS (NovaLox)</string>
     <string name="about_summary">by github.com/theOnionsAreWatching</string>
     <string name="about_summary_fmt">Version %1$s · by github.com/theOnionsAreWatching</string>
+
+    <!-- v0.9.24 additions -->
+    <string name="schedule_summary_fmt">%1$s at %2$s</string>
+    <string name="schedule_confirm">Schedule</string>
+    <string name="sched_1h">+1 hour</string>
+    <string name="sched_3h">+3 hours</string>
+    <string name="sched_tomorrow9">Tomorrow 9am</string>
+    <string name="sched_day">Day</string>
+    <string name="sched_hour">Hour</string>
+    <string name="sched_min">Minute</string>
 </resources>
