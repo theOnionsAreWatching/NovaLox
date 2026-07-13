@@ -381,6 +381,12 @@ interface MessageDao {
     @Query("UPDATE messages SET telephonyId = :tId, telephonyIsMms = :isMms WHERE id = :id")
     suspend fun setTelephonyId(id: Long, tId: Long, isMms: Boolean)
 
+    @Query("UPDATE messages SET telephonyId = NULL WHERE id = :id")
+    suspend fun clearTelephonyId(id: Long)
+
+    @Query("UPDATE messages SET date = :date WHERE id = :id")
+    suspend fun setDate(id: Long, date: Long)
+
     @Query("UPDATE messages SET body = :body WHERE id = :id")
     suspend fun updateBody(id: Long, body: String)
 

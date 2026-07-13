@@ -261,20 +261,7 @@ class Repo private constructor(private val context: Context) {
                         if (c.moveToFirst()) c.getInt(0) else 0
                     } ?: 0
                 } catch (_: Exception) { 0 }
-                val mapped = when (boxNow) {
-                    Telephony.Mms.MESSAGE_BOX_SENT -> MsgStatus.SENT
-                    5 -> MsgStatus.FAILED
-                    else -> null
-                }
-                if (mapped == MsgStatus.SENT && existing.status in
-                    listOf(MsgStatus.SENDING, MsgStatus.FAILED)
-                ) {
-                    setStatusRespectingCancel(existing.id, MsgStatus.SENT)
-                    refreshConversation(existing.convoId); ChangeBus.ping()
-                } else if (mapped == MsgStatus.FAILED && existing.status == MsgStatus.SENDING) {
-                    setStatusRespectingCancel(existing.id, MsgStatus.FAILED)
-                    refreshConversation(existing.convoId); ChangeBus.ping()
-                }
+                applyBoxHeal(existing, boxNow)
             }
             if (existing.body.isBlank()) {
                 val healed = mmsBodyFor(mmsId)
@@ -444,6 +431,9 @@ class Repo private constructor(private val context: Context) {
         // app row matches this telephony row (same conversation, close in time,
         // same text), LINK them instead of inserting a doppelgänger.
         if (isMine) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest", "outgoing store row tid=$mmsId box=$msgBox reached ingest"
+            )
             val candidates = db.messages().unlinkedOutgoing(
                 convo.id, true, dateMs - 120_000, dateMs + 120_000
             )
@@ -634,6 +624,25 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
+    /** Box moved in the system store (outbox -> sent/failed): reflect it on a
+     *  linked outgoing row. Upgrade-only rules. */
+    private suspend fun applyBoxHeal(existing: MessageEntity, boxNow: Int) {
+        val mapped = when (boxNow) {
+            Telephony.Mms.MESSAGE_BOX_SENT -> MsgStatus.SENT
+            5 -> MsgStatus.FAILED
+            else -> null
+        }
+        if (mapped == MsgStatus.SENT && existing.status in
+            listOf(MsgStatus.SENDING, MsgStatus.FAILED)
+        ) {
+            setStatusRespectingCancel(existing.id, MsgStatus.SENT)
+            refreshConversation(existing.convoId); ChangeBus.ping()
+        } else if (mapped == MsgStatus.FAILED && existing.status == MsgStatus.SENDING) {
+            setStatusRespectingCancel(existing.id, MsgStatus.FAILED)
+            refreshConversation(existing.convoId); ChangeBus.ping()
+        }
+    }
+
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
     private suspend fun handleMmsDeliveryInd(indId: Long) {
@@ -776,6 +785,19 @@ class Repo private constructor(private val context: Context) {
         val convo = db.conversations().byId(m.convoId) ?: return
         val addresses = convo.addressList()
         db.messages().setStatus(messageId, MsgStatus.SENDING)
+        // A retry is a NEW send: sever the link to the failed store copy (and
+        // delete that dead row), and move the message's date to now. Both are
+        // required for the duplicate-guards to recognize the fresh store row
+        // the engine is about to write as OURS — the stale link + old date is
+        // exactly how retried messages spawned a frozen "Sending" twin.
+        m.telephonyId?.let { tid ->
+            try {
+                val base = if (m.telephonyIsMms) "content://mms/" else "content://sms/"
+                resolver.delete(Uri.parse(base + tid), null, null)
+            } catch (_: Exception) {}
+            db.messages().clearTelephonyId(messageId)
+        }
+        db.messages().setDate(messageId, System.currentTimeMillis())
         if (m.recipientStatuses.isNotBlank()) {
             val reset = addresses.joinToString(",") { "${PhoneUtils.normalize(it)}=${MsgStatus.SENDING}" }
             db.messages().setRecipientStatuses(messageId, reset)
@@ -1148,7 +1170,15 @@ class Repo private constructor(private val context: Context) {
                 )?.use { c ->
                     while (c.moveToNext()) {
                         val id = c.getLong(0)
-                        if (db.messages().existsByTelephonyId(id, true)) continue
+                        if (db.messages().existsByTelephonyId(id, true)) {
+                            // known row: still reflect box movement (this is the
+                            // path that used to skip, leaving twins frozen at
+                            // "Sending" forever)
+                            db.messages().byTelephonyMms(id)?.let { existing ->
+                                if (existing.isMine) applyBoxHeal(existing, c.getInt(2))
+                            }
+                            continue
+                        }
                         ingestMms(id, c.getLong(1) * 1000L, c.getInt(2))
                     }
                 }
