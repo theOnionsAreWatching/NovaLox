@@ -626,6 +626,19 @@ class Repo private constructor(private val context: Context) {
         refreshAndPing(m.convoId)
     }
 
+    /** A status report that arrived through the SMS_DELIVER pipeline: match it
+     *  to the newest outgoing text to that number and apply it. */
+    suspend fun onStatusReportViaInbox(address: String, tpStatus: Int) {
+        if (address.isBlank()) return
+        val key = PhoneUtils.normalize(address)
+        val since = System.currentTimeMillis() - 48L * 60 * 60 * 1000
+        val candidate = db.messages().recentMineSms(since)
+            .firstOrNull { m ->
+                m.address.split("|").any { PhoneUtils.normalize(it) == key }
+            } ?: return
+        onSmsDelivered(candidate.id, address, tpStatus in 0 until 32, tpStatus, resultCode = 99)
+    }
+
     suspend fun onSmsDelivered(
         messageId: Long, recipient: String, ok: Boolean,
         tpStatus: Int = -1, resultCode: Int = 0

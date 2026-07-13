@@ -339,6 +339,7 @@ class MediaViewerActivity : BaseActivity() {
             holder.b.pageLabel.visibility = View.GONE
             when {
                 p.isImage() -> {
+                    holder.b.pageImage.foreground = null
                     holder.b.pageImage.visibility = View.VISIBLE
                     holder.b.pageImage.load(File(p.filePath))
                 }
@@ -350,6 +351,17 @@ class MediaViewerActivity : BaseActivity() {
                     holder.b.pageImage.load(File(p.filePath)) {
                         videoFrameMillis(1000) // frame zero is often black
                     }
+                    // play badge so a video page is obvious while browsing;
+                    // it lives on the poster, which hides during playback
+                    val ctx = holder.itemView.context
+                    val badge = androidx.core.content.ContextCompat.getDrawable(
+                        ctx, R.drawable.ic_play_badge
+                    )
+                    val layer = android.graphics.drawable.LayerDrawable(arrayOf(badge))
+                    val sz = (56 * ctx.resources.displayMetrics.density).toInt()
+                    layer.setLayerGravity(0, android.view.Gravity.CENTER)
+                    layer.setLayerSize(0, sz, sz)
+                    holder.b.pageImage.foreground = layer
                 }
                 else -> {
                     holder.b.pageLabel.visibility = View.VISIBLE

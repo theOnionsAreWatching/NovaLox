@@ -171,6 +171,17 @@ class SettingsActivity : BaseActivity() {
                     false // we persist manually after the confirmation
                 }
 
+            find("save_diag_log") {
+                val ctx = requireContext()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val f = io.github.theonionsarewatching.nova.util.DiagLog.file(ctx)
+                    val ok = f.exists() && io.github.theonionsarewatching.nova.ui.Saver
+                        .saveToDownloads(ctx, f, "novalox-log.txt", "text/plain")
+                    Toast.makeText(ctx,
+                        if (ok) R.string.log_saved else R.string.log_empty,
+                        Toast.LENGTH_LONG).show()
+                }
+            }
             find("check_updates") {
                 val ctx = requireContext()
                 Toast.makeText(ctx, R.string.checking_updates, Toast.LENGTH_SHORT).show()

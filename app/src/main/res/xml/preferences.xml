@@ -145,6 +145,11 @@
             android:summary="@string/pref_reimport_summary" />
         <Preference
             app:iconSpaceReserved="false"
+            android:key="save_diag_log"
+            android:title="@string/pref_save_log"
+            android:summary="@string/pref_save_log_summary" />
+        <Preference
+            app:iconSpaceReserved="false"
             android:key="check_updates"
             android:title="@string/pref_check_updates" />
         <SwitchPreferenceCompat

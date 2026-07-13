@@ -925,7 +925,7 @@ class ThreadActivity : BaseActivity() {
             }
         }
         if (m.locked) sb.append(getString(R.string.detail_locked)).append('\n')
-        if (m.isMine && !m.isMms) {
+        if (m.isMine && m.deliveryDebug.isNotBlank() || (m.isMine && !m.isMms)) {
             sb.append('\n').append(getString(R.string.detail_delivery_header)).append('\n')
             sb.append(
                 if (m.deliveryDebug.isBlank()) getString(R.string.detail_no_reports)

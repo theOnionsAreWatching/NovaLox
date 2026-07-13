@@ -91,6 +91,16 @@ object Sender {
                 } else deliveredIntents.add(null)
             }
             smsManager.sendMultipartTextMessage(dest, null, parts, sentIntents, deliveredIntents)
+            if (wantDelivery) {
+                val repo = Repo.get(context)
+                val stamp = android.text.format.DateFormat.format(
+                    "MM-dd HH:mm", System.currentTimeMillis())
+                repo.scope.launch {
+                    repo.db.messages().appendDeliveryDebug(
+                        messageId, "[$stamp] report requested ($count part${if (count == 1) "" else "s"})\n"
+                    )
+                }
+            }
             true
         } catch (_: Exception) {
             false
@@ -129,7 +139,14 @@ object Sender {
             }
             transaction.setExplicitBroadcastForSentMms(sentIntent)
             transaction.sendNewMessage(message)
-        } catch (_: Exception) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-send",
+                "handed to engine: msg=$messageId to=${addresses.size} attachments=${attachments.size}"
+            )
+        } catch (e: Exception) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-send", "FAILED before engine: msg=$messageId ${e::class.java.simpleName}: ${e.message}"
+            )
             val repo = Repo.get(context)
             repo.scope.launch { repo.onMmsSent(messageId, ok = false) }
         }

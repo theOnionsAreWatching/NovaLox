@@ -380,4 +380,10 @@
     <!-- v0.9.14 additions -->
     <string name="detail_delivery_header">Delivery reports received:</string>
     <string name="detail_no_reports">(none arrived — the carrier did not send a report)</string>
+
+    <!-- v0.9.15 additions -->
+    <string name="pref_save_log">Save diagnostic log</string>
+    <string name="pref_save_log_summary">Saves a small technical log to Downloads — send it to the developer when reporting a problem</string>
+    <string name="log_saved">Log saved to Downloads as novalox-log.txt</string>
+    <string name="log_empty">Nothing logged yet</string>
 </resources>

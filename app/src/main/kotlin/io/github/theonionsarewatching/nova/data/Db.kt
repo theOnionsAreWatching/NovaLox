@@ -303,6 +303,12 @@ interface MessageDao {
     @Query("UPDATE messages SET locked = :locked WHERE id = :id")
     suspend fun setLocked(id: Long, locked: Boolean)
 
+    @Query(
+        """SELECT * FROM messages WHERE isMine = 1 AND isMms = 0 AND deletedAt IS NULL
+           AND date > :since ORDER BY date DESC LIMIT 20"""
+    )
+    suspend fun recentMineSms(since: Long): List<MessageEntity>
+
     @Query("UPDATE messages SET deliveryDebug = deliveryDebug || :line WHERE id = :id")
     suspend fun appendDeliveryDebug(id: Long, line: String)
 

@@ -23,6 +23,31 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         if (intent.action != Telephony.Sms.Intents.SMS_DELIVER_ACTION) return
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         if (messages.isEmpty()) return
+
+        // some radio stacks hand SMS STATUS REPORTS to the default app through
+        // this pipeline instead of the sender's delivery callback — catch them
+        val reports = messages.filter { try { it.isStatusReportMessage } catch (_: Exception) { false } }
+        if (reports.isNotEmpty()) {
+            val pending2 = goAsync()
+            val repo2 = Repo.get(context)
+            repo2.scope.launch {
+                try {
+                    for (r in reports) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "delivery",
+                            "status report via inbox route: from=${r.displayOriginatingAddress} tp=${r.status}"
+                        )
+                        repo2.onStatusReportViaInbox(
+                            r.displayOriginatingAddress ?: "", r.status
+                        )
+                    }
+                } finally {
+                    pending2.finish()
+                }
+            }
+            if (reports.size == messages.size) return
+        }
+
         val address = messages[0].displayOriginatingAddress ?: return
         val body = messages.joinToString(separator = "") { it.messageBody ?: "" }
         val date = System.currentTimeMillis()
@@ -76,6 +101,10 @@ class MmsReceiver : MmsReceivedReceiver() {
 class MmsSentReceiverImpl : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ok = resultCode == Activity.RESULT_OK
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "mms-sent",
+            "engine result: ok=$ok rc=$resultCode msg=${intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)}"
+        )
         val messageId = intent.getLongExtra(Sender.EXTRA_MESSAGE_ID, -1L)
 
         // keep the system provider box in sync (mirrors the reference implementation)
