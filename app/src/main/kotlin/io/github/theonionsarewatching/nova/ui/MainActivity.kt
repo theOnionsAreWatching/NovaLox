@@ -538,7 +538,7 @@ class MainActivity : BaseActivity() {
 
     private fun updateSelectionSoftkeys() {
         softkeys?.set(
-            getString(R.string.cancel), getString(R.string.select),
+            getString(android.R.string.cancel), getString(R.string.select),
             getString(R.string.delete_n, selectedConvoIds.size),
             onLeft = { exitConvoSelection() },
             onCenter = { focusedConvo()?.let { toggleConvoSelection(it.id) } },
