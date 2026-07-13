@@ -85,8 +85,20 @@ class SettingsActivity : BaseActivity() {
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
+        companion object { const val ARG_XML = "xml_res" }
+
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.preferences, rootKey)
+            val xmlRes = arguments?.getInt(ARG_XML)?.takeIf { it != 0 } ?: R.xml.preferences
+            setPreferencesFromResource(xmlRes, rootKey)
+
+            find("open_customize") {
+                parentFragmentManager.beginTransaction()
+                    .replace(R.id.settings_container, SettingsFragment().apply {
+                        arguments = Bundle().apply { putInt(ARG_XML, R.xml.preferences_customize) }
+                    })
+                    .addToBackStack(null)
+                    .commit()
+            }
 
             find("open_keywords") { startActivity(Intent(requireContext(), KeywordsActivity::class.java)) }
             find("open_blocked") { startActivity(Intent(requireContext(), BlockedMessagesActivity::class.java)) }

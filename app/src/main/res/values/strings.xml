@@ -426,4 +426,21 @@
     <string name="sched_ampm">AM / PM</string>
     <string name="sched_am">AM</string>
     <string name="sched_pm">PM</string>
+
+    <!-- v0.9.26 additions -->
+    <string name="pref_search_messages">Search messages</string>
+    <string name="pref_customize">Customize</string>
+    <string name="pref_customize_summary">Accent color, message style, chat backgrounds</string>
+    <string name="vibrate_always">Always</string>
+    <string name="vibrate_only_mode">Only on vibrate</string>
+    <string name="vibrate_never">Never</string>
+    <string name="color_gray">Gray</string>
+    <string name="color_red">Red</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_teal">Teal</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_pink">Pink</string>
 </resources>

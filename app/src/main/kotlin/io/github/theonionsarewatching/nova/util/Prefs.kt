@@ -56,8 +56,21 @@ class Prefs(context: Context) {
     var defaultTone: String
         get() = sp.getString("default_tone", "") ?: ""
         set(v) = sp.edit().putString("default_tone", v).apply()
-    val vibrate: Boolean
-        get() = sp.getBoolean("vibrate", true)
+    /** Tri-state vibrate: "always" / "vibrate_only" (only when the phone is in
+     *  vibrate mode) / "never". Migrates the old on/off setting. */
+    val vibrateMode: String
+        get() = sp.getString("vibrate_mode", null)
+            ?: if (sp.getBoolean("vibrate", true)) "always" else "never"
+
+    fun shouldVibrate(context: android.content.Context): Boolean = when (vibrateMode) {
+        "never" -> false
+        "vibrate_only" -> {
+            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE)
+                as android.media.AudioManager
+            am.ringerMode == android.media.AudioManager.RINGER_MODE_VIBRATE
+        }
+        else -> true
+    }
     var softkeysMapped: Boolean
         get() = sp.getBoolean("softkeys_mapped", false)
         set(v) = sp.edit().putBoolean("softkeys_mapped", v).apply()

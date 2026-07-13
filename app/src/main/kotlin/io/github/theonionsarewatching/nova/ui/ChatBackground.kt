@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.util.Prefs
@@ -27,15 +28,32 @@ object ChatBackground {
 
     const val ALL_THREADS = -1L
 
-    /** A broad, ordered palette — dark tones first, then light. Scrollable. */
-    val COLORS = listOf(
-        "#101418", "#0E1A24", "#0E2018", "#241014", "#1E1428", "#1A1A1A", "#22160E", "#0A1F1F",
-        "#1A2633", "#14261A", "#2A1A1A", "#26203A", "#2B2B2B", "#33240E", "#14243A", "#331A26",
-        "#2E3B47", "#28402E", "#402828", "#3A3050", "#3D3D3D", "#4A3618", "#1E3450", "#4A2836",
-        "#5A6B78", "#4E6E52", "#6E4E4E", "#5E5478", "#666666", "#7A5A2E", "#2E5A8A", "#7A4E5E",
-        "#F4EFE6", "#E7EEF6", "#EAF4EA", "#F6E7EA", "#FFFFFF", "#FBF3E7", "#E7F4F4", "#F0E7F6",
-        "#D8CFC0", "#CBD8E6", "#CBE6CB", "#E6CBD2", "#E8E8E8", "#EAD8B8", "#B8D8E8", "#E0C8D2"
+    /** Main color families; each opens a shades submenu. Rows are full-width,
+     *  so nothing clips on narrow screens. */
+    private data class Family(val nameRes: Int, val hue: Float, val gray: Boolean = false)
+    private val FAMILIES = listOf(
+        Family(R.string.color_gray, 0f, gray = true),
+        Family(R.string.color_red, 0f),
+        Family(R.string.color_orange, 28f),
+        Family(R.string.color_yellow, 52f),
+        Family(R.string.color_green, 120f),
+        Family(R.string.color_teal, 175f),
+        Family(R.string.color_blue, 215f),
+        Family(R.string.color_purple, 268f),
+        Family(R.string.color_pink, 330f)
     )
+
+    private fun shadesOf(f: Family): List<Int> {
+        return if (f.gray) {
+            listOf(0.06f, 0.15f, 0.25f, 0.40f, 0.55f, 0.72f, 0.87f, 0.97f)
+                .map { v -> Color.HSVToColor(floatArrayOf(0f, 0f, v)) }
+        } else {
+            listOf(
+                0.62f to 0.22f, 0.62f to 0.35f, 0.60f to 0.50f, 0.55f to 0.65f,
+                0.48f to 0.80f, 0.36f to 0.90f, 0.22f to 0.96f, 0.10f to 0.98f
+            ).map { (sat, v) -> Color.HSVToColor(floatArrayOf(f.hue, sat, v)) }
+        }
+    }
 
     interface Host {
         fun applyBackgroundForCurrent()
@@ -92,65 +110,91 @@ object ChatBackground {
 
     private fun colorGrid(activity: Activity, prefs: Prefs, convoId: Long, host: Host) {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
-        val grid = LinearLayout(activity).apply {
+        val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(dp(8), dp(6), dp(8), dp(6))
         }
         var dialog: AlertDialog? = null
-        val perRow = 6
-        var i = 0
-        while (i < COLORS.size) {
+        for (f in FAMILIES) {
             val row = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = true
+                isFocusableInTouchMode = false
+                setPadding(dp(10), dp(8), dp(10), dp(8))
             }
-            var c = 0
-            while (c < perRow && i < COLORS.size) {
-                val hex = COLORS[i]
-                val swatch = View(activity).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
-                        setMargins(dp(5), dp(5), dp(5), dp(5))
-                    }
-                    // ring visible on any swatch: a light halo + dark hairline,
-                    // so pale colors show a dark edge and dark colors a light one
-                    background = android.graphics.drawable.LayerDrawable(arrayOf(
-                        GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(Color.parseColor(hex))
-                            setStroke(dp(2), 0x66FFFFFF.toInt())
-                        },
-                        GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(Color.TRANSPARENT)
-                            setStroke(dp(1), 0x66000000)
-                        }
-                    ))
-                    isFocusable = true
-                    isFocusableInTouchMode = false
-                    // a bright focus ring appears on the D-pad-selected swatch
-                    val focusRing = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(hex))
-                        setStroke(dp(3), accentOf(activity))
-                    }
-                    val normal = background
-                    setOnFocusChangeListener { v, has ->
-                        v.background = if (has) focusRing else normal
-                    }
-                    setOnClickListener {
-                        prefs.setChatBg(convoId, hex)
-                        host.applyBackgroundForCurrent()
-                        dialog?.dismiss()
-                    }
+            // representative swatch: the family's mid shade
+            val mid = shadesOf(f)[3]
+            row.addView(View(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
+                    marginEnd = dp(12)
                 }
-                row.addView(swatch)
-                i++; c++
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(mid)
+                    setStroke(dp(1), 0x66000000)
+                }
+            })
+            row.addView(TextView(activity).apply {
+                text = activity.getString(f.nameRes)
+                textSize = 15f
+            })
+            io.github.theonionsarewatching.nova.ui.ThemeUtils.applyFocusHighlight(row)
+            row.setOnClickListener {
+                dialog?.dismiss()
+                shadesDialog(activity, prefs, convoId, host, f)
             }
-            grid.addView(row)
+            column.addView(row)
         }
-        val scroll = ScrollView(activity).apply { addView(grid) }
+        val scroll = ScrollView(activity).apply { addView(column) }
         dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.bg_color)
+            .setView(scroll)
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun shadesDialog(
+        activity: Activity, prefs: Prefs, convoId: Long, host: Host, f: Family
+    ) {
+        val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        var dialog: AlertDialog? = null
+        for (shade in shadesOf(f)) {
+            val hex = String.format("#%06X", 0xFFFFFF and shade)
+            val bar = View(activity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(40)
+                ).apply { setMargins(0, dp(4), 0, dp(4)) }
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(shade)
+                    setStroke(dp(1), 0x55000000)
+                }
+                isFocusable = true
+                isFocusableInTouchMode = false
+                setOnClickListener {
+                    prefs.setChatBg(convoId, hex)
+                    host.applyBackgroundForCurrent()
+                    dialog?.dismiss()
+                }
+            }
+            // bright focus ring on the D-pad-selected shade
+            val normal = bar.background
+            val ring = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(shade)
+                setStroke(dp(3), accentOf(activity))
+            }
+            bar.setOnFocusChangeListener { v, has -> v.background = if (has) ring else normal }
+            column.addView(bar)
+        }
+        val scroll = ScrollView(activity).apply { addView(column) }
+        dialog = AlertDialog.Builder(activity)
+            .setTitle(f.nameRes)
             .setView(scroll)
             .setNegativeButton(android.R.string.cancel, null)
             .show()

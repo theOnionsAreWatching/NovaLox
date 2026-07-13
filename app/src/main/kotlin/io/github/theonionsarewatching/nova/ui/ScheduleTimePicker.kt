@@ -149,8 +149,8 @@ object ScheduleTimePicker {
 
         rows += adjustRow(activity, activity.getString(R.string.sched_min),
             value = { "%02d".format(cal.get(Calendar.MINUTE)) },
-            onLeft = { cal.add(Calendar.MINUTE, -5) },
-            onRight = { cal.add(Calendar.MINUTE, 5) },
+            onLeft = { cal.add(Calendar.MINUTE, -1) },
+            onRight = { cal.add(Calendar.MINUTE, 1) },
             refreshAll = { refreshAll() })
 
         if (!is24) {

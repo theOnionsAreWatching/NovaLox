@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="accent_picker"
+        android:title="@string/pref_accent" />
+        <ListPreference
+            app:iconSpaceReserved="false"
+            android:key="message_style"
+            android:title="@string/pref_message_style"
+            android:entries="@array/style_entries"
+            android:entryValues="@array/style_values"
+            android:defaultValue="bubble"
+            android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="all_backgrounds"
+        android:title="@string/pref_all_backgrounds"
+        android:summary="@string/pref_all_backgrounds_summary" />
+</PreferenceScreen>

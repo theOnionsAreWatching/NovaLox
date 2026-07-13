@@ -116,18 +116,23 @@ class DpadScroller(
             return true
         }
 
-        // sub-scroll a tall focused item before leaving it
+        // sub-scroll a tall focused item before leaving it. The stride uses the
+        // SAME hold-acceleration as item movement — previously it was a fixed
+        // line per key event, so a hold that began inside a long message crawled
+        // through the whole message before fast scroll could start.
         if (subScrollTallItems && focused != null) {
             val top = focused.top
             val bottom = focused.bottom
             val viewTop = rv.paddingTop
             val viewBottom = rv.height - rv.paddingBottom
+            val accel = (1 + event.repeatCount / 5).coerceAtMost(maxStep)
+            val stride = lineStepPx() * accel
             if (down && bottom > viewBottom + 4) {
-                rv.scrollBy(0, minOf(lineStepPx(), bottom - viewBottom))
+                rv.scrollBy(0, minOf(stride, bottom - viewBottom))
                 return true
             }
             if (!down && top < viewTop - 4) {
-                rv.scrollBy(0, -minOf(lineStepPx(), viewTop - top))
+                rv.scrollBy(0, -minOf(stride, viewTop - top))
                 return true
             }
         }

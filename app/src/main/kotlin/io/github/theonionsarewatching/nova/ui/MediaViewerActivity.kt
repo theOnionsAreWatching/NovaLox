@@ -40,6 +40,10 @@ class MediaViewerActivity : BaseActivity() {
 
         binding.pager.orientation = ViewPager2.ORIENTATION_HORIZONTAL
 
+        // this screen's labels sit centered in their cells so neither hugs an
+        // edge — "Save" was clipping its last glyph at the right boundary
+        binding.softkeyBar.softLeft.gravity = android.view.Gravity.CENTER
+        binding.softkeyBar.softRight.gravity = android.view.Gravity.CENTER
         softkeys = Softkeys(this, binding.softkeyBar).also {
             it.set(
                 getString(R.string.back), getString(R.string.play), getString(R.string.save),

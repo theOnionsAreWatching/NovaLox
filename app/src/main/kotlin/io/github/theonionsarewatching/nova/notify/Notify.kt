@@ -34,7 +34,7 @@ object NotificationHelper {
         when (convo?.vibrateMode ?: 0) {
             1 -> true
             2 -> false
-            else -> Prefs.get(context).vibrate
+            else -> Prefs.get(context).shouldVibrate(context)
         }
 
     private fun soundUri(tone: String): android.net.Uri? = when (tone) {

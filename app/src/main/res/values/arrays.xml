@@ -213,4 +213,15 @@
         <item>always</item>
         <item>never</item>
     </string-array>
+
+    <string-array name="vibrate_entries">
+        <item>@string/vibrate_always</item>
+        <item>@string/vibrate_only_mode</item>
+        <item>@string/vibrate_never</item>
+    </string-array>
+    <string-array name="vibrate_values">
+        <item>always</item>
+        <item>vibrate_only</item>
+        <item>never</item>
+    </string-array>
 </resources>
