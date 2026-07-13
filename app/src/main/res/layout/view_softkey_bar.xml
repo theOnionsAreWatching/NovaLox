@@ -18,7 +18,7 @@
         android:paddingTop="5dp"
         android:paddingBottom="5dp"
         android:textSize="13sp"
-        android:textStyle="bold" />
+        android:fontFamily="sans-serif-medium" />
 
     <TextView
         android:id="@+id/softCenter"
@@ -44,5 +44,5 @@
         android:paddingTop="5dp"
         android:paddingBottom="5dp"
         android:textSize="13sp"
-        android:textStyle="bold" />
+        android:fontFamily="sans-serif-medium" />
 </LinearLayout>

@@ -5,7 +5,6 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import coil.transform.CircleCropTransformation
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
@@ -60,6 +59,17 @@ class ConversationAdapter(
             holder.b.avatarFrame.layoutParams = holder.b.avatarFrame.layoutParams.apply {
                 width = px; height = px
             }
+            holder.b.convoAvatar.layoutParams = holder.b.convoAvatar.layoutParams.apply {
+                width = px; height = px
+            }
+            // the view clips itself to a circle: any bitmap, any density, any
+            // cache state renders as a filled circle of exactly this view's size
+            holder.b.convoAvatar.outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                    outline.setOval(0, 0, view.width, view.height)
+                }
+            }
+            holder.b.convoAvatar.clipToOutline = true
         }
 
         // ---- avatar: contact photo, or colored letter circle ----
@@ -70,10 +80,8 @@ class ConversationAdapter(
             holder.b.convoAvatar.background = null
             holder.b.convoAvatar.imageTintList = null
             holder.b.convoAvatar.setPadding(0, 0, 0, 0)
-            holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri)) {
-                transformations(CircleCropTransformation())
-                size(128) // fixed request size: identical result at every app zoom
-            }
+            holder.b.convoAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri))
         } else if (c.isGroup) {
             // groups: a people glyph on the colored circle
             holder.b.avatarLetter.visibility = android.view.View.GONE
@@ -89,7 +97,8 @@ class ConversationAdapter(
                 shape = android.graphics.drawable.GradientDrawable.OVAL
                 setColor(color2)
             }
-            val pad = (9 * holder.itemView.resources.displayMetrics.density).toInt()
+            holder.b.convoAvatar.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            val pad = (9 * holder.itemView.resources.displayMetrics.scaledDensity).toInt()
             holder.b.convoAvatar.setPadding(pad, pad, pad, pad)
             holder.b.convoAvatar.imageTintList =
                 android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)

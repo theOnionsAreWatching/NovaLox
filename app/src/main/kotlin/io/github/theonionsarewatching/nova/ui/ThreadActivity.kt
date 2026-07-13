@@ -81,8 +81,14 @@ class ThreadActivity : BaseActivity() {
             subScrollTallItems = true,
             lineStepPx = lineStep,
             onEdge = { down ->
-                if (down) { enterComposeMode(); true }
-                else if (hasMoreOlder) { loadOlder(); true }
+                if (down) {
+                    if (selecting && binding.threadSelectionBar.isShown) {
+                        binding.btnSelCancelThread.requestFocus()
+                    } else if (!selecting) {
+                        enterComposeMode()
+                    }
+                    true
+                } else if (hasMoreOlder) { loadOlder(); true }
                 else { enterHeader(); true }
             }
         )
@@ -188,7 +194,11 @@ class ThreadActivity : BaseActivity() {
         selectedIds.add(first.msg.id)
         adapter.notifyDataSetChanged()
         updateSelectionUi()
-        binding.threadSelectionBar.visibility = View.VISIBLE
+        // the softkey bar already offers Cancel/Select/Delete — the button bar is
+        // only for phones without it (touch or D-pad-only)
+        val showBar = softkeys?.shouldShow() != true
+        binding.threadSelectionBar.visibility = if (showBar) View.VISIBLE else View.GONE
+        binding.composeBar.visibility = View.GONE
         binding.btnSelCancelThread.setOnClickListener { exitSelection() }
         binding.btnSelDeleteThread.setOnClickListener { deleteSelected() }
     }
@@ -221,6 +231,7 @@ class ThreadActivity : BaseActivity() {
         selectedIds.clear()
         adapter.notifyDataSetChanged()
         binding.threadSelectionBar.visibility = View.GONE
+        binding.composeBar.visibility = View.VISIBLE
         binding.threadSubtitle.text = convo?.let { c ->
             if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
             else c.addressList().firstOrNull() ?: ""
@@ -520,6 +531,15 @@ class ThreadActivity : BaseActivity() {
             exitSelection()
             return true
         }
+        if (selecting && event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+            (binding.btnSelCancelThread.hasFocus() || binding.btnSelDeleteThread.hasFocus())
+        ) {
+            binding.msgList.requestFocus()
+            val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            lm?.findLastVisibleItemPosition()?.takeIf { it >= 0 }?.let { scroller?.focusPosition(it) }
+            return true
+        }
         if (softkeys?.handleKey(event) == true) return true
 
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
@@ -553,7 +573,9 @@ class ThreadActivity : BaseActivity() {
                 return true // nothing above the header
             }
             if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_BACK) {
-                leaveHeader()
+                // physical Back from the header means "leave this conversation",
+                // same as the on-screen back arrow
+                finish()
                 return true
             }
         } else if (binding.btnBack.isFocusable && !binding.btnBack.hasFocus() && !binding.btnOverflow.hasFocus()) {

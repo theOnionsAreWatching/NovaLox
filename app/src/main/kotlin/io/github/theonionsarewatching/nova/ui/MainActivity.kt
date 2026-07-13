@@ -61,8 +61,17 @@ class MainActivity : BaseActivity() {
         scroller = DpadScroller(
             binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
             onEdge = { down ->
-                if (down) true // bottom: stay put
-                else { enterHeader(); true } // top: deliberate press enters the header
+                if (down) {
+                    true // bottom: stay put
+                } else {
+                    // top: selection bar first when it's showing, else the header
+                    if (selectingConvos && binding.mainSelectionBar.isShown) {
+                        binding.btnSelCancelMain.requestFocus()
+                    } else {
+                        enterHeader()
+                    }
+                    true
+                }
             }
         )
 
@@ -515,7 +524,9 @@ class MainActivity : BaseActivity() {
         selectedConvoIds.add(initialId)
         adapter.notifyDataSetChanged()
         updateSelectionSoftkeys()
-        binding.mainSelectionBar.visibility = View.VISIBLE
+        val showBar = softkeys?.shouldShow() != true
+        binding.mainSelectionBar.visibility = if (showBar) View.VISIBLE else View.GONE
+        binding.searchRow.visibility = View.GONE
         binding.btnSelCancelMain.setOnClickListener { exitConvoSelection() }
         binding.btnSelDeleteMain.setOnClickListener { deleteSelectedConvos() }
     }
@@ -526,6 +537,7 @@ class MainActivity : BaseActivity() {
         adapter.notifyDataSetChanged()
         setupDefaultSoftkeys()
         binding.mainSelectionBar.visibility = View.GONE
+        binding.searchRow.visibility = if (prefs.showSearchBar) View.VISIBLE else View.GONE
     }
 
     private fun toggleConvoSelection(id: Long) {
@@ -650,6 +662,23 @@ class MainActivity : BaseActivity() {
         ) {
             exitConvoSelection()
             return true
+        }
+        if (selectingConvos && event.action == KeyEvent.ACTION_DOWN &&
+            (binding.btnSelCancelMain.hasFocus() || binding.btnSelDeleteMain.hasFocus())
+        ) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    binding.convoList.requestFocus()
+                    val lm = binding.convoList.layoutManager as? LinearLayoutManager
+                    lm?.findFirstVisibleItemPosition()?.takeIf { it >= 0 }
+                        ?.let { scroller?.focusPosition(it) }
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    enterHeader()
+                    return true
+                }
+            }
         }
         if (binding.contentView.visibility == View.VISIBLE && scroller?.onKey(event) == true) return true
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_CALL) {

@@ -166,6 +166,7 @@
         android:visibility="gone" />
 
     <LinearLayout
+        android:id="@+id/composeBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -184,12 +185,18 @@
             android:scaleType="centerInside"
             android:src="@drawable/ic_add" />
 
-        <EditText
-            android:id="@+id/composeInput"
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/bg_compose_pill"
+            android:background="@drawable/bg_compose_pill">
+
+        <EditText
+            android:id="@+id/composeInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="5"
+            android:background="@null"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:paddingTop="8dp"
@@ -199,6 +206,7 @@
             android:hint="@string/compose_hint"
             android:inputType="textCapSentences|textMultiLine"
             android:importantForAutofill="no" />
+        </FrameLayout>
 
         <ImageButton
             android:id="@+id/btnSend"

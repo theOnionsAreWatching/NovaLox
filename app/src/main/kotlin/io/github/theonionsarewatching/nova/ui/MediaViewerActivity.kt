@@ -78,6 +78,41 @@ class MediaViewerActivity : BaseActivity() {
     /** id of the part whose video session is active (playing OR paused) */
     private var activeVideoPartId = -1L
 
+    private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val progressTicker = object : Runnable {
+        override fun run() {
+            updateVideoProgress()
+            if (isVideoPlaying()) progressHandler.postDelayed(this, 500)
+        }
+    }
+
+    private fun fmtTime(ms: Int): String {
+        val total = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d".format(total / 60, total % 60)
+    }
+
+    private fun updateVideoProgress() {
+        val vv = currentVideoView()
+        if (vv == null || activeVideoPartId == -1L) {
+            binding.videoProgressRow.visibility = View.GONE
+            return
+        }
+        try {
+            val dur = vv.duration
+            if (dur <= 0) return
+            binding.videoProgressRow.visibility = View.VISIBLE
+            binding.videoSeekBar.max = dur
+            binding.videoSeekBar.progress = vv.currentPosition.coerceIn(0, dur)
+            binding.videoElapsed.text = fmtTime(vv.currentPosition)
+            binding.videoTotal.text = fmtTime(dur)
+        } catch (_: Exception) {}
+    }
+
+    private fun startProgressTicker() {
+        progressHandler.removeCallbacks(progressTicker)
+        progressHandler.post(progressTicker)
+    }
+
     private fun currentVideoView(): android.widget.VideoView? {
         val p = currentPart() ?: return null
         if (!p.isVideo()) return null
@@ -116,12 +151,14 @@ class MediaViewerActivity : BaseActivity() {
                 // paused frame remains visible
                 vv.pause()
                 updateMediaSoftkeys(forcePlaying = false)
+                updateVideoProgress() // freeze the bar at the paused position
                 return
             }
             if (activeVideoPartId == p.id) {
                 // resume a paused session
                 vv.start()
                 updateMediaSoftkeys(forcePlaying = true)
+                startProgressTicker()
                 return
             }
             vv.setVideoPath(p.filePath)
@@ -134,6 +171,7 @@ class MediaViewerActivity : BaseActivity() {
                 poster?.visibility = View.VISIBLE
                 activeVideoPartId = -1L
                 updateMediaSoftkeys()
+                binding.videoProgressRow.visibility = View.GONE
             }
             vv.setOnErrorListener { _, _, _ ->
                 poster?.visibility = View.VISIBLE
@@ -145,6 +183,7 @@ class MediaViewerActivity : BaseActivity() {
             activeVideoPartId = p.id
             vv.start()
             updateMediaSoftkeys(forcePlaying = true)
+            startProgressTicker()
         } catch (_: Exception) {
             openWithSystemPlayer(p)
         }
@@ -157,8 +196,13 @@ class MediaViewerActivity : BaseActivity() {
             // taps use a large stride because seeking snaps to keyframes — a
             // small hop can land back on the same frame and look like nothing
             val delta = if (repeatCount == 0) 10_000 else 15_000
+            val dur = vv.duration
+            if (dur <= 0) return
+            // clamp short of the end: seeking TO the end fires the completion
+            // handler, which resets to the poster — it looked like a restart
+            val ceiling = (dur - 1500).coerceAtLeast(0)
             val target = (vv.currentPosition + if (forward) delta else -delta)
-                .coerceIn(0, vv.duration.coerceAtLeast(0))
+                .coerceIn(0, ceiling)
             vv.seekTo(target)
         } catch (_: Exception) {}
     }
@@ -200,6 +244,8 @@ class MediaViewerActivity : BaseActivity() {
         }
         activeVideoPartId = -1L
         updateMediaSoftkeys()
+        progressHandler.removeCallbacks(progressTicker)
+        binding.videoProgressRow.visibility = View.GONE
     }
 
     private fun saveCurrent() {
