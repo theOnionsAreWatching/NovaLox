@@ -1015,7 +1015,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 ?.takeIf { it.isNotBlank() }
             val rejection = trail.lines().lastOrNull { it.contains("carrier rejected", ignoreCase = true) }
                 ?.substringAfter("carrier rejected:", "")?.trim()?.takeIf { it.isNotBlank() }
+            val readLine = trail.lines().lastOrNull { it.contains("READ report") }
+            val readStamp = readLine?.substringAfter('[', "")?.substringBefore(']', "")
+                ?.takeIf { it.isNotBlank() }
             when {
+                m.status == MsgStatus.READ_BY_RECIPIENT ->
+                    sb.append(getString(R.string.delivery_read_at,
+                        readStamp ?: getString(R.string.delivery_yes))).append('\n')
                 m.status == MsgStatus.DELIVERED ->
                     sb.append(getString(R.string.delivery_delivered_at,
                         deliveredStamp ?: getString(R.string.delivery_yes))).append('\n')

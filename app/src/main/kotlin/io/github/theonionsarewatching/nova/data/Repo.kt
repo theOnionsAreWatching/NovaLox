@@ -755,15 +755,21 @@ class Repo private constructor(private val context: Context) {
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
             // delivery-ind X-Mms-Status: 129 = Retrieved (delivered).
-            // read-orig-ind means the recipient READ it — delivered a fortiori.
-            val delivered = st == 129 || mType == 136
+            // read-orig-ind (136) = the recipient's phone reported it READ.
+            val isRead = mType == 136
+            val delivered = st == 129 || isRead
             db.messages().appendDeliveryDebug(
                 m.id,
-                "[$stamp] MMS ${if (mType == 136) "READ report" else "delivery report"} st=$st -> " +
-                    "${if (delivered) "delivered" else "not delivered"}\n"
+                "[$stamp] MMS ${if (isRead) "READ report" else "delivery report"} st=$st -> " +
+                    "${if (isRead) "read" else if (delivered) "delivered" else "not delivered"}\n"
             )
-            if (delivered && m.status == MsgStatus.SENT) {
-                setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
+            // upgrade only: SENT -> DELIVERED -> READ; a late delivery notice
+            // never demotes an already-read message
+            when {
+                isRead && (m.status == MsgStatus.SENT || m.status == MsgStatus.DELIVERED) ->
+                    setStatusRespectingCancel(m.id, MsgStatus.READ_BY_RECIPIENT)
+                delivered && m.status == MsgStatus.SENT ->
+                    setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
             }
             refreshAndPing(m.convoId)
         } catch (e: Exception) {

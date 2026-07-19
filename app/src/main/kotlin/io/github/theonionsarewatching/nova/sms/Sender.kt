@@ -260,6 +260,7 @@ object Sender {
         MsgStatus.FAILED -> context.getString(io.github.theonionsarewatching.nova.R.string.status_failed)
         MsgStatus.CANCELED -> context.getString(io.github.theonionsarewatching.nova.R.string.status_canceled)
         MsgStatus.SCHEDULED -> context.getString(io.github.theonionsarewatching.nova.R.string.status_scheduled)
+        MsgStatus.READ_BY_RECIPIENT -> context.getString(io.github.theonionsarewatching.nova.R.string.status_read)
         else -> ""
     }
 }

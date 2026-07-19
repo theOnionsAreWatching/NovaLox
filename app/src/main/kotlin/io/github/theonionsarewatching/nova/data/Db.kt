@@ -24,6 +24,8 @@ object MsgStatus {
     const val FAILED = 4
     const val CANCELED = 5
     const val SCHEDULED = 6
+    /** the recipient's phone reported the MMS as read (read-orig-ind) */
+    const val READ_BY_RECIPIENT = 7
 }
 
 object GroupMode {

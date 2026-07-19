@@ -483,4 +483,10 @@
     <string name="delivery_rejected">Not sent \u2014 the carrier rejected it: %1$s</string>
     <string name="delivery_failed_plain">Failed to send</string>
     <string name="delivery_sent_no_report">Sent \u2014 no delivery confirmation received</string>
+
+    <!-- v0.9.40 additions -->
+    <string name="paste">Paste</string>
+    <string name="press_ok_paste">Press OK to paste</string>
+    <string name="status_read">Read</string>
+    <string name="delivery_read_at">Read \u2713  (%1$s)</string>
 </resources>

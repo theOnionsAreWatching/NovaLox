@@ -215,13 +215,70 @@ abstract class BaseActivity : AppCompatActivity() {
     }
 
     override fun onResume() {
+        try {
+            (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                .addPrimaryClipChangedListener(clipListener)
+        } catch (_: Exception) {}
+        window.decorView.post { refreshPasteState() }
         super.onResume()
         softkeys?.refreshVisibility()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // OK pastes while a text box is focused and the clipboard has text —
+        // the same action the center softkey label advertises
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
+            currentFocus is android.widget.EditText
+        ) {
+            val clip = clipboardText()
+            if (!clip.isNullOrBlank()) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    pasteIntoFocused(clip)
+                }
+                return true
+            }
+        }
         if (softkeys?.handleKey(event) == true) return true
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun clipboardText(): String? = try {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.primaryClip?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)?.coerceToText(this)?.toString()
+    } catch (_: Exception) { null }
+
+    private fun pasteIntoFocused(text: String) {
+        val et = currentFocus as? android.widget.EditText ?: return
+        val start = et.selectionStart.coerceAtLeast(0)
+        val end = et.selectionEnd.coerceAtLeast(0)
+        et.text.replace(minOf(start, end), maxOf(start, end), text)
+    }
+
+    private var pasteHintShown = false
+
+    /** Recomputed on focus moves, clipboard changes, and resume. */
+    fun refreshPasteState() {
+        val focusedText = currentFocus is android.widget.EditText
+        val clip = if (focusedText) clipboardText() else null
+        val active = focusedText && !clip.isNullOrBlank()
+        softkeys?.applyPaste(active) { clipboardText()?.let { pasteIntoFocused(it) } }
+        if (active && softkeys?.shouldShow() != true && !pasteHintShown) {
+            pasteHintShown = true
+            android.widget.Toast.makeText(
+                this, R.string.press_ok_paste, android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private val clipListener =
+        android.content.ClipboardManager.OnPrimaryClipChangedListener { refreshPasteState() }
+
+    override fun onPostCreate(savedInstanceState: Bundle?) {
+        super.onPostCreate(savedInstanceState)
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ ->
+            refreshPasteState()
+        }
     }
 }
 
@@ -276,16 +333,41 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
         }
     }
 
+    private var baseCenterLabel: String? = null
+    private var baseCenterAction: (() -> Unit)? = null
+    private var pasteActive = false
+    private var pasteAction: (() -> Unit)? = null
+
     fun set(left: String?, center: String?, right: String?,
             onLeft: (() -> Unit)? = null, onCenter: (() -> Unit)? = null, onRight: (() -> Unit)? = null,
             onMenu: (() -> Unit)? = null) {
         leftAction = onLeft
-        centerAction = onCenter
+        baseCenterLabel = center
+        baseCenterAction = onCenter
         rightAction = onRight
         menuAction = onMenu ?: onLeft
         binding.softLeft.text = left ?: ""
-        binding.softCenter.text = center ?: ""
         binding.softRight.text = right ?: ""
+        renderCenter()
+    }
+
+    /** While a text box is focused and the clipboard holds text, the center
+     *  slot shows Paste; the screen's own center label comes back the moment
+     *  either condition ends. */
+    fun applyPaste(active: Boolean, action: (() -> Unit)?) {
+        pasteActive = active
+        pasteAction = action
+        renderCenter()
+    }
+
+    private fun renderCenter() {
+        if (pasteActive) {
+            binding.softCenter.text = activity.getString(R.string.paste)
+            centerAction = pasteAction
+        } else {
+            binding.softCenter.text = baseCenterLabel ?: ""
+            centerAction = baseCenterAction
+        }
     }
 
     /** Returns true when the event was consumed as a softkey. MENU maps to the menu action
