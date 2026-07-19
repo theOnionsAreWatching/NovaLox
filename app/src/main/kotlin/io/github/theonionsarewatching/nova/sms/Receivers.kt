@@ -353,7 +353,7 @@ class BootReceiver : BroadcastReceiver() {
                 val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(context)
                 val current = android.provider.Telephony.Sms.getDefaultSmsPackage(context)
                 if (prefs.wasDefaultSms && current != context.packageName) {
-                    io.github.theonionsarewatching.nova.notify.Notify
+                    io.github.theonionsarewatching.nova.notify.NotificationHelper
                         .notifyDefaultLost(context)
                 }
             } catch (_: Exception) {}
