@@ -294,6 +294,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
      *  scrolled to count as read. The chip at the bottom shows how many unread
      *  remain below, and clears as they're seen. */
     private fun markRead() {
+        // callable from onResume, which runs BEFORE the async convo load has
+        // created the adapter — nothing to mark yet in that window
+        if (!::adapter.isInitialized) return
         lifecycleScope.launch {
             if (!dividerCaptured) {
                 dividerCaptured = true
