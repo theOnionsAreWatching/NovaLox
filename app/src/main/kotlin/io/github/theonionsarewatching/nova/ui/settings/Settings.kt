@@ -631,11 +631,13 @@ class KeywordsActivity : SimpleListActivity() {
             .map { it.trim() }.count { it.isNotBlank() }
         val mode = when (k.mode) {
             1 -> getString(R.string.kw_sub_non_contacts)
-            2 -> getString(R.string.kw_sub_except, numberCount)
             3 -> getString(R.string.kw_sub_only, numberCount)
-            else -> getString(R.string.kw_sub_everyone)
+            else -> getString(R.string.kw_sub_everyone) // 0 and legacy 2
         }
-        return if (k.caseSensitive) "$mode \u00B7 Aa" else mode
+        val withAllow = if (k.mode != 3 && numberCount > 0)
+            "$mode \u00B7 " + getString(R.string.kw_sub_allows, numberCount)
+        else mode
+        return if (k.caseSensitive) "$withAllow \u00B7 Aa" else withAllow
     }
 
     private fun keywordOptions(k: KeywordEntity) {
@@ -656,8 +658,15 @@ class KeywordsActivity : SimpleListActivity() {
                 when (which) {
                     0 -> saveKeyword(k.copy(mode = 0))
                     1 -> saveKeyword(k.copy(mode = 1))
-                    2 -> numbersDialog(k, 2)
-                    3 -> numbersDialog(k, 3)
+                    2 -> {
+                        // ALLOW list: an exception layered on the current mode
+                        // (block-everyone or block-non-contacts stays as-is);
+                        // if the entry was in block-specific mode, fall back to
+                        // block-everyone as the base
+                        val base = if (k.mode == 3) 0 else k.mode
+                        pickNumbers(k, base)
+                    }
+                    3 -> pickNumbers(k, 3)
                     4 -> saveKeyword(k.copy(caseSensitive = !k.caseSensitive))
                     5 -> confirmRemove(k)
                 }
@@ -666,25 +675,16 @@ class KeywordsActivity : SimpleListActivity() {
             .show()
     }
 
-    private fun numbersDialog(k: KeywordEntity, mode: Int) {
-        val input = EditText(this).apply {
-            setText(k.numbers)
-            hint = getString(R.string.kw_numbers_hint)
-            setSingleLine(false)
-            maxLines = 4
+    private fun pickNumbers(k: KeywordEntity, mode: Int) {
+        val current = k.numbers.split(',', ';', '\n')
+            .map { it.trim() }.filter { it.isNotBlank() }
+        io.github.theonionsarewatching.nova.ui.NumberListPicker.show(
+            this,
+            if (mode == 3) R.string.kw_mode_only else R.string.kw_mode_except,
+            current
+        ) { picked ->
+            saveKeyword(k.copy(mode = mode, numbers = picked.joinToString(",")))
         }
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val wrap = android.widget.FrameLayout(this).apply {
-            setPadding(pad, pad / 2, pad, 0); addView(input)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(if (mode == 2) R.string.kw_mode_except else R.string.kw_mode_only)
-            .setView(wrap)
-            .setPositiveButton(R.string.save) { _, _ ->
-                saveKeyword(k.copy(mode = mode, numbers = input.text?.toString()?.trim().orEmpty()))
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun saveKeyword(k: KeywordEntity) {

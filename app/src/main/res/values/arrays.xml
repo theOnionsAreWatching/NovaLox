@@ -107,6 +107,10 @@
     </string-array>
 
     <string-array name="scale_entries">
+        <item>50%</item>
+        <item>55%</item>
+        <item>60%</item>
+        <item>65%</item>
         <item>70%</item>
         <item>75%</item>
         <item>80%</item>
@@ -119,6 +123,10 @@
         <item>150%</item>
     </string-array>
     <string-array name="scale_values">
+        <item>0.5</item>
+        <item>0.55</item>
+        <item>0.6</item>
+        <item>0.65</item>
         <item>0.7</item>
         <item>0.75</item>
         <item>0.8</item>

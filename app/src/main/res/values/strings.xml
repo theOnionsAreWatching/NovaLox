@@ -461,14 +461,26 @@
     <string name="new_messages_divider">— New messages —</string>
 
     <string name="kw_mode_everyone">Block from everyone</string>
-    <string name="kw_mode_non_contacts">Block only senders not in contacts</string>
-    <string name="kw_mode_except">Block everyone except specific numbers…</string>
-    <string name="kw_mode_only">Block only from specific numbers…</string>
+    <string name="kw_mode_non_contacts">Block non-contacts</string>
+    <string name="kw_mode_except">Allow specific numbers…</string>
+    <string name="kw_mode_only">Block specific numbers…</string>
     <string name="kw_case_on">Case sensitive: on (tap to turn off)</string>
     <string name="kw_case_off">Case sensitive: off (tap to turn on)</string>
     <string name="kw_numbers_hint">Numbers or emails, comma separated</string>
     <string name="kw_sub_everyone">Blocks everyone</string>
     <string name="kw_sub_non_contacts">Only non-contacts</string>
-    <string name="kw_sub_except">Everyone except %1$d</string>
-    <string name="kw_sub_only">Only %1$d number(s)</string>
+    <string name="kw_sub_allows">allows %1$d</string>
+    <string name="kw_sub_only">Blocks %1$d number(s)</string>
+
+    <!-- v0.9.30 additions -->
+    <string name="np_hint">Enter a number or name</string>
+    <string name="np_chosen">Selected:</string>
+    <string name="np_add_typed">+ Add what I typed</string>
+
+    <!-- v0.9.31 additions -->
+    <string name="delivery_delivered_at">Delivered \u2713  (%1$s)</string>
+    <string name="delivery_yes">confirmed</string>
+    <string name="delivery_rejected">Not sent \u2014 the carrier rejected it: %1$s</string>
+    <string name="delivery_failed_plain">Failed to send</string>
+    <string name="delivery_sent_no_report">Sent \u2014 no delivery confirmation received</string>
 </resources>

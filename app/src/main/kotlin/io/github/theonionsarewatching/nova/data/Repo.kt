@@ -540,11 +540,14 @@ class Repo private constructor(private val context: Context) {
             if (kw.keyword.isBlank()) continue
             val textHit = body.contains(kw.keyword, ignoreCase = !kw.caseSensitive)
             if (!textHit) continue
+            // numbers list: for mode 3 it's the BLOCK list; for every other
+            // mode it's an ALLOW list layered on top (never block these
+            // senders). Legacy mode 2 rows behave identically to mode 0.
+            val allowListed = kw.mode != 3 && senderListed(senderAddress, kw.numbers)
             val applies = when (kw.mode) {
-                1 -> !isKnownContact(senderAddress)
-                2 -> !senderListed(senderAddress, kw.numbers)
+                1 -> !isKnownContact(senderAddress) && !allowListed
                 3 -> senderListed(senderAddress, kw.numbers)
-                else -> true
+                else -> !allowListed
             }
             if (applies) return true
         }

@@ -393,6 +393,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
                 enterComposeMode()
             }
+            // mark what's on screen once the initial layout settles — the
+            // programmatic scroll above fires no scroll events, so without this
+            // a thread opened into compose focus never marked anything read
+            binding.msgList.post { markRead() }
             loading = false
         }
     }
@@ -996,12 +1000,34 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
         }
         if (m.locked) sb.append(getString(R.string.detail_locked)).append('\n')
-        if (m.isMine && m.deliveryDebug.isNotBlank() || (m.isMine && !m.isMms)) {
+        // simplified delivery report: the plain facts, distilled from the
+        // stored trail — no more raw debug dump in the user-facing dialog
+        if (m.isMine) {
             sb.append('\n').append(getString(R.string.detail_delivery_header)).append('\n')
-            sb.append(
-                if (m.deliveryDebug.isBlank()) getString(R.string.detail_no_reports)
-                else m.deliveryDebug.trim()
-            ).append('\n')
+            val trail = m.deliveryDebug
+            // when did a "delivered" line last land? (its [MM-dd HH:mm:ss] stamp)
+            val deliveredLine = trail.lines().lastOrNull {
+                it.contains("delivered", ignoreCase = true) &&
+                    !it.contains("not delivered", ignoreCase = true)
+            }
+            val deliveredStamp = deliveredLine
+                ?.substringAfter('[', "")?.substringBefore(']', "")
+                ?.takeIf { it.isNotBlank() }
+            val rejection = trail.lines().lastOrNull { it.contains("carrier rejected", ignoreCase = true) }
+                ?.substringAfter("carrier rejected:", "")?.trim()?.takeIf { it.isNotBlank() }
+            when {
+                m.status == MsgStatus.DELIVERED ->
+                    sb.append(getString(R.string.delivery_delivered_at,
+                        deliveredStamp ?: getString(R.string.delivery_yes))).append('\n')
+                m.status == MsgStatus.FAILED && rejection != null ->
+                    sb.append(getString(R.string.delivery_rejected, rejection)).append('\n')
+                m.status == MsgStatus.FAILED ->
+                    sb.append(getString(R.string.delivery_failed_plain)).append('\n')
+                m.status == MsgStatus.SENT ->
+                    sb.append(getString(R.string.delivery_sent_no_report)).append('\n')
+                else ->
+                    sb.append(Sender.statusLabel(this, m.status)).append('\n')
+            }
         }
         AlertDialog.Builder(this)
             .setTitle(R.string.details)
