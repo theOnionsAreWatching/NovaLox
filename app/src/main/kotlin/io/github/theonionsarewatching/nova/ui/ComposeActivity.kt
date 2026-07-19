@@ -43,7 +43,7 @@ class ComposeActivity : BaseActivity() {
         binding.suggestionList.layoutManager = LinearLayoutManager(this)
         binding.suggestionList.adapter = suggestionAdapter
 
-        binding.btnBack.setOnClickListener { finish() }
+        binding.btnBack.setOnClickListener { goBack() }
         binding.btnGroupMode.setOnClickListener { pickGroupMode() }
         binding.btnStart.setOnClickListener { start() }
         binding.btnSchedule.setOnClickListener { startScheduled() }
@@ -331,6 +331,17 @@ class ComposeActivity : BaseActivity() {
                 d.dismiss()
             }
             .show()
+    }
+
+    private fun goBack() {
+        if (isTaskRoot) {
+            startActivity(Intent(this, MainActivity::class.java))
+        }
+        finish()
+    }
+
+    override fun onBackPressed() {
+        goBack()
     }
 
     private fun startScheduled() {

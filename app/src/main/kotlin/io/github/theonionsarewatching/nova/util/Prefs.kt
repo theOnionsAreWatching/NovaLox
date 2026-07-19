@@ -94,6 +94,12 @@ class Prefs(context: Context) {
     val showSearchBar: Boolean get() = sp.getBoolean("show_search_bar", false)
     val deliveryReports: Boolean get() = sp.getBoolean("delivery_reports", true)
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
+    /** "single" (one aggregated notification, default) or "per_convo". */
+    val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"
+    val softkeysFocusable: Boolean get() = sp.getBoolean("softkeys_focusable", false)
+    var wasDefaultSms: Boolean
+        get() = sp.getBoolean("was_default_sms", false)
+        set(v) { sp.edit().putBoolean("was_default_sms", v).apply() }
     // broadcast / group_mms : default for NEW group conversations
     val defaultGroupMode: String get() = sp.getString("default_group_mode", "group_mms") ?: "group_mms"
     // auto / ask / never

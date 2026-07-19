@@ -443,4 +443,32 @@
     <string name="color_blue">Blue</string>
     <string name="color_purple">Purple</string>
     <string name="color_pink">Pink</string>
+
+    <!-- v0.9.28 additions -->
+    <string name="pref_notif_mode">New message notifications</string>
+    <string name="notif_mode_single">One notification for all messages</string>
+    <string name="notif_mode_per_convo">Separate notification per conversation</string>
+    <string name="new_messages_count">%1$d new messages</string>
+    <string name="default_lost_title">NovaLox is no longer your messaging app</string>
+    <string name="default_lost_text">This phone reset the default messaging app. Tap to make NovaLox the default again so messages keep arriving here.</string>
+    <string name="pref_softkeys_focusable">Softkeys reachable by D-pad</string>
+    <string name="pref_softkeys_focusable_summary">Let the arrow keys move onto the on-screen softkey labels</string>
+    <string name="softkeys_focusable_warning">The softkey labels will become extra stops for the arrow keys on every screen, which can make moving around slower. The physical softkeys keep working either way. Turn on?</string>
+
+    <!-- v0.9.29 additions -->
+    <string name="settings_notifications">Notifications</string>
+    <string name="action_mark_all_read">Mark all read</string>
+    <string name="new_messages_divider">— New messages —</string>
+
+    <string name="kw_mode_everyone">Block from everyone</string>
+    <string name="kw_mode_non_contacts">Block only senders not in contacts</string>
+    <string name="kw_mode_except">Block everyone except specific numbers…</string>
+    <string name="kw_mode_only">Block only from specific numbers…</string>
+    <string name="kw_case_on">Case sensitive: on (tap to turn off)</string>
+    <string name="kw_case_off">Case sensitive: off (tap to turn on)</string>
+    <string name="kw_numbers_hint">Numbers or emails, comma separated</string>
+    <string name="kw_sub_everyone">Blocks everyone</string>
+    <string name="kw_sub_non_contacts">Only non-contacts</string>
+    <string name="kw_sub_except">Everyone except %1$d</string>
+    <string name="kw_sub_only">Only %1$d number(s)</string>
 </resources>

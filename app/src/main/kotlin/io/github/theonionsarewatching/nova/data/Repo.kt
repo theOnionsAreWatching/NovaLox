@@ -64,6 +64,10 @@ class Repo private constructor(private val context: Context) {
         return if (id > 0) c.copy(id = id) else db.conversations().byKey(key)!!
     }
 
+    suspend fun refreshAllConversationSummaries() {
+        db.conversations().all().forEach { refreshConversation(it.id) }
+    }
+
     suspend fun refreshConversation(convoId: Long) {
         val convo = db.conversations().byId(convoId) ?: return
         val newest = db.messages().newest(convoId)
@@ -113,7 +117,7 @@ class Repo private constructor(private val context: Context) {
 
         // 2) our DB
         val convo = getOrCreateConversation(listOf(address))
-        val blocked = matchesKeyword(body)
+        val blocked = matchesKeyword(body, address)
         val msg = MessageEntity(
             convoId = convo.id, address = address, body = body, date = date,
             isMine = false, status = MsgStatus.RECEIVED, read = false,
@@ -429,7 +433,7 @@ class Repo private constructor(private val context: Context) {
         }
 
         val convo = getOrCreateConversation(participants)
-        val blocked = !isMine && matchesKeyword(bodyText)
+        val blocked = !isMine && matchesKeyword(bodyText, from.firstOrNull() ?: "")
         val senderAddress = if (isMine) participants.joinToString("|") else (from.firstOrNull() ?: "Unknown")
         // honest status from the actual message box — outgoing rows were all
         // labeled "sent" before, even ones sitting in outbox or marked failed
@@ -527,10 +531,47 @@ class Repo private constructor(private val context: Context) {
 
     // ============================== Keywords / blocking ==============================
 
-    private suspend fun matchesKeyword(body: String): Boolean {
+    /** Literal substring matching (never regex), so keywords with symbols —
+     *  "example-web.com", "$5", "1-800" — match exactly as typed. Each keyword
+     *  carries its own sender scope and case sensitivity. */
+    private suspend fun matchesKeyword(body: String, senderAddress: String): Boolean {
         if (body.isBlank()) return false
-        val lower = body.lowercase()
-        return db.keywords().all().any { it.keyword.isNotBlank() && lower.contains(it.keyword.lowercase()) }
+        for (kw in db.keywords().all()) {
+            if (kw.keyword.isBlank()) continue
+            val textHit = body.contains(kw.keyword, ignoreCase = !kw.caseSensitive)
+            if (!textHit) continue
+            val applies = when (kw.mode) {
+                1 -> !isKnownContact(senderAddress)
+                2 -> !senderListed(senderAddress, kw.numbers)
+                3 -> senderListed(senderAddress, kw.numbers)
+                else -> true
+            }
+            if (applies) return true
+        }
+        return false
+    }
+
+    private suspend fun isKnownContact(address: String): Boolean {
+        if (address.isBlank()) return false
+        return try {
+            db.contactNames().byKey(PhoneUtils.normalize(address)) != null
+        } catch (_: Exception) { false }
+    }
+
+    private fun senderListed(address: String, numbers: String): Boolean {
+        if (address.isBlank() || numbers.isBlank()) return false
+        val addrNorm = PhoneUtils.normalize(address)
+        return numbers.split(',', ';', '\n').map { it.trim() }.filter { it.isNotBlank() }
+            .any { entry ->
+                if (entry.contains("@") || address.contains("@")) {
+                    entry.equals(address, ignoreCase = true)
+                } else {
+                    val eNorm = PhoneUtils.normalize(entry)
+                    eNorm == addrNorm ||
+                        (eNorm.length >= 7 && addrNorm.endsWith(eNorm.takeLast(7))) ||
+                        (addrNorm.length >= 7 && eNorm.endsWith(addrNorm.takeLast(7)))
+                }
+            }
     }
 
     fun isNumberBlocked(address: String): Boolean {

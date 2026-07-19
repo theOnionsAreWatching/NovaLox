@@ -47,6 +47,10 @@ class MessageAdapter(
 
     var rows: List<MessageRow> = emptyList()
 
+    /** The first message that was unread when the conversation was opened —
+     *  the "New messages" line renders above it for the whole visit. */
+    var newDividerMessageId: Long = -1L
+
     /** Replace the data with a minimal diff — only genuinely changed rows
      *  rebind, so a status tick no longer repaints (and flashes) the screen. */
     fun submit(newRows: List<MessageRow>) {
@@ -114,6 +118,9 @@ class MessageAdapter(
         val row = rows[position]
         val m = row.msg
         val ctx = holder.itemView.context
+        holder.b.newDivider.visibility =
+            if (m.id == newDividerMessageId) View.VISIBLE else View.GONE
+        holder.b.newDivider.setTextColor(ThemeUtils.accentColor(ctx))
         val prefs = Prefs.get(ctx)
         val accent = ThemeUtils.accentColor(ctx)
         val pad = ThemeUtils.densityPad(ctx)

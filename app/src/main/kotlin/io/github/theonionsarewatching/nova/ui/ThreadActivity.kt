@@ -90,7 +90,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
         )
 
-        binding.btnBack.setOnClickListener { finish() }
+        binding.btnBack.setOnClickListener { goBack() }
+        binding.unreadChip.setOnClickListener {
+            binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
+            markRead()
+        }
+        binding.msgList.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(rv: androidx.recyclerview.widget.RecyclerView, newState: Int) {
+                if (newState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE) markRead()
+            }
+        })
         binding.btnOverflow.setOnClickListener { threadOptions() }
         binding.btnAttach.setOnClickListener { pickAttachment() }
         binding.btnSend.setOnClickListener { send() }
@@ -279,10 +288,36 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
+    private var dividerCaptured = false
+
+    /** Reads are now marked by VISIBILITY: only messages the user has actually
+     *  scrolled to count as read. The chip at the bottom shows how many unread
+     *  remain below, and clears as they're seen. */
     private fun markRead() {
         lifecycleScope.launch {
-            repo.db.messages().markThreadRead(convoId)
-            repo.refreshConversation(convoId)
+            if (!dividerCaptured) {
+                dividerCaptured = true
+                adapter.newDividerMessageId =
+                    repo.db.messages().firstUnreadId(convoId) ?: -1L
+            }
+            val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            val lastVis = lm?.findLastVisibleItemPosition() ?: -1
+            val anchor = rows.getOrNull(lastVis)?.msg
+            val changed = if (anchor != null) {
+                repo.db.messages().markReadUpTo(convoId, anchor.date, anchor.id)
+            } else 0
+            val left = repo.db.messages().unreadCount(convoId)
+            binding.unreadChip.text = left.toString()
+            binding.unreadChip.visibility = if (left > 0) View.VISIBLE else View.GONE
+            if (changed > 0) repo.refreshConversation(convoId)
+            if (left == 0) {
+                androidx.core.app.NotificationManagerCompat.from(this@ThreadActivity)
+                    .cancel(convoId.toInt())
+                if (repo.db.messages().totalUnread() == 0) {
+                    androidx.core.app.NotificationManagerCompat.from(this@ThreadActivity)
+                        .cancel(1000)
+                }
+            }
         }
     }
 
@@ -314,6 +349,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 senderName = names[PhoneUtils.normalize(m.address)] ?: m.address
             )
         }
+    }
+
+    /** Opened straight into this thread (notification, dialer)? Back should
+     *  land on the conversation list, not exit the app. */
+    private fun goBack() {
+        if (isTaskRoot) {
+            startActivity(Intent(this, MainActivity::class.java))
+        }
+        finish()
+    }
+
+    override fun onBackPressed() {
+        goBack()
     }
 
     private suspend fun updateScrollExtent() {
@@ -429,6 +477,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 rows.getOrNull(p)?.msg?.id
             }
             val wasCompose = composeMode
+            val lmB = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            val atBottom = (lmB?.findLastVisibleItemPosition() ?: -1) >= adapter.itemCount - 1
             val requested = maxOf(PAGE, rows.size)
             val latest = repo.db.messages().latest(convoId, requested).reversed()
             rows = ArrayList(buildRows(latest))
@@ -436,7 +486,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             updateScrollExtent()
-            if (wasCompose) {
+            if (wasCompose && atBottom) {
+                // follow new messages only when already at the bottom — never
+                // yank the reader away from where they are
                 binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
             } else if (focusedId != null) {
                 val pos = rows.indexOfFirst { it.msg.id == focusedId }

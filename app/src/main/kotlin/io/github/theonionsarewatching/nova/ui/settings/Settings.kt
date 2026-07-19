@@ -91,6 +91,21 @@ class SettingsActivity : BaseActivity() {
             val xmlRes = arguments?.getInt(ARG_XML)?.takeIf { it != 0 } ?: R.xml.preferences
             setPreferencesFromResource(xmlRes, rootKey)
 
+            findPreference<androidx.preference.SwitchPreferenceCompat>("softkeys_focusable")
+                ?.setOnPreferenceChangeListener { pref, newValue ->
+                    if (newValue == true) {
+                        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.pref_softkeys_focusable)
+                            .setMessage(R.string.softkeys_focusable_warning)
+                            .setPositiveButton(android.R.string.ok) { _, _ ->
+                                (pref as androidx.preference.SwitchPreferenceCompat).isChecked = true
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                        false // only enabled after the user confirms the warning
+                    } else true
+                }
+
             find("open_customize") {
                 parentFragmentManager.beginTransaction()
                     .replace(R.id.settings_container, SettingsFragment().apply {
@@ -573,7 +588,7 @@ class RowAdapter(
 class KeywordsActivity : SimpleListActivity() {
 
     private var items: List<KeywordEntity> = emptyList()
-    private val adapter = RowAdapter { pos -> confirmRemove(items[pos]) }
+    private val adapter = RowAdapter { pos -> keywordOptions(items[pos]) }
 
     override fun titleRes(): Int = R.string.keywords_title
 
@@ -588,7 +603,7 @@ class KeywordsActivity : SimpleListActivity() {
     override fun load() {
         lifecycleScope.launch {
             items = repo.db.keywords().all()
-            adapter.submit(items.map { it.keyword to getString(R.string.keyword_hint_row) })
+            adapter.submit(items.map { it.keyword to keywordSubtitle(it) })
             setEmpty(items.isEmpty())
         }
     }
@@ -609,6 +624,74 @@ class KeywordsActivity : SimpleListActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun keywordSubtitle(k: KeywordEntity): String {
+        val numberCount = k.numbers.split(',', ';', '\n')
+            .map { it.trim() }.count { it.isNotBlank() }
+        val mode = when (k.mode) {
+            1 -> getString(R.string.kw_sub_non_contacts)
+            2 -> getString(R.string.kw_sub_except, numberCount)
+            3 -> getString(R.string.kw_sub_only, numberCount)
+            else -> getString(R.string.kw_sub_everyone)
+        }
+        return if (k.caseSensitive) "$mode \u00B7 Aa" else mode
+    }
+
+    private fun keywordOptions(k: KeywordEntity) {
+        val caseLabel = getString(
+            if (k.caseSensitive) R.string.kw_case_on else R.string.kw_case_off
+        )
+        val options = arrayOf(
+            getString(R.string.kw_mode_everyone),
+            getString(R.string.kw_mode_non_contacts),
+            getString(R.string.kw_mode_except),
+            getString(R.string.kw_mode_only),
+            caseLabel,
+            getString(R.string.remove)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(k.keyword)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> saveKeyword(k.copy(mode = 0))
+                    1 -> saveKeyword(k.copy(mode = 1))
+                    2 -> numbersDialog(k, 2)
+                    3 -> numbersDialog(k, 3)
+                    4 -> saveKeyword(k.copy(caseSensitive = !k.caseSensitive))
+                    5 -> confirmRemove(k)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun numbersDialog(k: KeywordEntity, mode: Int) {
+        val input = EditText(this).apply {
+            setText(k.numbers)
+            hint = getString(R.string.kw_numbers_hint)
+            setSingleLine(false)
+            maxLines = 4
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0); addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (mode == 2) R.string.kw_mode_except else R.string.kw_mode_only)
+            .setView(wrap)
+            .setPositiveButton(R.string.save) { _, _ ->
+                saveKeyword(k.copy(mode = mode, numbers = input.text?.toString()?.trim().orEmpty()))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun saveKeyword(k: KeywordEntity) {
+        lifecycleScope.launch {
+            repo.db.keywords().update(k)
+            load()
+        }
     }
 
     private fun confirmRemove(k: KeywordEntity) {

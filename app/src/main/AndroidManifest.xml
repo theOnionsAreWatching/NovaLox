@@ -63,6 +63,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.APP_MESSAGING" />
             </intent-filter>
         </activity>
 
@@ -75,6 +77,7 @@
         <activity
             android:name=".ui.ComposeActivity"
             android:exported="true"
+            android:directBootAware="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
@@ -109,7 +112,13 @@
 
         <activity android:name=".ui.MediaViewerActivity" android:exported="false" />
         <activity android:name=".ui.SearchActivity" android:exported="false" />
-        <activity android:name=".ui.settings.SettingsActivity" android:exported="false" />
+        <activity android:name=".ui.settings.SettingsActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.NOTIFICATION_PREFERENCES" />
+            </intent-filter>
+        </activity>
         <activity android:name=".ui.settings.SizeSettingsActivity" android:exported="false" />
         <activity android:name=".ui.settings.KeywordsActivity" android:exported="false" />
         <activity android:name=".ui.settings.RecycleBinActivity" android:exported="false" />
@@ -123,6 +132,7 @@
         <receiver
             android:name=".sms.SmsDeliverReceiver"
             android:exported="true"
+            android:directBootAware="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_DELIVER" />
@@ -135,6 +145,7 @@
         <receiver
             android:name="com.android.mms.transaction.PushReceiver"
             android:exported="true"
+            android:directBootAware="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
                 <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
@@ -159,6 +170,7 @@
         <service
             android:name=".sms.HeadlessSmsSendService"
             android:exported="true"
+            android:directBootAware="true"
             android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
             <intent-filter>
                 <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />

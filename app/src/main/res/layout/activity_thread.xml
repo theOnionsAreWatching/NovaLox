@@ -93,6 +93,22 @@
             android:visibility="gone" />
 
         <TextView
+            android:id="@+id/unreadChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bg_unread_chip"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/dateBubble"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -204,7 +220,7 @@
             android:layout_marginStart="2dp"
             android:layout_marginEnd="2dp"
             android:hint="@string/compose_hint"
-            android:inputType="textCapSentences|textMultiLine"
+            android:inputType="textCapSentences|textMultiLine|textShortMessage"
             android:importantForAutofill="no" />
         </FrameLayout>
 

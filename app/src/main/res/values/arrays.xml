@@ -224,4 +224,13 @@
         <item>vibrate_only</item>
         <item>never</item>
     </string-array>
+
+    <string-array name="notif_mode_entries">
+        <item>@string/notif_mode_single</item>
+        <item>@string/notif_mode_per_convo</item>
+    </string-array>
+    <string-array name="notif_mode_values">
+        <item>single</item>
+        <item>per_convo</item>
+    </string-array>
 </resources>

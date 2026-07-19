@@ -257,6 +257,21 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
      *  a just-finished setup takes effect without restarting the app). */
     fun refreshVisibility() {
         binding.root.visibility = if (shouldShow()) View.VISIBLE else View.GONE
+        // optional: let the D-pad land on the on-screen softkeys (off by default;
+        // it inserts three extra focus stops into every screen's navigation)
+        val focusable = io.github.theonionsarewatching.nova.util.Prefs
+            .get(activity).softkeysFocusable
+        listOf(binding.softLeft, binding.softCenter, binding.softRight).forEach { v ->
+            v.isFocusable = focusable
+            v.isClickable = focusable
+        }
+        if (focusable && binding.softLeft.getTag(R.id.softkey_focus_wired) == null) {
+            binding.softLeft.setTag(R.id.softkey_focus_wired, true)
+            ThemeUtils.applyFocusHighlight(binding.softLeft, binding.softCenter, binding.softRight)
+            binding.softLeft.setOnClickListener { leftAction?.invoke() }
+            binding.softCenter.setOnClickListener { centerAction?.invoke() }
+            binding.softRight.setOnClickListener { rightAction?.invoke() }
+        }
     }
 
     fun set(left: String?, center: String?, right: String?,

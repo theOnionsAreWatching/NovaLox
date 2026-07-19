@@ -153,7 +153,7 @@
         android:gravity="top|start"
         android:textSize="14sp"
         android:hint="@string/compose_hint"
-        android:inputType="textCapSentences|textMultiLine"
+        android:inputType="textCapSentences|textMultiLine|textShortMessage"
         android:importantForAutofill="no" />
     </FrameLayout>
     </LinearLayout>

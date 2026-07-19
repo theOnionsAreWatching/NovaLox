@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import coil.dispose
 import coil.load
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
@@ -84,7 +85,12 @@ class ConversationAdapter(
             holder.b.convoAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
             holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri))
         } else if (c.isGroup) {
-            // groups: a people glyph on the colored circle
+            // groups: a people glyph on the colored circle. A recycled row may
+            // still have a contact-photo load in flight — cancel it, or the
+            // stale bitmap lands AFTER this bind and the white tint renders it
+            // as a solid block until the next rebind.
+            holder.b.convoAvatar.dispose()
+            holder.b.convoAvatar.setImageDrawable(null)
             holder.b.avatarLetter.visibility = android.view.View.GONE
             holder.b.convoAvatar.visibility = android.view.View.VISIBLE
             val color2 = run {
@@ -105,6 +111,8 @@ class ConversationAdapter(
                 android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
             holder.b.convoAvatar.setImageResource(io.github.theonionsarewatching.nova.R.drawable.ic_group)
         } else {
+            holder.b.convoAvatar.dispose()
+            holder.b.convoAvatar.setImageDrawable(null)
             holder.b.convoAvatar.visibility = android.view.View.GONE
             holder.b.avatarLetter.visibility = android.view.View.VISIBLE
             // named contacts: first letter. Unsaved numbers: first digit of the

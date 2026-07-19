@@ -118,6 +118,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         binding.gateView.visibility = if (isDefault) View.GONE else View.VISIBLE
         binding.contentView.visibility = if (isDefault) View.VISIBLE else View.GONE
         if (isDefault) {
+            prefs.wasDefaultSms = true
             askFirstRunPermissions()
             runOnboardingChain()
             loadConversations()

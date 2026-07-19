@@ -139,7 +139,14 @@ data class ElementEntity(
 @Entity(tableName = "keywords")
 data class KeywordEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val keyword: String
+    val keyword: String,
+    /** 0 = block from everyone (default); 1 = block only senders NOT in
+     *  contacts; 2 = block everyone EXCEPT the listed numbers; 3 = block ONLY
+     *  the listed numbers. */
+    val mode: Int = 0,
+    /** comma-separated numbers/emails for modes 2 and 3 */
+    val numbers: String = "",
+    val caseSensitive: Boolean = false
 )
 
 @Entity(tableName = "contact_names")
@@ -284,6 +291,27 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0 AND read = 0")
     suspend fun unreadCount(convoId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM messages WHERE deletedAt IS NULL AND blockedByKeyword = 0 AND read = 0")
+    suspend fun totalUnread(): Int
+
+    @Query("SELECT COUNT(DISTINCT convoId) FROM messages WHERE deletedAt IS NULL AND blockedByKeyword = 0 AND read = 0")
+    suspend fun unreadConvoCount(): Int
+
+    @Query("UPDATE messages SET read = 1 WHERE read = 0")
+    suspend fun markAllRead()
+
+    @Query(
+        """UPDATE messages SET read = 1 WHERE convoId = :convoId AND read = 0
+           AND (date < :date OR (date = :date AND id <= :id))"""
+    )
+    suspend fun markReadUpTo(convoId: Long, date: Long, id: Long): Int
+
+    @Query(
+        """SELECT id FROM messages WHERE convoId = :convoId AND read = 0
+           AND deletedAt IS NULL AND blockedByKeyword = 0 ORDER BY date, id LIMIT 1"""
+    )
+    suspend fun firstUnreadId(convoId: Long): Long?
 
     @Query(
         """SELECT * FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0
@@ -500,6 +528,9 @@ interface KeywordDao {
     @Insert
     suspend fun insert(k: KeywordEntity)
 
+    @androidx.room.Update
+    suspend fun update(k: KeywordEntity)
+
     @Query("SELECT * FROM keywords ORDER BY keyword")
     suspend fun all(): List<KeywordEntity>
 
@@ -524,6 +555,14 @@ interface ContactNameDao {
 
 // ============================== Database ==============================
 
+val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE keywords ADD COLUMN mode INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE keywords ADD COLUMN numbers TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE keywords ADD COLUMN caseSensitive INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE messages ADD COLUMN deliveryDebug TEXT NOT NULL DEFAULT ''")
@@ -542,7 +581,7 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -557,7 +596,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }

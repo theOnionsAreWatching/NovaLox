@@ -19,6 +19,12 @@ class App : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // boot-aware components can spin this process up BEFORE the user
+        // unlocks, when credential-protected storage (database, preferences,
+        // files) is still locked. Do nothing in that state — the guarded
+        // receivers ignore the event, and normal startup happens post-unlock.
+        val um = getSystemService(android.os.UserManager::class.java)
+        if (um != null && !um.isUserUnlocked) return
         io.github.theonionsarewatching.nova.util.Formatters.init(this)
         io.github.theonionsarewatching.nova.util.DiagLog.installCrashHandler(this)
         NotificationHelper.createChannels(this)

@@ -20,6 +20,8 @@ import java.io.File
 
 class SmsDeliverReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val um0 = context.getSystemService(android.os.UserManager::class.java)
+        if (um0 != null && !um0.isUserUnlocked) return
         if (intent.action != Telephony.Sms.Intents.SMS_DELIVER_ACTION) return
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         if (messages.isEmpty()) return
@@ -120,6 +122,8 @@ private fun respName(code: Int): String = when (code) {
 
 class MmsSentReceiverImpl : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val um0 = context.getSystemService(android.os.UserManager::class.java)
+        if (um0 != null && !um0.isUserUnlocked) return
         val ok = resultCode == Activity.RESULT_OK
         // THE MISSING HALF of MMS delivery reports: the carrier's confirmation
         // carries the Message-ID it assigned; the later delivery notice
@@ -343,6 +347,16 @@ class BootReceiver : BroadcastReceiver() {
             intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             Repo.get(context).rescheduleAllAlarms()
+            // some phones silently drop the default-SMS role across reboots;
+            // if the user HAD made us default and we lost it, say so
+            try {
+                val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(context)
+                val current = android.provider.Telephony.Sms.getDefaultSmsPackage(context)
+                if (prefs.wasDefaultSms && current != context.packageName) {
+                    io.github.theonionsarewatching.nova.notify.Notify
+                        .notifyDefaultLost(context)
+                }
+            } catch (_: Exception) {}
         }
     }
 }
@@ -353,6 +367,8 @@ class HeadlessSmsSendService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val um0 = getSystemService(android.os.UserManager::class.java)
+        if (um0 != null && !um0.isUserUnlocked) return START_NOT_STICKY
         if (intent?.action == "android.intent.action.RESPOND_VIA_MESSAGE") {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
             val recipients = intent.data?.schemeSpecificPart?.split(";", ",")
