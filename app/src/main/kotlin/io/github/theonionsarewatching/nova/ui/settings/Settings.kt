@@ -647,8 +647,8 @@ class KeywordsActivity : SimpleListActivity() {
         val options = arrayOf(
             getString(R.string.kw_mode_everyone),
             getString(R.string.kw_mode_non_contacts),
-            getString(R.string.kw_mode_except),
             getString(R.string.kw_mode_only),
+            getString(R.string.kw_mode_except),
             caseLabel,
             getString(R.string.remove)
         )
@@ -658,15 +658,14 @@ class KeywordsActivity : SimpleListActivity() {
                 when (which) {
                     0 -> saveKeyword(k.copy(mode = 0))
                     1 -> saveKeyword(k.copy(mode = 1))
-                    2 -> {
-                        // ALLOW list: an exception layered on the current mode
-                        // (block-everyone or block-non-contacts stays as-is);
-                        // if the entry was in block-specific mode, fall back to
-                        // block-everyone as the base
+                    2 -> pickNumbers(k, 3)
+                    3 -> {
+                        // ALLOWED numbers: an exception layered on the current
+                        // mode (block-everyone or block-non-contacts stays);
+                        // from block-specific mode, block-everyone is the base
                         val base = if (k.mode == 3) 0 else k.mode
                         pickNumbers(k, base)
                     }
-                    3 -> pickNumbers(k, 3)
                     4 -> saveKeyword(k.copy(caseSensitive = !k.caseSensitive))
                     5 -> confirmRemove(k)
                 }

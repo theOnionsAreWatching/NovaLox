@@ -175,7 +175,9 @@ abstract class BaseActivity : AppCompatActivity() {
         // whole-app resize: scaling the density scales EVERYTHING — buttons,
         // spacing, icons, avatars — not just text
         if (p.appZoom != 1.0f) {
-            config.densityDpi = (config.densityDpi * p.appZoom).toInt().coerceAtLeast(120)
+            // floor low enough that 50% works even on 120dpi keypad screens
+            // (the old floor of 120 silently cancelled every reduction there)
+            config.densityDpi = (config.densityDpi * p.appZoom).toInt().coerceAtLeast(60)
         }
         super.attachBaseContext(newBase.createConfigurationContext(config))
     }

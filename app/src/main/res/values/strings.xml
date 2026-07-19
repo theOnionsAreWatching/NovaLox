@@ -462,7 +462,7 @@
 
     <string name="kw_mode_everyone">Block from everyone</string>
     <string name="kw_mode_non_contacts">Block non-contacts</string>
-    <string name="kw_mode_except">Allow specific numbers…</string>
+    <string name="kw_mode_except">Allowed numbers…</string>
     <string name="kw_mode_only">Block specific numbers…</string>
     <string name="kw_case_on">Case sensitive: on (tap to turn off)</string>
     <string name="kw_case_off">Case sensitive: off (tap to turn on)</string>
@@ -475,7 +475,7 @@
     <!-- v0.9.30 additions -->
     <string name="np_hint">Enter a number or name</string>
     <string name="np_chosen">Selected:</string>
-    <string name="np_add_typed">+ Add what I typed</string>
+    <string name="np_add_typed">Add Number</string>
 
     <!-- v0.9.31 additions -->
     <string name="delivery_delivered_at">Delivered \u2713  (%1$s)</string>
