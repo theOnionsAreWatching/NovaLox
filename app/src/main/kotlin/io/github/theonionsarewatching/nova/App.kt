@@ -1,6 +1,7 @@
 package io.github.theonionsarewatching.nova
 
 import android.app.Application
+import kotlinx.coroutines.launch
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
@@ -26,6 +27,18 @@ class App : Application(), ImageLoaderFactory {
         val um = getSystemService(android.os.UserManager::class.java)
         if (um != null && !um.isUserUnlocked) return
         io.github.theonionsarewatching.nova.util.Formatters.init(this)
+        // pre-0.9.41 conversations stored "[Photo]"-style snippets; recompute
+        // them once so the new italic words show everywhere
+        val prefs0 = io.github.theonionsarewatching.nova.util.Prefs.get(this)
+        if (!prefs0.snippetWordsFixed) {
+            val repo0 = io.github.theonionsarewatching.nova.data.Repo.get(this)
+            repo0.scope.launch {
+                try {
+                    repo0.refreshAllConversationSummaries()
+                    prefs0.snippetWordsFixed = true
+                } catch (_: Exception) {}
+            }
+        }
         io.github.theonionsarewatching.nova.util.DiagLog.installCrashHandler(this)
         NotificationHelper.createChannels(this)
 

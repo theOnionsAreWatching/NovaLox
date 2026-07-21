@@ -149,7 +149,7 @@ object ChatBackground {
                 text = activity.getString(f.nameRes)
                 textSize = 15f
             })
-            io.github.theonionsarewatching.nova.ui.ThemeUtils.applyFocusHighlight(row)
+            io.github.theonionsarewatching.nova.ui.ThemeUtils.applyContrastFocusHighlight(row)
             row.setOnClickListener {
                 dialog?.dismiss()
                 shadesDialog(activity, f, onPicked)

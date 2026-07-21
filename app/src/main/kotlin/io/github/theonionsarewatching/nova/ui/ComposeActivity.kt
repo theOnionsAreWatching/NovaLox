@@ -221,13 +221,59 @@ class ComposeActivity : BaseActivity() {
     private fun pickAttachment() {
         android.app.AlertDialog.Builder(this)
             .setItems(arrayOf(
-                getString(R.string.attach_file_option),
-                getString(R.string.attach_contact_option)
+                getString(R.string.attach_menu_photo),
+                getString(R.string.attach_menu_video),
+                getString(R.string.attach_menu_contact),
+                getString(R.string.attach_menu_audio),
+                getString(R.string.attach_menu_file)
             )) { _, which ->
-                if (which == 0) pickFileAttachment() else pickContactAttachment()
+                when (which) {
+                    0 -> pickMedia("image/*", cameraImageIntent())
+                    1 -> pickMedia("video/*",
+                        Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE))
+                    2 -> pickContactAttachment()
+                    3 -> pickMedia("audio/*",
+                        Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
+                    4 -> pickFileAttachment()
+                }
             }
             .show()
     }
+
+    /** Typed picker: gallery/file apps filtered to [mime], with a capture app
+     *  (camera / recorder) offered alongside. No OPENABLE category — some
+     *  music apps return tracks that category filters out. */
+    private fun pickMedia(mime: String, capture: Intent?) {
+        try {
+            val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = mime
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            val chooser = Intent.createChooser(pick, getString(R.string.softkey_attach))
+            if (capture != null) {
+                chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(capture))
+            }
+            @Suppress("DEPRECATION")
+            startActivityForResult(chooser, 211)
+        } catch (_: Exception) {}
+    }
+
+    private var cameraOutPath: String? = null
+
+    /** Full-resolution camera capture straight into attachment staging. */
+    private fun cameraImageIntent(): Intent? = try {
+        val dir = java.io.File(filesDir, "parts").apply { mkdirs() }
+        val out = java.io.File(dir, "cam_${System.currentTimeMillis()}.jpg")
+        cameraOutPath = out.absolutePath
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this, "$packageName.fileprovider", out
+        )
+        Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    } catch (_: Exception) { null }
 
     private fun pickFileAttachment() {
         try {
@@ -308,7 +354,15 @@ class ComposeActivity : BaseActivity() {
         val uris = ArrayList<Uri>()
         data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
         data?.data?.let { if (uris.isEmpty()) uris.add(it) }
-        if (uris.isEmpty()) return
+        if (uris.isEmpty()) {
+            val cam = cameraOutPath?.let { java.io.File(it) }
+            cameraOutPath = null
+            if (cam != null && cam.exists() && cam.length() > 0) {
+                pendingAttachments.add(Triple(cam.absolutePath, "image/jpeg", cam.name))
+                updateAttachChip()
+            }
+            return
+        }
         stageIncomingUris(uris)
     }
 
@@ -333,7 +387,12 @@ class ComposeActivity : BaseActivity() {
                     if (out.exists() && out.length() > 0) {
                         pendingAttachments.add(Triple(out.absolutePath, mime, out.name))
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            this@ComposeActivity, "attach",
+                            "stage failed: ${e.message} uri=$uri"
+                        )
+                    }
             }
             updateAttachChip()
         }

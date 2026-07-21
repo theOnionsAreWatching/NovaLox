@@ -124,6 +124,30 @@ object ThemeUtils {
     }
 
     /** Rounded-square highlight for plain fields. */
+    /** Focus ring for color tiles: thick white stroke over a dark halo, so
+     *  it stands out on any tile color (never matches the color underneath). */
+    fun applyContrastFocusHighlight(vararg views: android.view.View) {
+        for (v in views) {
+            val d = { dp: Float -> dp * v.context.resources.displayMetrics.density }
+            val halo = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = d(6f)
+                setColor(android.graphics.Color.TRANSPARENT)
+                setStroke(d(5.5f).toInt(), 0x8C000000.toInt())
+            }
+            val ring = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = d(6f)
+                setColor(android.graphics.Color.TRANSPARENT)
+                setStroke(d(4f).toInt(), android.graphics.Color.WHITE)
+            }
+            val focused = android.graphics.drawable.LayerDrawable(arrayOf(halo, ring))
+            val sld = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), focused)
+                addState(intArrayOf(), android.graphics.drawable.ColorDrawable(0))
+            }
+            v.foreground = sld
+        }
+    }
+
     fun applyFocusHighlight(vararg views: android.view.View) {
         for (v in views) v.foreground = focusForeground(v.context)
     }

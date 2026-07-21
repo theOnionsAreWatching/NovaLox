@@ -515,4 +515,13 @@
     <string name="export_contacts_done">Contacts saved to Downloads</string>
     <string name="export_contacts_failed">Could not save the export</string>
     <string name="setting_updated_fmt">%1$s \u2014 updated</string>
+
+    <!-- v0.9.42 additions -->
+    <string name="attach_menu_photo">Photo</string>
+    <string name="attach_menu_video">Video</string>
+    <string name="attach_menu_contact">Contact</string>
+    <string name="attach_menu_audio">Audio</string>
+    <string name="attach_menu_file">File</string>
+    <string name="export_contacts_confirm">Save every contact into a single .vcf file in your Downloads folder?</string>
+    <string name="export_go">Export</string>
 </resources>

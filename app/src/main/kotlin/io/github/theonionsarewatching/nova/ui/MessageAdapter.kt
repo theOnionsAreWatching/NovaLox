@@ -170,11 +170,28 @@ class MessageAdapter(
             "accentbar" -> {
                 holder.b.bubbleBox.background = null
                 holder.b.accentBar.visibility = View.VISIBLE
-                holder.b.accentBar.setBackgroundColor(if (m.isMine) accent else Color.GRAY)
-                bubbleParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                bubbleParams.gravity = Gravity.START
-                bubbleParams.marginStart = 0
-                bubbleParams.marginEnd = 0
+                // the bar sits on the OUTER side (sender right, received left)
+                // with a matching tail; content indents like the other styles
+                val barColor = if (m.isMine) accent else Color.GRAY
+                holder.b.accentBar.background = AccentBarDrawable(
+                    barColor, tailOnRight = m.isMine,
+                    tailPx = dp(6).toFloat(), barPx = dp(4).toFloat()
+                )
+                val barLp = holder.b.accentBar.layoutParams
+                barLp.width = dp(10)
+                holder.b.accentBar.layoutParams = barLp
+                // reorder: bar last for my messages, first for theirs
+                val box = holder.b.bubbleBox
+                val bar = holder.b.accentBar
+                val wantIndex = if (m.isMine) box.childCount - 1 else 0
+                if (box.indexOfChild(bar) != wantIndex) {
+                    box.removeView(bar)
+                    box.addView(bar, wantIndex)
+                }
+                bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
+                bubbleParams.marginStart = if (m.isMine) dp(28) else 0
+                bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
             "plain" -> {
                 holder.b.bubbleBox.background = null
@@ -184,7 +201,7 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
-            "square" -> { // square corners with a small tail
+            "square" -> { // square corners with a small side tail
                 holder.b.accentBar.visibility = View.GONE
                 val fill = bubbleFillColor(ctx, m.isMine, accent)
                 holder.b.bubbleBox.background = TailBubbleDrawable(
@@ -262,7 +279,7 @@ class MessageAdapter(
             holder.b.attachLabel.text = when {
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
                 other.isAudio() -> ctx.getString(R.string.attach_audio)
-                other.isVCard() -> vcardSummary(other)
+                other.isVCard() -> vcardSummary(ctx, other)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
             }
             if (other != null && other.isVCard()) {
@@ -310,17 +327,23 @@ class MessageAdapter(
         holder.b.root.background = ThemeUtils.focusFill(ctx)
         holder.b.root.foreground = null
         if (isSelected(m.id)) {
-            val accent2 = ThemeUtils.accentColor(ctx)
-            val strokePx = (2 * ctx.resources.displayMetrics.density).toInt()
+            val strokePx = (4 * ctx.resources.displayMetrics.density).toInt()
             val base = holder.b.bubbleBox.background
-            val sel = GradientDrawable().apply {
+            // dual ring: dark halo under a white stroke — visible on any bubble
+            // color, including the accent itself
+            val halo = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
-                // faint fill only when there's no bubble behind (plain style),
-                // otherwise just the outline so the bubble color shows through
-                setColor(if (base == null) withAlpha(accent2, 40) else Color.TRANSPARENT)
-                setStroke(strokePx, accent2)
+                setColor(if (base == null) withAlpha(Color.BLACK, 30) else Color.TRANSPARENT)
+                setStroke(strokePx + (1.5f * ctx.resources.displayMetrics.density).toInt(),
+                    withAlpha(Color.BLACK, 140))
             }
-            holder.b.bubbleBox.foreground = sel
+            val ring = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.TRANSPARENT)
+                setStroke(strokePx, Color.WHITE)
+            }
+            holder.b.bubbleBox.foreground =
+                android.graphics.drawable.LayerDrawable(arrayOf(halo, ring))
         } else {
             holder.b.bubbleBox.foreground = null
         }
@@ -380,8 +403,9 @@ private fun bubbleFillColor(ctx: android.content.Context, isMine: Boolean, accen
     else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
 }
 
-/** name / numbers / emails pulled from a tiny .vcf for the in-bubble card. */
-private fun vcardSummary(part: PartEntity): String {
+/** name / numbers / emails pulled from a tiny .vcf for the in-bubble card —
+ *  lines prefixed with small line icons (no emoji). */
+private fun vcardSummary(ctx: android.content.Context, part: PartEntity): CharSequence {
     return try {
         val text = java.io.File(part.filePath).readText().take(4000)
         val name = text.lineSequence()
@@ -395,15 +419,29 @@ private fun vcardSummary(part: PartEntity): String {
             .filter { it.startsWith("EMAIL", ignoreCase = true) }
             .mapNotNull { it.substringAfter(':').trim().takeIf { e -> e.isNotBlank() } }
             .take(1).toList()
-        buildString {
-            append(name ?: part.fileName)
-            tels.forEach { append('\n').append("\u260E ").append(it) }
-            emails.forEach { append('\n').append("\u2709 ").append(it) }
+        val sb = android.text.SpannableStringBuilder()
+        sb.append(name ?: part.fileName)
+        fun iconLine(iconRes: Int, value: String) {
+            sb.append('\n')
+            val at = sb.length
+            sb.append("\u2000 ")   // placeholder for the icon span + a space
+            androidx.core.content.ContextCompat.getDrawable(ctx, iconRes)?.let { d ->
+                d.setBounds(0, 0, d.intrinsicWidth, d.intrinsicHeight)
+                sb.setSpan(
+                    android.text.style.ImageSpan(d, android.text.style.ImageSpan.ALIGN_BASELINE),
+                    at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            sb.append(value)
         }
+        tels.forEach { iconLine(io.github.theonionsarewatching.nova.R.drawable.ic_phone_line, it) }
+        emails.forEach { iconLine(io.github.theonionsarewatching.nova.R.drawable.ic_mail_line, it) }
+        sb
     } catch (_: Exception) { part.fileName }
 }
 
-/** Rounded rectangle with a small tail at the bottom outer corner. */
+/** Rounded rectangle with a small tail on the outer SIDE, near the top —
+ *  the classic square-bubble look. Content is auto-padded off the tail. */
 class TailBubbleDrawable(
     private val color: Int,
     private val radiusPx: Float,
@@ -419,19 +457,69 @@ class TailBubbleDrawable(
     override fun draw(canvas: android.graphics.Canvas) {
         val b = bounds
         val body = android.graphics.RectF(
-            b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom - tailPx
+            b.left + if (tailOnRight) 0f else tailPx,
+            b.top.toFloat(),
+            b.right - if (tailOnRight) tailPx else 0f,
+            b.bottom.toFloat()
         )
         path.reset()
         path.addRoundRect(body, radiusPx, radiusPx, android.graphics.Path.Direction.CW)
-        // the tail: a small triangle hanging off the bottom corner
+        val t0 = body.top + radiusPx * 0.4f
         if (tailOnRight) {
-            path.moveTo(body.right - tailPx * 2.2f, body.bottom)
-            path.lineTo(body.right - tailPx * 0.4f, body.bottom + tailPx)
-            path.lineTo(body.right - tailPx * 0.4f, body.bottom - tailPx)
+            path.moveTo(body.right, t0)
+            path.lineTo(body.right + tailPx, t0 + tailPx * 0.7f)
+            path.lineTo(body.right, t0 + tailPx * 1.7f)
         } else {
-            path.moveTo(body.left + tailPx * 2.2f, body.bottom)
-            path.lineTo(body.left + tailPx * 0.4f, body.bottom + tailPx)
-            path.lineTo(body.left + tailPx * 0.4f, body.bottom - tailPx)
+            path.moveTo(body.left, t0)
+            path.lineTo(body.left - tailPx, t0 + tailPx * 0.7f)
+            path.lineTo(body.left, t0 + tailPx * 1.7f)
+        }
+        path.close()
+        canvas.drawPath(path, paint)
+    }
+
+    override fun getPadding(padding: android.graphics.Rect): Boolean {
+        padding.set(if (tailOnRight) 0 else tailPx.toInt(), 0,
+            if (tailOnRight) tailPx.toInt() else 0, 0)
+        return true
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/** Thin vertical accent bar with the same side tail, for the accent-bar style. */
+class AccentBarDrawable(
+    private val color: Int,
+    private val tailOnRight: Boolean,
+    private val tailPx: Float,
+    private val barPx: Float
+) : android.graphics.drawable.Drawable() {
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = this@AccentBarDrawable.color
+        style = android.graphics.Paint.Style.FILL
+    }
+    private val path = android.graphics.Path()
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val b = bounds
+        val bar = if (tailOnRight)
+            android.graphics.RectF(b.right - barPx, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
+        else
+            android.graphics.RectF(b.left.toFloat(), b.top.toFloat(), b.left + barPx, b.bottom.toFloat())
+        path.reset()
+        path.addRect(bar, android.graphics.Path.Direction.CW)
+        val t0 = b.top + 4f
+        if (tailOnRight) {
+            path.moveTo(bar.left, t0)
+            path.lineTo(bar.left - tailPx, t0 + tailPx * 0.7f)
+            path.lineTo(bar.left, t0 + tailPx * 1.7f)
+        } else {
+            path.moveTo(bar.right, t0)
+            path.lineTo(bar.right + tailPx, t0 + tailPx * 0.7f)
+            path.lineTo(bar.right, t0 + tailPx * 1.7f)
         }
         path.close()
         canvas.drawPath(path, paint)

@@ -260,24 +260,31 @@ class SettingsActivity : BaseActivity() {
             }
             find("export_contacts") {
                 val ctx = requireContext()
-                viewLifecycleOwner.lifecycleScope.launch {
-                    val vcf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        io.github.theonionsarewatching.nova.util.ContactVcf.exportAll(ctx)
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.pref_export_contacts)
+                    .setMessage(R.string.export_contacts_confirm)
+                    .setPositiveButton(R.string.export_go) { _, _ ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val vcf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                io.github.theonionsarewatching.nova.util.ContactVcf.exportAll(ctx)
+                            }
+                            if (vcf.isBlank()) {
+                                Toast.makeText(ctx, R.string.export_contacts_empty, Toast.LENGTH_LONG).show()
+                                return@launch
+                            }
+                            val tmp = java.io.File(ctx.cacheDir, "contacts-export.vcf")
+                            tmp.writeText(vcf)
+                            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                                .format(java.util.Date())
+                            val ok = io.github.theonionsarewatching.nova.ui.Saver
+                                .saveToDownloads(ctx, tmp, "contacts-$stamp.vcf", "text/x-vcard")
+                            Toast.makeText(ctx,
+                                if (ok) R.string.export_contacts_done else R.string.export_contacts_failed,
+                                Toast.LENGTH_LONG).show()
+                        }
                     }
-                    if (vcf.isBlank()) {
-                        Toast.makeText(ctx, R.string.export_contacts_empty, Toast.LENGTH_LONG).show()
-                        return@launch
-                    }
-                    val tmp = java.io.File(ctx.cacheDir, "contacts-export.vcf")
-                    tmp.writeText(vcf)
-                    val stamp = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                        .format(java.util.Date())
-                    val ok = io.github.theonionsarewatching.nova.ui.Saver
-                        .saveToDownloads(ctx, tmp, "contacts-$stamp.vcf", "text/x-vcard")
-                    Toast.makeText(ctx,
-                        if (ok) R.string.export_contacts_done else R.string.export_contacts_failed,
-                        Toast.LENGTH_LONG).show()
-                }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
             }
             find("save_diag_log") {
                 val ctx = requireContext()

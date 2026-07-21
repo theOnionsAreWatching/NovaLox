@@ -97,6 +97,9 @@ class Prefs(context: Context) {
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"
     val notifPersist: Boolean get() = sp.getBoolean("notif_persist", false)
+    var snippetWordsFixed: Boolean
+        get() = sp.getBoolean("snippet_words_fixed", false)
+        set(v) { sp.edit().putBoolean("snippet_words_fixed", v).apply() }
     var sentColor: String
         get() = sp.getString("sent_color", "") ?: ""
         set(v) { sp.edit().putString("sent_color", v).apply() }
