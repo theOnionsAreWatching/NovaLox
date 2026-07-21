@@ -38,11 +38,13 @@
         <item>Bubbles</item>
         <item>Accent bar (full width)</item>
         <item>Plain (indent only)</item>
+            <item>Square</item>
     </string-array>
     <string-array name="style_values">
         <item>bubble</item>
         <item>accentbar</item>
         <item>plain</item>
+            <item>square</item>
     </string-array>
 
     <string-array name="msg_size_entries">

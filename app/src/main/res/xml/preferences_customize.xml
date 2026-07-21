@@ -16,6 +16,11 @@
             android:summary="%s" />
     <Preference
         app:iconSpaceReserved="false"
+        android:key="sent_color"
+        android:title="@string/pref_sent_color"
+        android:summary="@string/pref_sent_color_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
         android:key="all_backgrounds"
         android:title="@string/pref_all_backgrounds"
         android:summary="@string/pref_all_backgrounds_summary" />

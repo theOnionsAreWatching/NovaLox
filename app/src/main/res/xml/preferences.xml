@@ -74,6 +74,13 @@
             android:entryValues="@array/notif_mode_values"
             android:defaultValue="single"
             android:summary="%s" />
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="notif_persist"
+            android:title="@string/pref_notif_persist"
+            android:summary="@string/pref_notif_persist_summary"
+            android:defaultValue="false" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_behavior">
@@ -158,6 +165,11 @@
             android:summary="@string/pref_reimport_summary" />
         <Preference
             app:iconSpaceReserved="false"
+            android:key="export_contacts"
+            android:title="@string/pref_export_contacts"
+            android:summary="@string/pref_export_contacts_summary" />
+        <Preference
+            app:iconSpaceReserved="false"
             android:key="save_diag_log"
             android:title="@string/pref_save_log"
             android:summary="@string/pref_save_log_summary" />
@@ -195,13 +207,7 @@
             app:iconSpaceReserved="false"
             android:key="open_softkeys"
             android:title="@string/open_softkey_config" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="softkeys_focusable"
-            android:title="@string/pref_softkeys_focusable"
-            android:summary="@string/pref_softkeys_focusable_summary"
-            android:defaultValue="false" />
+
         <Preference
             app:iconSpaceReserved="false"
             android:selectable="false"

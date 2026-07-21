@@ -219,66 +219,70 @@ abstract class BaseActivity : AppCompatActivity() {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                 .addPrimaryClipChangedListener(clipListener)
         } catch (_: Exception) {}
-        window.decorView.post { refreshPasteState() }
         super.onResume()
         softkeys?.refreshVisibility()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // OK pastes while a text box is focused and the clipboard has text —
-        // the same action the center softkey label advertises
-        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
-            currentFocus is android.widget.EditText
-        ) {
-            val clip = clipboardText()
-            if (!clip.isNullOrBlank()) {
-                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    pasteIntoFocused(clip)
-                }
-                return true
-            }
-        }
         if (softkeys?.handleKey(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 
-    private fun clipboardText(): String? = try {
+    fun clipboardText(): String? = try {
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.primaryClip?.takeIf { it.itemCount > 0 }
             ?.getItemAt(0)?.coerceToText(this)?.toString()
     } catch (_: Exception) { null }
 
-    private fun pasteIntoFocused(text: String) {
-        val et = currentFocus as? android.widget.EditText ?: return
-        val start = et.selectionStart.coerceAtLeast(0)
-        val end = et.selectionEnd.coerceAtLeast(0)
-        et.text.replace(minOf(start, end), maxOf(start, end), text)
-    }
-
-    private var pasteHintShown = false
-
-    /** Recomputed on focus moves, clipboard changes, and resume. */
-    fun refreshPasteState() {
-        val focusedText = currentFocus is android.widget.EditText
-        val clip = if (focusedText) clipboardText() else null
-        val active = focusedText && !clip.isNullOrBlank()
-        softkeys?.applyPaste(active) { clipboardText()?.let { pasteIntoFocused(it) } }
-        if (active && softkeys?.shouldShow() != true && !pasteHintShown) {
-            pasteHintShown = true
-            android.widget.Toast.makeText(
-                this, R.string.press_ok_paste, android.widget.Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
+    /** Screens that show clipboard-dependent labels override this. */
+    open fun onClipboardChanged() {}
 
     private val clipListener =
-        android.content.ClipboardManager.OnPrimaryClipChangedListener { refreshPasteState() }
+        android.content.ClipboardManager.OnPrimaryClipChangedListener { onClipboardChanged() }
+}
 
-    override fun onPostCreate(savedInstanceState: Bundle?) {
-        super.onPostCreate(savedInstanceState)
-        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ ->
-            refreshPasteState()
+/** When the clipboard holds text and a compose box is in play, "Attach"
+ *  becomes an Options menu offering Attach and Paste (with a short preview of
+ *  what would be pasted). With an empty clipboard it goes straight to attach. */
+object AttachOrPaste {
+    fun open(activity: BaseActivity, target: android.widget.EditText, onAttach: () -> Unit) {
+        val clip = activity.clipboardText()
+        if (clip.isNullOrBlank()) { onAttach(); return }
+        val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
+        val column = android.widget.LinearLayout(activity).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
         }
+        var dialog: android.app.AlertDialog? = null
+        fun row(label: String, action: () -> Unit): android.widget.TextView =
+            android.widget.TextView(activity).apply {
+                text = label
+                textSize = 16f
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                isFocusable = true
+                ThemeUtils.applyFocusHighlight(this)
+                setOnClickListener { dialog?.dismiss(); action() }
+            }
+        column.addView(row(activity.getString(R.string.softkey_attach)) { onAttach() })
+        column.addView(row(activity.getString(R.string.paste)) {
+            val start = target.selectionStart.coerceAtLeast(0)
+            val end = target.selectionEnd.coerceAtLeast(0)
+            target.text.replace(minOf(start, end), maxOf(start, end), clip)
+            target.requestFocus()
+        })
+        // a glimpse of what Paste would insert — a few lines, never the whole thing
+        column.addView(android.widget.TextView(activity).apply {
+            text = clip
+            textSize = 12f
+            setTextColor(android.graphics.Color.GRAY)
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(14), 0, dp(14), dp(8))
+        })
+        dialog = android.app.AlertDialog.Builder(activity)
+            .setView(column)
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 }
 
@@ -316,58 +320,19 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
      *  a just-finished setup takes effect without restarting the app). */
     fun refreshVisibility() {
         binding.root.visibility = if (shouldShow()) View.VISIBLE else View.GONE
-        // optional: let the D-pad land on the on-screen softkeys (off by default;
-        // it inserts three extra focus stops into every screen's navigation)
-        val focusable = io.github.theonionsarewatching.nova.util.Prefs
-            .get(activity).softkeysFocusable
-        listOf(binding.softLeft, binding.softCenter, binding.softRight).forEach { v ->
-            v.isFocusable = focusable
-            v.isClickable = focusable
-        }
-        if (focusable && binding.softLeft.getTag(R.id.softkey_focus_wired) == null) {
-            binding.softLeft.setTag(R.id.softkey_focus_wired, true)
-            ThemeUtils.applyFocusHighlight(binding.softLeft, binding.softCenter, binding.softRight)
-            binding.softLeft.setOnClickListener { leftAction?.invoke() }
-            binding.softCenter.setOnClickListener { centerAction?.invoke() }
-            binding.softRight.setOnClickListener { rightAction?.invoke() }
-        }
-    }
 
-    private var baseCenterLabel: String? = null
-    private var baseCenterAction: (() -> Unit)? = null
-    private var pasteActive = false
-    private var pasteAction: (() -> Unit)? = null
+    }
 
     fun set(left: String?, center: String?, right: String?,
             onLeft: (() -> Unit)? = null, onCenter: (() -> Unit)? = null, onRight: (() -> Unit)? = null,
             onMenu: (() -> Unit)? = null) {
         leftAction = onLeft
-        baseCenterLabel = center
-        baseCenterAction = onCenter
+        centerAction = onCenter
         rightAction = onRight
         menuAction = onMenu ?: onLeft
         binding.softLeft.text = left ?: ""
+        binding.softCenter.text = center ?: ""
         binding.softRight.text = right ?: ""
-        renderCenter()
-    }
-
-    /** While a text box is focused and the clipboard holds text, the center
-     *  slot shows Paste; the screen's own center label comes back the moment
-     *  either condition ends. */
-    fun applyPaste(active: Boolean, action: (() -> Unit)?) {
-        pasteActive = active
-        pasteAction = action
-        renderCenter()
-    }
-
-    private fun renderCenter() {
-        if (pasteActive) {
-            binding.softCenter.text = activity.getString(R.string.paste)
-            centerAction = pasteAction
-        } else {
-            binding.softCenter.text = baseCenterLabel ?: ""
-            centerAction = baseCenterAction
-        }
     }
 
     /** Returns true when the event was consumed as a softkey. MENU maps to the menu action

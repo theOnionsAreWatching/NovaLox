@@ -23,6 +23,7 @@ import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ChangeBus
 import io.github.theonionsarewatching.nova.data.ConversationEntity
 import io.github.theonionsarewatching.nova.data.Repo
+import io.github.theonionsarewatching.nova.util.ContactsHelper
 import io.github.theonionsarewatching.nova.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
 import java.io.File
@@ -113,6 +114,13 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     override fun onResume() {
         super.onResume()
+        // arriving at the conversation list dismisses everything by default;
+        // the setting keeps them until each thread is opened
+        if (!prefs.notifPersist) {
+            try {
+                androidx.core.app.NotificationManagerCompat.from(this).cancelAll()
+            } catch (_: Exception) {}
+        }
         binding.searchRow.visibility = if (prefs.showSearchBar) View.VISIBLE else View.GONE
         val isDefault = isDefaultSmsApp()
         binding.gateView.visibility = if (isDefault) View.GONE else View.VISIBLE
@@ -439,20 +447,133 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             val labels = archived.map { it.displayTitle() }.toTypedArray()
             AlertDialog.Builder(this@MainActivity)
                 .setTitle(R.string.menu_archived)
-                .setItems(labels) { _, which -> openThread(archived[which].id) }
+                .setItems(labels) { _, which ->
+                    val convo = archived[which]
+                    AlertDialog.Builder(this@MainActivity)
+                        .setCustomTitle(twoLineTitle(convo.displayTitle()))
+                        .setItems(arrayOf(
+                            getString(R.string.open), getString(R.string.unarchive)
+                        )) { _, w ->
+                            when (w) {
+                                0 -> openThread(convo.id)
+                                1 -> lifecycleScope.launch {
+                                    repo.db.conversations().setArchived(convo.id, false)
+                                    ChangeBus.ping()
+                                }
+                            }
+                        }
+                        .show()
+                }
                 .show()
+        }
+    }
+
+    /** Mute / notification block / sound & vibration / number block, out of
+     *  the main long-press list into one place. */
+    private fun notificationOptions(c: ConversationEntity) {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
+            lifecycleScope.launch { repo.db.conversations().setMuted(c.id, !c.muted); ChangeBus.ping() }
+        }
+        items += (if (c.notifBlocked) getString(R.string.unblock_notifications) else getString(R.string.block_notifications)) to {
+            lifecycleScope.launch { repo.db.conversations().setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
+        }
+        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
+        if (Build.VERSION.SDK_INT >= 24 && !c.isGroup) {
+            items += getString(R.string.block_number) to {
+                lifecycleScope.launch {
+                    try {
+                        val values = android.content.ContentValues().apply {
+                            put(android.provider.BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER,
+                                c.addressList().first())
+                        }
+                        contentResolver.insert(
+                            android.provider.BlockedNumberContract.BlockedNumbers.CONTENT_URI, values
+                        )
+                        android.widget.Toast.makeText(this@MainActivity, R.string.number_blocked,
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setCustomTitle(twoLineTitle(c.displayTitle()))
+            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
+            .show()
+    }
+
+    private fun nameGroupDialog(c: ConversationEntity) {
+        val input = android.widget.EditText(this).apply {
+            setText(c.customName)
+            hint = getString(R.string.name_group_hint)
+            setSingleLine(true)
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0); addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.name_group)
+            .setView(wrap)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = input.text?.toString()?.trim().orEmpty()
+                lifecycleScope.launch {
+                    repo.db.conversations().setCustomName(c.id, name)
+                    ChangeBus.ping()
+                }
+                android.widget.Toast.makeText(this,
+                    if (name.isBlank()) R.string.group_name_removed else R.string.group_name_set,
+                    android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Options-dialog header capped at two lines — a large group's member list
+     *  no longer swallows the screen. */
+    private fun twoLineTitle(text: String): android.widget.TextView {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        return android.widget.TextView(this).apply {
+            this.text = text
+            textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(22), dp(18), dp(22), dp(6))
         }
     }
 
     private fun convoOptions(c: ConversationEntity) {
         val items = ArrayList<Pair<String, () -> Unit>>()
-        items += getString(R.string.open) to { openThread(c.id) }
         if (!c.isGroup) {
             items += getString(R.string.call_contact, c.displayTitle()) to {
                 try {
                     startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
                 } catch (_: Exception) {}
             }
+            // View the contact, or add the number when it isn't saved yet
+            val number = c.addressList().firstOrNull().orEmpty()
+            val lookupUri = ContactsHelper.lookupContactUri(this, number)
+            if (lookupUri != null) {
+                items += getString(R.string.view_contact) to {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, lookupUri)) } catch (_: Exception) {}
+                }
+            } else if (number.isNotBlank()) {
+                items += getString(R.string.add_to_contacts) to {
+                    try {
+                        startActivity(Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+                            type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
+                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                        })
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+        if (c.isGroup) {
+            items += getString(
+                if (c.customName.isBlank()) R.string.name_group else R.string.rename_group
+            ) to { nameGroupDialog(c) }
         }
         items += (if (c.pinned) getString(R.string.unpin) else getString(R.string.pin)) to {
             lifecycleScope.launch { repo.db.conversations().setPinned(c.id, !c.pinned); ChangeBus.ping() }
@@ -460,12 +581,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
             lifecycleScope.launch { repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping() }
         }
-        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
-            lifecycleScope.launch { repo.db.conversations().setMuted(c.id, !c.muted); ChangeBus.ping() }
-        }
-        items += (if (c.notifBlocked) getString(R.string.unblock_notifications) else getString(R.string.block_notifications)) to {
-            lifecycleScope.launch { repo.db.conversations().setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
-        }
+        items += getString(R.string.notifications_submenu) to { notificationOptions(c) }
         if (c.isGroup) {
             items += getString(R.string.participants_title, c.addressList().size) to {
                 GroupParticipants.show(this, c)
@@ -477,7 +593,6 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
         }
         items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }
-        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         items += getString(R.string.hide_conversation) to {
             AlertDialog.Builder(this)
                 .setMessage(R.string.hide_confirm)
@@ -496,27 +611,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 ChangeBus.ping()
             }
         }
-        if (Build.VERSION.SDK_INT >= 24 && !c.isGroup) {
-            items += getString(R.string.block_number) to {
-                lifecycleScope.launch {
-                    try {
-                        val values = android.content.ContentValues().apply {
-                            put(android.provider.BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER,
-                                c.addressList().first())
-                        }
-                        contentResolver.insert(
-                            android.provider.BlockedNumberContract.BlockedNumbers.CONTENT_URI, values
-                        )
-                        android.widget.Toast.makeText(this@MainActivity, R.string.number_blocked,
-                            android.widget.Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) {}
-                }
-            }
-        }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
-            .setCustomTitle(Dialogs.title(this, c.displayTitle()))
+            .setCustomTitle(twoLineTitle(c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
     }

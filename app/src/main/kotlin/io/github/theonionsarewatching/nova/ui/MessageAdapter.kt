@@ -184,20 +184,37 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
+            "square" -> { // square corners with a small tail
+                holder.b.accentBar.visibility = View.GONE
+                val fill = bubbleFillColor(ctx, m.isMine, accent)
+                holder.b.bubbleBox.background = TailBubbleDrawable(
+                    fill, dp(4).toFloat(), tailOnRight = m.isMine, tailPx = dp(7).toFloat()
+                )
+                bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
+                bubbleParams.marginStart = if (m.isMine) dp(28) else 0
+                bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
+            }
             else -> { // bubble
                 holder.b.accentBar.visibility = View.GONE
                 val bg = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(
-                        if (m.isMine) withAlpha(accent, 56)
-                        else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
-                    )
+                    setColor(bubbleFillColor(ctx, m.isMine, accent))
                 }
                 holder.b.bubbleBox.background = bg
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
                 bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
+            }
+        }
+        // custom sent-side color: white text when the chosen fill is dark
+        if (m.isMine && customSentColor(ctx) != null &&
+            prefs.messageStyle != "plain" && prefs.messageStyle != "accentbar"
+        ) {
+            val fill = customSentColor(ctx)!!
+            if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) {
+                holder.b.body.setTextColor(Color.WHITE)
             }
         }
         holder.b.bubbleBox.layoutParams = bubbleParams
@@ -245,8 +262,25 @@ class MessageAdapter(
             holder.b.attachLabel.text = when {
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
                 other.isAudio() -> ctx.getString(R.string.attach_audio)
-                other.isVCard() -> ctx.getString(R.string.attach_vcard)
+                other.isVCard() -> vcardSummary(other)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
+            }
+            if (other != null && other.isVCard()) {
+                // rounded contact card: icon + name / number / email
+                holder.b.attachLabel.background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(withAlpha(Color.GRAY, 40))
+                    setStroke(1, withAlpha(Color.GRAY, 90))
+                }
+                holder.b.attachLabel.setCompoundDrawablesWithIntrinsicBounds(
+                    io.github.theonionsarewatching.nova.R.drawable.ic_person_small, 0, 0, 0
+                )
+                holder.b.attachLabel.compoundDrawablePadding = dp(8)
+                holder.b.attachLabel.setPadding(dp(10), dp(8), dp(12), dp(8))
+            } else {
+                holder.b.attachLabel.background = null
+                holder.b.attachLabel.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+                holder.b.attachLabel.setPadding(0, 0, 0, 0)
             }
         } else {
             holder.b.attachLabel.visibility = View.GONE
@@ -302,8 +336,6 @@ class MessageAdapter(
         }
     }
 
-    private fun withAlpha(color: Int, alpha: Int): Int =
-        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 }
 
 /** Content fingerprint for DiffUtil: any field the row DISPLAYS. When two
@@ -324,4 +356,89 @@ fun MessageRow.bodySignature(): String = buildString {
     append(msg.locked); append('|')
     append(parts.size); append('|')
     append(msg.isMine)
+}
+
+private fun withAlpha(color: Int, alpha: Int): Int =
+    Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+
+private var sentColorCache: Pair<String, Int?>? = null
+
+/** The user's custom sent-bubble color, or null for the default tint. */
+private fun customSentColor(ctx: android.content.Context): Int? {
+    val hex = io.github.theonionsarewatching.nova.util.Prefs.get(ctx).sentColor
+    sentColorCache?.let { if (it.first == hex) return it.second }
+    val parsed = hex.takeIf { it.isNotBlank() }?.let {
+        try { Color.parseColor(it) } catch (_: Exception) { null }
+    }
+    sentColorCache = hex to parsed
+    return parsed
+}
+
+private fun bubbleFillColor(ctx: android.content.Context, isMine: Boolean, accent: Int): Int {
+    if (isMine) customSentColor(ctx)?.let { return it }
+    return if (isMine) withAlpha(accent, 56)
+    else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
+}
+
+/** name / numbers / emails pulled from a tiny .vcf for the in-bubble card. */
+private fun vcardSummary(part: PartEntity): String {
+    return try {
+        val text = java.io.File(part.filePath).readText().take(4000)
+        val name = text.lineSequence()
+            .firstOrNull { it.startsWith("FN", ignoreCase = true) }
+            ?.substringAfter(':')?.trim()
+        val tels = text.lineSequence()
+            .filter { it.startsWith("TEL", ignoreCase = true) }
+            .mapNotNull { it.substringAfter(':').trim().takeIf { t -> t.isNotBlank() } }
+            .take(2).toList()
+        val emails = text.lineSequence()
+            .filter { it.startsWith("EMAIL", ignoreCase = true) }
+            .mapNotNull { it.substringAfter(':').trim().takeIf { e -> e.isNotBlank() } }
+            .take(1).toList()
+        buildString {
+            append(name ?: part.fileName)
+            tels.forEach { append('\n').append("\u260E ").append(it) }
+            emails.forEach { append('\n').append("\u2709 ").append(it) }
+        }
+    } catch (_: Exception) { part.fileName }
+}
+
+/** Rounded rectangle with a small tail at the bottom outer corner. */
+class TailBubbleDrawable(
+    private val color: Int,
+    private val radiusPx: Float,
+    private val tailOnRight: Boolean,
+    private val tailPx: Float
+) : android.graphics.drawable.Drawable() {
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = this@TailBubbleDrawable.color
+        style = android.graphics.Paint.Style.FILL
+    }
+    private val path = android.graphics.Path()
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val b = bounds
+        val body = android.graphics.RectF(
+            b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom - tailPx
+        )
+        path.reset()
+        path.addRoundRect(body, radiusPx, radiusPx, android.graphics.Path.Direction.CW)
+        // the tail: a small triangle hanging off the bottom corner
+        if (tailOnRight) {
+            path.moveTo(body.right - tailPx * 2.2f, body.bottom)
+            path.lineTo(body.right - tailPx * 0.4f, body.bottom + tailPx)
+            path.lineTo(body.right - tailPx * 0.4f, body.bottom - tailPx)
+        } else {
+            path.moveTo(body.left + tailPx * 2.2f, body.bottom)
+            path.lineTo(body.left + tailPx * 0.4f, body.bottom + tailPx)
+            path.lineTo(body.left + tailPx * 0.4f, body.bottom - tailPx)
+        }
+        path.close()
+        canvas.drawPath(path, paint)
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }

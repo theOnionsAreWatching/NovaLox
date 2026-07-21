@@ -106,6 +106,7 @@ object NumberListPicker {
             input.setText("")
             suggestions.removeAllViews()
             refreshChosen()
+            input.requestFocus()
         }
 
         fun refreshSuggestions(q: String) {
@@ -113,6 +114,18 @@ object NumberListPicker {
             if (q.isBlank()) return
             val lower = q.lowercase()
             val qDigits = q.filter { it.isDigit() }
+            val typedOk = q.trim().contains("@") || qDigits.length >= 3
+            if (typedOk) {
+                // the raw typed value is always addable, contact or not
+                suggestions.addView(TextView(activity).apply {
+                    text = activity.getString(R.string.add_number_row) + "  " + q.trim()
+                    textSize = 14f
+                    setPadding(dp(6), dp(8), dp(6), dp(8))
+                    isFocusable = true
+                    ThemeUtils.applyFocusHighlight(this)
+                    setOnClickListener { addNumber(q.trim()) }
+                })
+            }
             val matches = contacts.filter { c ->
                 c.name.lowercase().contains(lower) ||
                     (qDigits.length >= 2 && c.number.filter { it.isDigit() }.contains(qDigits))
@@ -137,18 +150,25 @@ object NumberListPicker {
             }
         })
 
-        val addBtn = TextView(activity).apply {
-            text = activity.getString(R.string.np_add_typed)
-            textSize = 14f
-            setTextColor(Color.GRAY)
-            setPadding(dp(6), dp(8), dp(6), dp(8))
-            isFocusable = true
-            ThemeUtils.applyFocusHighlight(this)
-            setOnClickListener { addNumber(input.text?.toString().orEmpty()) }
+        // paste straight into the field when the clipboard holds something
+        val clip = try {
+            val cm = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+            cm.primaryClip?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)?.coerceToText(activity)?.toString()
+        } catch (_: Exception) { null }
+        if (!clip.isNullOrBlank()) {
+            column.addView(TextView(activity).apply {
+                text = activity.getString(R.string.paste) + ": " +
+                    clip.take(30) + if (clip.length > 30) "\u2026" else ""
+                textSize = 13f
+                setTextColor(Color.GRAY)
+                setPadding(dp(6), dp(8), dp(6), dp(8))
+                isFocusable = true
+                ThemeUtils.applyFocusHighlight(this)
+                setOnClickListener { input.setText(clip.trim()); input.setSelection(input.length()) }
+            }, 1)
         }
-        // sits between the input and suggestions so "add what I typed" is
-        // always one press away even when a contact also matches
-        column.addView(addBtn, 1)
 
         refreshChosen()
 

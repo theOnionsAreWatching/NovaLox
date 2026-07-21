@@ -14,4 +14,5 @@
     <color name="divider">#38000000</color>
     <color name="compose_pill">#0D000000</color>
     <color name="focus_fill">#3D000000</color>
+    <color name="ic_launcher_background">#2A8A7A</color>
 </resources>

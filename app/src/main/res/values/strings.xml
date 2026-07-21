@@ -489,4 +489,31 @@
     <string name="press_ok_paste">Press OK to paste</string>
     <string name="status_read">Read</string>
     <string name="delivery_read_at">Read \u2713  (%1$s)</string>
+
+    <!-- v0.9.41 additions -->
+    <string name="softkey_options">Options</string>
+    <string name="add_number_row">Add number</string>
+    <string name="view_contact">View contact</string>
+    <string name="add_to_contacts">Add to contacts</string>
+    <string name="notifications_submenu">Notifications</string>
+    <string name="name_group">Name group\u2026</string>
+    <string name="rename_group">Rename group\u2026</string>
+    <string name="name_group_hint">Group name (leave empty to remove)</string>
+    <string name="group_name_set">Group name set</string>
+    <string name="group_name_removed">Group name removed</string>
+    <string name="view_message">View message</string>
+    <string name="attach_file_option">Attach a file</string>
+    <string name="attach_contact_option">Attach a contact</string>
+    <string name="pref_sent_color">Sent message color</string>
+    <string name="pref_sent_color_summary">Pick a color for your own bubbles</string>
+    <string name="sent_color_set">Sent message color set</string>
+    <string name="background_set">Background set</string>
+    <string name="pref_notif_persist">Keep notifications until the conversation is opened</string>
+    <string name="pref_notif_persist_summary">Off: opening the app clears all message notifications</string>
+    <string name="pref_export_contacts">Export contacts</string>
+    <string name="pref_export_contacts_summary">Save every contact to one .vcf file in Downloads</string>
+    <string name="export_contacts_empty">No contacts to export</string>
+    <string name="export_contacts_done">Contacts saved to Downloads</string>
+    <string name="export_contacts_failed">Could not save the export</string>
+    <string name="setting_updated_fmt">%1$s \u2014 updated</string>
 </resources>

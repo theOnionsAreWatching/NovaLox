@@ -179,6 +179,25 @@ object ContactsHelper {
 
     data class Contact(val name: String, val number: String, val photoUri: String = "")
 
+    /** Lookup URI for viewing an existing contact, or null when unsaved. */
+    fun lookupContactUri(context: Context, number: String): android.net.Uri? {
+        if (number.isBlank() || number.contains("@") || !hasPermission(context)) return null
+        return try {
+            val uri = android.net.Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(number)
+            )
+            context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup._ID, ContactsContract.PhoneLookup.LOOKUP_KEY),
+                null, null, null
+            )?.use { c ->
+                if (c.moveToFirst()) ContactsContract.Contacts.getLookupUri(
+                    c.getLong(0), c.getString(1)
+                ) else null
+            }
+        } catch (_: Exception) { null }
+    }
+
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED

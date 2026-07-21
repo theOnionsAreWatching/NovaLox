@@ -84,12 +84,12 @@ class Repo private constructor(private val context: Context) {
             val parts = db.parts().byMessage(m.id)
             val p = parts.firstOrNull()
             return when {
-                p == null -> "[MMS]"
-                p.isImage() -> "[Photo]"
-                p.isVideo() -> "[Video]"
-                p.isAudio() -> "[Audio]"
-                p.isVCard() -> "[Contact card]"
-                else -> "[Attachment]"
+                p == null -> "MMS"
+                p.isImage() -> "Picture"
+                p.isVideo() -> "Video"
+                p.isAudio() -> "Audio"
+                p.isVCard() -> "Contact"
+                else -> "Attachment"
             }
         }
         return ""

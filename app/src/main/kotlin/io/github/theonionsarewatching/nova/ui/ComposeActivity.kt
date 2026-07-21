@@ -47,7 +47,9 @@ class ComposeActivity : BaseActivity() {
         binding.btnGroupMode.setOnClickListener { pickGroupMode() }
         binding.btnStart.setOnClickListener { start() }
         binding.btnSchedule.setOnClickListener { startScheduled() }
-        binding.btnComposeAttach.setOnClickListener { pickAttachment() }
+        binding.btnComposeAttach.setOnClickListener {
+            AttachOrPaste.open(this, binding.bodyInput) { pickAttachment() }
+        }
         binding.attachChip.setOnClickListener { manageAttachments() }
 
         binding.recipientInput.addTextChangedListener(object : TextWatcher {
@@ -57,14 +59,7 @@ class ComposeActivity : BaseActivity() {
         })
         binding.recipientInput.setOnEditorActionListener { _, _, _ -> addTypedRecipient(); true }
 
-        softkeys = Softkeys(this, binding.softkeyBar).also {
-            it.set(
-                getString(R.string.softkey_attach), null, getString(R.string.softkey_send),
-                onLeft = { pickAttachment() },
-                onCenter = null,
-                onRight = { start() }
-            )
-        }
+        softkeys = Softkeys(this, binding.softkeyBar).also { updateComposeSoftkeys(it) }
         if (softkeys?.shouldShow() == true) {
             // softkeys carry Attach + Send — hide only those; the schedule
             // button has no softkey slot, so it stays visible for everyone
@@ -119,7 +114,8 @@ class ComposeActivity : BaseActivity() {
                     binding.bodyInput.setText(body)
                 }
             }
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { binding.bodyInput.setText(it) }
+            (intent.getStringExtra(Intent.EXTRA_TEXT)
+                ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString())?.let { binding.bodyInput.setText(it) }
             intent.getStringExtra("prefill_body")?.let { binding.bodyInput.setText(it) }
 
             // shared FROM other apps (gallery etc.): stage the media as attachments
@@ -147,10 +143,19 @@ class ComposeActivity : BaseActivity() {
         }
         val lower = q.lowercase()
         val qDigits = q.filter { it.isDigit() }
-        val matches = contacts.filter { c ->
+        val base = contacts.filter { c ->
             c.name.lowercase().contains(lower) ||
                 (qDigits.length >= 2 && c.number.filter { it.isDigit() }.contains(qDigits))
         }.take(4)
+        // the typed value itself is offered as a row even when it matches no
+        // contact — so raw numbers can be added and the field freed for the next
+        val typed = q.trim()
+        val typedOk = typed.contains("@") || typed.count { it.isDigit() } >= 3
+        val matches = if (typedOk && base.none {
+                PhoneUtils.normalize(it.number) == PhoneUtils.normalize(typed)
+            }) {
+            listOf(ContactsHelper.Contact(getString(R.string.add_number_row), typed)) + base
+        } else base
         suggestionAdapter.submit(matches)
         binding.suggestionList.visibility = if (matches.isEmpty()) View.GONE else View.VISIBLE
     }
@@ -163,6 +168,8 @@ class ComposeActivity : BaseActivity() {
         suggestionAdapter.submit(emptyList())
         binding.suggestionList.visibility = View.GONE
         updateRecipientLabel()
+        // keep typing where the user was — not on the back arrow
+        binding.recipientInput.requestFocus()
     }
 
     private fun addTypedRecipient() {
@@ -212,6 +219,17 @@ class ComposeActivity : BaseActivity() {
     }
 
     private fun pickAttachment() {
+        android.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.attach_file_option),
+                getString(R.string.attach_contact_option)
+            )) { _, which ->
+                if (which == 0) pickFileAttachment() else pickContactAttachment()
+            }
+            .show()
+    }
+
+    private fun pickFileAttachment() {
         try {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "*/*"
@@ -222,6 +240,33 @@ class ComposeActivity : BaseActivity() {
             @Suppress("DEPRECATION")
             startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 211)
         } catch (_: Exception) {}
+    }
+
+    private fun pickContactAttachment() {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI), 231
+            )
+        } catch (_: Exception) {}
+    }
+
+    private fun stageContactVcf(contactUri: android.net.Uri) {
+        lifecycleScope.launch {
+            val card = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.github.theonionsarewatching.nova.util.ContactVcf
+                    .buildFromContactUri(this@ComposeActivity, contactUri)
+            } ?: return@launch
+            try {
+                val dir = java.io.File(filesDir, "parts").apply { mkdirs() }
+                val safe = card.name.replace(Regex("[^A-Za-z0-9 _-]"), "").trim()
+                    .ifBlank { "contact" }.replace(' ', '_')
+                val out = java.io.File(dir, "${safe}_out_${System.currentTimeMillis()}.vcf")
+                out.writeText(card.vcf)
+                pendingAttachments.add(Triple(out.absolutePath, "text/x-vcard", out.name))
+                updateAttachChip()
+            } catch (_: Exception) {}
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -255,6 +300,10 @@ class ComposeActivity : BaseActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 231 && resultCode == RESULT_OK) {
+            data?.data?.let { stageContactVcf(it) }
+            return
+        }
         if (requestCode != 211 || resultCode != RESULT_OK) return
         val uris = ArrayList<Uri>()
         data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
@@ -331,6 +380,21 @@ class ComposeActivity : BaseActivity() {
                 d.dismiss()
             }
             .show()
+    }
+
+    private fun updateComposeSoftkeys(sk: Softkeys? = softkeys) {
+        val leftLabel = if (clipboardText().isNullOrBlank())
+            getString(R.string.softkey_attach) else getString(R.string.softkey_options)
+        sk?.set(
+            leftLabel, null, getString(R.string.softkey_send),
+            onLeft = { AttachOrPaste.open(this, binding.bodyInput) { pickAttachment() } },
+            onCenter = null,
+            onRight = { start() }
+        )
+    }
+
+    override fun onClipboardChanged() {
+        runOnUiThread { updateComposeSoftkeys() }
     }
 
     private fun goBack() {

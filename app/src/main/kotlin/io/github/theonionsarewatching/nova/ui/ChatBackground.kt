@@ -72,7 +72,12 @@ object ChatBackground {
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> { prefs.setChatBg(convoId, ""); host.applyBackgroundForCurrent() }
-                    1 -> colorGrid(activity, prefs, convoId, host)
+                    1 -> chooseColor(activity) { hex ->
+                        prefs.setChatBg(convoId, hex)
+                        host.applyBackgroundForCurrent()
+                        android.widget.Toast.makeText(activity, R.string.background_set,
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     2 -> host.startPicturePickerForBackground(convoId)   // ACTION_OPEN_DOCUMENT
                     3 -> pickFromGallery(activity, convoId)               // ACTION_PICK (no file picker needed)
                 }
@@ -108,7 +113,12 @@ object ChatBackground {
         }
     }
 
-    private fun colorGrid(activity: Activity, prefs: Prefs, convoId: Long, host: Host) {
+    /** The family -> shades chooser, reusable anywhere a color is needed. */
+    fun chooseColor(activity: Activity, onPicked: (String) -> Unit) {
+        colorGrid(activity, onPicked)
+    }
+
+    private fun colorGrid(activity: Activity, onPicked: (String) -> Unit) {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -142,7 +152,7 @@ object ChatBackground {
             io.github.theonionsarewatching.nova.ui.ThemeUtils.applyFocusHighlight(row)
             row.setOnClickListener {
                 dialog?.dismiss()
-                shadesDialog(activity, prefs, convoId, host, f)
+                shadesDialog(activity, f, onPicked)
             }
             column.addView(row)
         }
@@ -154,9 +164,7 @@ object ChatBackground {
             .show()
     }
 
-    private fun shadesDialog(
-        activity: Activity, prefs: Prefs, convoId: Long, host: Host, f: Family
-    ) {
+    private fun shadesDialog(activity: Activity, f: Family, onPicked: (String) -> Unit) {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -177,9 +185,8 @@ object ChatBackground {
                 isFocusable = true
                 isFocusableInTouchMode = false
                 setOnClickListener {
-                    prefs.setChatBg(convoId, hex)
-                    host.applyBackgroundForCurrent()
                     dialog?.dismiss()
+                    onPicked(hex)
                 }
             }
             // bright focus ring on the D-pad-selected shade

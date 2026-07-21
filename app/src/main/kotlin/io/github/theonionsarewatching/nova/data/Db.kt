@@ -55,6 +55,7 @@ data class ConversationEntity(
     val cachedPhotoUri: String = "",
     val isGroup: Boolean = false,
     val groupMode: Int = GroupMode.BROADCAST,
+    val customName: String = "",
     val snippet: String = "",
     val snippetDate: Long = 0,
     val snippetIsMine: Boolean = false,
@@ -73,6 +74,7 @@ data class ConversationEntity(
     fun addressList(): List<String> = addresses.split("|").filter { it.isNotBlank() }
     fun nameList(): List<String> = cachedNames.split("|")
     fun displayTitle(): String {
+        if (customName.isNotBlank()) return customName
         val addrs = addressList()
         val names = nameList()
         val parts = addrs.mapIndexed { i, a -> names.getOrNull(i)?.takeIf { it.isNotBlank() } ?: a }
@@ -219,6 +221,9 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET archived = :v WHERE id = :id")
     suspend fun setArchived(id: Long, v: Boolean)
+
+    @Query("UPDATE conversations SET customName = :name WHERE id = :id")
+    suspend fun setCustomName(id: Long, name: String)
 
     @Query("UPDATE conversations SET muted = :v WHERE id = :id")
     suspend fun setMuted(id: Long, v: Boolean)
@@ -557,6 +562,12 @@ interface ContactNameDao {
 
 // ============================== Database ==============================
 
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE conversations ADD COLUMN customName TEXT NOT NULL DEFAULT ''")
+    }
+}
+
 val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE keywords ADD COLUMN mode INTEGER NOT NULL DEFAULT 0")
@@ -583,7 +594,7 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -598,7 +609,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }

@@ -152,7 +152,14 @@ class ConversationAdapter(
             if (draft) ctx.getString(R.string.draft_prefix) + " " + c.draft.take(80)
             else prefix + c.snippet
         holder.b.convoSnippet.textSize = prefs.msgTextSp - 2f
-        holder.b.convoSnippet.setTypeface(null, if (c.unreadCount > 0) Typeface.BOLD else Typeface.NORMAL)
+        val mediaWords = setOf("MMS", "Picture", "Video", "Audio", "Contact", "Attachment")
+        val italic = !draft && c.snippet in mediaWords
+        holder.b.convoSnippet.setTypeface(null, when {
+            c.unreadCount > 0 && italic -> Typeface.BOLD_ITALIC
+            c.unreadCount > 0 -> Typeface.BOLD
+            italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        })
 
         holder.b.convoTime.text = if (c.snippetDate > 0) Formatters.listStamp(c.snippetDate) else ""
         holder.b.convoTime.textSize = prefs.timeTextSp

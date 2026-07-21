@@ -101,7 +101,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
         })
         binding.btnOverflow.setOnClickListener { threadOptions() }
-        binding.btnAttach.setOnClickListener { pickAttachment() }
+        binding.btnAttach.setOnClickListener {
+            AttachOrPaste.open(this, binding.composeInput) { pickAttachment() }
+        }
         binding.btnSend.setOnClickListener { send() }
         binding.attachmentRow.setOnClickListener { manageAttachments() }
         binding.attachClear.setOnClickListener { manageAttachments() }
@@ -356,6 +358,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     /** Opened straight into this thread (notification, dialer)? Back should
      *  land on the conversation list, not exit the app. */
+    override fun onClipboardChanged() {
+        // the compose-mode left label depends on the clipboard state
+        if (composeMode) runOnUiThread { updateSoftkeys() }
+    }
+
     private fun goBack() {
         if (isTaskRoot) {
             startActivity(Intent(this, MainActivity::class.java))
@@ -538,9 +545,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun updateSoftkeys() {
         if (selecting) { updateSelectionUi(); return }
         if (composeMode) {
+            val leftLabel = if (clipboardText().isNullOrBlank())
+                getString(R.string.softkey_attach) else getString(R.string.softkey_options)
             softkeys?.set(
-                getString(R.string.softkey_attach), null, getString(R.string.softkey_send),
-                onLeft = { pickAttachment() },
+                leftLabel, null, getString(R.string.softkey_send),
+                onLeft = { AttachOrPaste.open(this, binding.composeInput) { pickAttachment() } },
                 onCenter = null,
                 onRight = { send() },
                 onMenu = { threadOptions() }
@@ -762,6 +771,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun pickAttachment() {
+        // File/media, or a contact card — the contact route builds a .vcf named
+        // after the person
+        android.app.AlertDialog.Builder(this)
+            .setItems(arrayOf(
+                getString(R.string.attach_file_option),
+                getString(R.string.attach_contact_option)
+            )) { _, which ->
+                if (which == 0) pickFileAttachment() else pickContactAttachment()
+            }
+            .show()
+    }
+
+    private fun pickFileAttachment() {
         try {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "*/*"
@@ -771,6 +793,31 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
             startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 201)
         } catch (_: Exception) {}
+    }
+
+    private fun pickContactAttachment() {
+        try {
+            startActivityForResult(
+                Intent(Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI), 231
+            )
+        } catch (_: Exception) {}
+    }
+
+    private fun stageContactVcf(contactUri: android.net.Uri) {
+        lifecycleScope.launch {
+            val card = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.github.theonionsarewatching.nova.util.ContactVcf
+                    .buildFromContactUri(this@ThreadActivity, contactUri)
+            } ?: return@launch
+            try {
+                val dir = File(filesDir, "parts").apply { mkdirs() }
+                val safe = card.name.replace(Regex("[^A-Za-z0-9 _-]"), "").trim()
+                    .ifBlank { "contact" }.replace(' ', '_')
+                val out = File(dir, "${safe}_out_${System.currentTimeMillis()}.vcf")
+                out.writeText(card.vcf)
+                addAttachment(out.absolutePath, "text/x-vcard", out.name)
+            } catch (_: Exception) {}
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -794,6 +841,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     }
                 } catch (_: Exception) {}
             }
+            return
+        }
+        if (requestCode == 231 && resultCode == RESULT_OK) {
+            data?.data?.let { stageContactVcf(it) }
             return
         }
         if (requestCode == 201 && resultCode == RESULT_OK) {

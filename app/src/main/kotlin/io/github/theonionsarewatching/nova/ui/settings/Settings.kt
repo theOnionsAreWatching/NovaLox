@@ -91,21 +91,6 @@ class SettingsActivity : BaseActivity() {
             val xmlRes = arguments?.getInt(ARG_XML)?.takeIf { it != 0 } ?: R.xml.preferences
             setPreferencesFromResource(xmlRes, rootKey)
 
-            findPreference<androidx.preference.SwitchPreferenceCompat>("softkeys_focusable")
-                ?.setOnPreferenceChangeListener { pref, newValue ->
-                    if (newValue == true) {
-                        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                            .setTitle(R.string.pref_softkeys_focusable)
-                            .setMessage(R.string.softkeys_focusable_warning)
-                            .setPositiveButton(android.R.string.ok) { _, _ ->
-                                (pref as androidx.preference.SwitchPreferenceCompat).isChecked = true
-                            }
-                            .setNegativeButton(android.R.string.cancel, null)
-                            .show()
-                        false // only enabled after the user confirms the warning
-                    } else true
-                }
-
             find("open_customize") {
                 parentFragmentManager.beginTransaction()
                     .replace(R.id.settings_container, SettingsFragment().apply {
@@ -266,6 +251,34 @@ class SettingsActivity : BaseActivity() {
                 } catch (_: Exception) { "" }
                 pref.summary = getString(R.string.about_summary_fmt, v)
             }
+            find("sent_color") {
+                val act = requireActivity()
+                io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(act) { hex ->
+                    io.github.theonionsarewatching.nova.util.Prefs.get(act).sentColor = hex
+                    Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
+                }
+            }
+            find("export_contacts") {
+                val ctx = requireContext()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val vcf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        io.github.theonionsarewatching.nova.util.ContactVcf.exportAll(ctx)
+                    }
+                    if (vcf.isBlank()) {
+                        Toast.makeText(ctx, R.string.export_contacts_empty, Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    val tmp = java.io.File(ctx.cacheDir, "contacts-export.vcf")
+                    tmp.writeText(vcf)
+                    val stamp = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                        .format(java.util.Date())
+                    val ok = io.github.theonionsarewatching.nova.ui.Saver
+                        .saveToDownloads(ctx, tmp, "contacts-$stamp.vcf", "text/x-vcard")
+                    Toast.makeText(ctx,
+                        if (ok) R.string.export_contacts_done else R.string.export_contacts_failed,
+                        Toast.LENGTH_LONG).show()
+                }
+            }
             find("save_diag_log") {
                 val ctx = requireContext()
                 viewLifecycleOwner.lifecycleScope.launch {
@@ -341,10 +354,29 @@ class SettingsActivity : BaseActivity() {
             findPreference<Preference>(key)?.setOnPreferenceClickListener { action(); true }
         }
 
+        private val changeToast =
+            android.content.SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
+                if (key == null) return@OnSharedPreferenceChangeListener
+                val pref = findPreference<Preference>(key) ?: return@OnSharedPreferenceChangeListener
+                val title = pref.title?.toString().orEmpty()
+                if (title.isNotBlank()) {
+                    Toast.makeText(requireContext(),
+                        getString(R.string.setting_updated_fmt, title), Toast.LENGTH_SHORT).show()
+                }
+            }
+
         override fun onResume() {
+            preferenceManager.sharedPreferences
+                ?.registerOnSharedPreferenceChangeListener(changeToast)
             super.onResume()
             updateAccentSummary()
             updateToneSummary()
+        }
+
+        override fun onPause() {
+            super.onPause()
+            preferenceManager.sharedPreferences
+                ?.unregisterOnSharedPreferenceChangeListener(changeToast)
         }
 
         private fun updateToneSummary() {
@@ -828,18 +860,29 @@ class BlockedMessagesActivity : SimpleListActivity() {
     }
 
     private fun rowOptions(row: BinRow) {
-        val options = arrayOf(getString(R.string.restore), getString(R.string.delete))
+        val options = arrayOf(
+            getString(R.string.view_message),
+            getString(R.string.restore),
+            getString(R.string.delete)
+        )
         AlertDialog.Builder(this)
             .setItems(options) { _, which ->
-                lifecycleScope.launch {
-                    if (which == 0) {
-                        repo.db.messages().unblock(row.id)
-                        repo.refreshConversation(row.convoId)
-                        ChangeBus.ping()
-                    } else {
-                        repo.deleteMessage(row.id)
+                when (which) {
+                    0 -> AlertDialog.Builder(this)
+                        .setTitle(row.address + "  \u00B7  " + Formatters.listStamp(row.date))
+                        .setMessage(row.body.ifBlank { getString(R.string.attach_vcard) })
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                    else -> lifecycleScope.launch {
+                        if (which == 1) {
+                            repo.db.messages().unblock(row.id)
+                            repo.refreshConversation(row.convoId)
+                            ChangeBus.ping()
+                        } else {
+                            repo.deleteMessage(row.id)
+                        }
+                        load()
                     }
-                    load()
                 }
             }
             .show()

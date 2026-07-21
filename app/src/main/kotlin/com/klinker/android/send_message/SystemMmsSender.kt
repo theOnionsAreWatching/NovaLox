@@ -120,11 +120,14 @@ object SystemMmsSender {
             // THE line the engine got wrong:
             req.deliveryReport =
                 if (requestDeliveryReport) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
-            // request a read report too — most carriers/handsets never honor
-            // it (Google's own app doesn't implement them at all), but when
-            // one DOES come back we show "Read" on the message
-            req.readReport =
-                if (requestDeliveryReport) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
+            // NEVER request read reports (VALUE_NO, permanently). Field
+            // evidence: requesting them made recipient phones emit read-rec
+            // PDUs that some carriers deliver back as ordinary MMS — duplicate
+            // phantom messages — and disrupted the clean unsolicited
+            // read-orig-inds this carrier already sends. We only LISTEN:
+            // when a read-orig-ind (136) arrives on its own, the message
+            // shows "Read". Do not change this flag again.
+            req.readReport = PduHeaders.VALUE_NO
         } catch (_: Exception) {
         }
 
