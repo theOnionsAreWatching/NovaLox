@@ -491,7 +491,6 @@
     <string name="delivery_read_at">Read \u2713  (%1$s)</string>
 
     <!-- v0.9.41 additions -->
-    <string name="softkey_options">Options</string>
     <string name="add_number_row">Add number</string>
     <string name="view_contact">View contact</string>
     <string name="add_to_contacts">Add to contacts</string>
