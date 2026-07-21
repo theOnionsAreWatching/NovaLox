@@ -175,6 +175,45 @@ object ElementExtractor {
 }
 
 // ============================== Contacts ==============================
+object MimeExt {
+    /** Correct file extension for a MIME type. The old mapping dumped every
+     *  unknown type — including mp3! — to ".bin", which broke playback app
+     *  matching (stock players are extension-sensitive with content:// uris)
+     *  and produced "x.bin.mp3" names on receiving phones. */
+    fun forMime(mime: String?): String {
+        val m = (mime ?: "").lowercase()
+        val known = when {
+            m.contains("jpeg") || m.contains("jpg") -> "jpg"
+            m.contains("png") -> "png"
+            m.contains("gif") -> "gif"
+            m.contains("webp") -> "webp"
+            m.contains("bmp") -> "bmp"
+            m.contains("mp4") && m.startsWith("audio") -> "m4a"
+            m.contains("mp4") -> "mp4"
+            m.contains("3gpp2") -> "3g2"
+            m.contains("3gpp") -> "3gp"
+            m.contains("webm") -> "webm"
+            m.contains("mkv") || m.contains("matroska") -> "mkv"
+            m.contains("mpeg") && m.startsWith("audio") -> "mp3"
+            m.contains("mp3") -> "mp3"
+            m.contains("amr") -> "amr"
+            m.contains("ogg") || m.contains("opus") -> "ogg"
+            m.contains("wav") -> "wav"
+            m.contains("flac") -> "flac"
+            m.contains("aac") -> "aac"
+            m.contains("midi") || m.contains("mid") -> "mid"
+            m.contains("vcard") || m.contains("x-vcard") -> "vcf"
+            m.contains("calendar") -> "ics"
+            m.contains("pdf") -> "pdf"
+            m.contains("plain") -> "txt"
+            else -> null
+        }
+        if (known != null) return ".$known"
+        val fromMap = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(m)
+        return if (!fromMap.isNullOrBlank()) ".$fromMap" else ".bin"
+    }
+}
+
 object ContactsHelper {
 
     data class Contact(val name: String, val number: String, val photoUri: String = "")

@@ -777,6 +777,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 getString(R.string.attach_menu_video),
                 getString(R.string.attach_menu_contact),
                 getString(R.string.attach_menu_audio),
+                getString(R.string.attach_menu_record),
                 getString(R.string.attach_menu_file)
             )) { _, which ->
                 when (which) {
@@ -786,7 +787,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     2 -> pickContactAttachment()
                     3 -> pickMedia("audio/*",
                         Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
-                    4 -> pickFileAttachment()
+                    4 -> recordAudioAttachment()
+                    5 -> pickFileAttachment()
                 }
             }
             .show()
@@ -796,6 +798,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
      *  (camera / recorder) offered alongside. No OPENABLE category — some
      *  music apps return tracks that category filters out. */
     private fun pickMedia(mime: String, capture: Intent?) {
+        // media-store uris returned by gallery/music apps need this on older
+        // Android; without it the copy dies with a SecurityException
+        if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 71)
+        }
         try {
             val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = mime
@@ -807,6 +817,21 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
             startActivityForResult(chooser, 201)
         } catch (_: Exception) {}
+    }
+
+    /** Straight to the recorder in attach mode — the recording comes back as
+     *  the attachment (unlike opening the recorder app, which returns nothing). */
+    private fun recordAudioAttachment() {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION), 201
+            )
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(
+                this, R.string.no_recorder_app, android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private var cameraOutPath: String? = null
@@ -908,12 +933,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 for (uri in uris) {
                     try {
                         val mime = contentResolver.getType(uri) ?: "application/octet-stream"
-                        val ext = when {
-                            mime.contains("jpeg") -> ".jpg"; mime.contains("png") -> ".png"
-                            mime.contains("gif") -> ".gif"; mime.contains("mp4") -> ".mp4"
-                            mime.contains("3gpp") -> ".3gp"; mime.contains("amr") -> ".amr"
-                            mime.contains("vcard") -> ".vcf"; else -> ".bin"
-                        }
+                        val ext = io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
                         val dir = File(filesDir, "parts").apply { mkdirs() }
                         val out = File(dir, "out_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
                         contentResolver.openInputStream(uri)?.use { input ->

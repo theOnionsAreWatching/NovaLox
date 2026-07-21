@@ -515,18 +515,11 @@ class Repo private constructor(private val context: Context) {
     }
 
     private fun extensionFor(mime: String, name: String): String {
+        // sender-supplied filename extension first, then the mime map — which
+        // now covers mp3/ogg/wav/etc instead of dumping them to ".bin"
         val fromName = name.substringAfterLast('.', "")
         if (fromName.isNotBlank() && fromName.length <= 4) return ".$fromName"
-        return when {
-            mime.contains("jpeg") || mime.contains("jpg") -> ".jpg"
-            mime.contains("png") -> ".png"
-            mime.contains("gif") -> ".gif"
-            mime.contains("mp4") -> ".mp4"
-            mime.contains("3gpp") -> ".3gp"
-            mime.contains("amr") -> ".amr"
-            mime.contains("vcard") -> ".vcf"
-            else -> ".bin"
-        }
+        return io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
     }
 
     // ============================== Keywords / blocking ==============================

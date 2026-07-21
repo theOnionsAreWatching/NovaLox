@@ -212,13 +212,12 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
-            else -> { // bubble
+            else -> { // bubble: rounded body with the same small side tail
                 holder.b.accentBar.visibility = View.GONE
-                val bg = GradientDrawable().apply {
-                    cornerRadius = dp(10).toFloat()
-                    setColor(bubbleFillColor(ctx, m.isMine, accent))
-                }
-                holder.b.bubbleBox.background = bg
+                holder.b.bubbleBox.background = TailBubbleDrawable(
+                    bubbleFillColor(ctx, m.isMine, accent), dp(10).toFloat(),
+                    tailOnRight = m.isMine, tailPx = dp(7).toFloat()
+                )
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
                 bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
@@ -464,15 +463,17 @@ class TailBubbleDrawable(
         )
         path.reset()
         path.addRoundRect(body, radiusPx, radiusPx, android.graphics.Path.Direction.CW)
-        val t0 = body.top + radiusPx * 0.4f
+        // reference shape: starts below the top, top edge almost horizontal,
+        // bottom edge long and steep back to the bubble
+        val t0 = body.top + radiusPx.coerceAtLeast(3f) + 2f
         if (tailOnRight) {
             path.moveTo(body.right, t0)
-            path.lineTo(body.right + tailPx, t0 + tailPx * 0.7f)
-            path.lineTo(body.right, t0 + tailPx * 1.7f)
+            path.lineTo(body.right + tailPx, t0 + tailPx * 0.22f)
+            path.lineTo(body.right, t0 + tailPx * 2.1f)
         } else {
             path.moveTo(body.left, t0)
-            path.lineTo(body.left - tailPx, t0 + tailPx * 0.7f)
-            path.lineTo(body.left, t0 + tailPx * 1.7f)
+            path.lineTo(body.left - tailPx, t0 + tailPx * 0.22f)
+            path.lineTo(body.left, t0 + tailPx * 2.1f)
         }
         path.close()
         canvas.drawPath(path, paint)
@@ -505,21 +506,22 @@ class AccentBarDrawable(
 
     override fun draw(canvas: android.graphics.Canvas) {
         val b = bounds
+        // the bar hugs the message; the tail points AWAY from the conversation
         val bar = if (tailOnRight)
-            android.graphics.RectF(b.right - barPx, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
-        else
             android.graphics.RectF(b.left.toFloat(), b.top.toFloat(), b.left + barPx, b.bottom.toFloat())
+        else
+            android.graphics.RectF(b.right - barPx, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
         path.reset()
         path.addRect(bar, android.graphics.Path.Direction.CW)
-        val t0 = b.top + 4f
+        val t0 = b.top + 5f
         if (tailOnRight) {
-            path.moveTo(bar.left, t0)
-            path.lineTo(bar.left - tailPx, t0 + tailPx * 0.7f)
-            path.lineTo(bar.left, t0 + tailPx * 1.7f)
-        } else {
             path.moveTo(bar.right, t0)
-            path.lineTo(bar.right + tailPx, t0 + tailPx * 0.7f)
-            path.lineTo(bar.right, t0 + tailPx * 1.7f)
+            path.lineTo(bar.right + tailPx, t0 + tailPx * 0.22f)
+            path.lineTo(bar.right, t0 + tailPx * 2.1f)
+        } else {
+            path.moveTo(bar.left, t0)
+            path.lineTo(bar.left - tailPx, t0 + tailPx * 0.22f)
+            path.lineTo(bar.left, t0 + tailPx * 2.1f)
         }
         path.close()
         canvas.drawPath(path, paint)

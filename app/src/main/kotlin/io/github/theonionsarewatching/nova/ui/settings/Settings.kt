@@ -35,8 +35,12 @@ class SettingsActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         if (savedInstanceState == null) {
+            val frag = SettingsFragment().apply {
+                val xml = intent.getIntExtra(SettingsFragment.ARG_XML, 0)
+                if (xml != 0) arguments = Bundle().apply { putInt(SettingsFragment.ARG_XML, xml) }
+            }
             supportFragmentManager.beginTransaction()
-                .replace(R.id.settings_container, SettingsFragment())
+                .replace(R.id.settings_container, frag)
                 .commit()
         }
     }
@@ -92,12 +96,12 @@ class SettingsActivity : BaseActivity() {
             setPreferencesFromResource(xmlRes, rootKey)
 
             find("open_customize") {
-                parentFragmentManager.beginTransaction()
-                    .replace(R.id.settings_container, SettingsFragment().apply {
-                        arguments = Bundle().apply { putInt(ARG_XML, R.xml.preferences_customize) }
-                    })
-                    .addToBackStack(null)
-                    .commit()
+                // its own activity, like the other sub-screens — the fragment
+                // backstack left the restored list unfocusable for the D-pad
+                startActivity(
+                    Intent(requireContext(), SettingsActivity::class.java)
+                        .putExtra(SettingsFragment.ARG_XML, R.xml.preferences_customize)
+                )
             }
 
             find("open_keywords") { startActivity(Intent(requireContext(), KeywordsActivity::class.java)) }
@@ -264,6 +268,7 @@ class SettingsActivity : BaseActivity() {
                     .setTitle(R.string.pref_export_contacts)
                     .setMessage(R.string.export_contacts_confirm)
                     .setPositiveButton(R.string.export_go) { _, _ ->
+                        Toast.makeText(ctx, R.string.exporting_contacts, Toast.LENGTH_SHORT).show()
                         viewLifecycleOwner.lifecycleScope.launch {
                             val vcf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 io.github.theonionsarewatching.nova.util.ContactVcf.exportAll(ctx)
