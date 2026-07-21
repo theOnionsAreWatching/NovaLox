@@ -529,4 +529,14 @@
     <string name="attach_menu_record">Record audio</string>
     <string name="no_recorder_app">No recorder app supports attaching on this phone</string>
     <string name="exporting_contacts">Exporting contacts\u2026</string>
+
+    <!-- v0.9.44 additions -->
+    <string name="rec_ready">Press Record to start</string>
+    <string name="rec_start">\u25CF Record</string>
+    <string name="rec_stop">\u25A0 Stop</string>
+    <string name="rec_done_fmt">Recorded %1$d:%2$02d \u2014 press Attach</string>
+    <string name="rec_failed">Recording failed \u2014 check the microphone</string>
+    <string name="rec_nothing">Nothing recorded yet</string>
+    <string name="attach_recording">Attach</string>
+    <string name="mic_permission_hint">Allow microphone access, then press Record audio again</string>
 </resources>

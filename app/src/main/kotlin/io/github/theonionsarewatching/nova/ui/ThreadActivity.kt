@@ -819,18 +819,20 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         } catch (_: Exception) {}
     }
 
-    /** Straight to the recorder in attach mode — the recording comes back as
-     *  the attachment (unlike opening the recorder app, which returns nothing). */
+    /** In-app voice recording: the fleet's recorder apps don't implement the
+     *  capture contract, so we record ourselves and attach deterministically. */
     private fun recordAudioAttachment() {
-        try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(
-                Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION), 201
-            )
-        } catch (_: Exception) {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 72)
             android.widget.Toast.makeText(
-                this, R.string.no_recorder_app, android.widget.Toast.LENGTH_LONG
+                this, R.string.mic_permission_hint, android.widget.Toast.LENGTH_SHORT
             ).show()
+            return
+        }
+        io.github.theonionsarewatching.nova.ui.AudioRecorderDialog.show(this) { path, mime, name ->
+            addAttachment(path, mime, name)
         }
     }
 
@@ -934,8 +936,20 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     try {
                         val mime = contentResolver.getType(uri) ?: "application/octet-stream"
                         val ext = io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
+                        // carry the source's display name (song title, photo
+                        // name) into our filename, ahead of the usual suffix
+                        val display = try {
+                            contentResolver.query(
+                                uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                                null, null, null
+                            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+                        } catch (_: Exception) { null }
+                        val baseName = display?.substringBeforeLast('.')
+                            ?.replace(Regex("[^A-Za-z0-9 _-]"), "")?.trim()
+                            ?.replace(' ', '_')?.take(40)?.takeIf { it.isNotBlank() }
+                            ?.plus("_") ?: ""
                         val dir = File(filesDir, "parts").apply { mkdirs() }
-                        val out = File(dir, "out_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
+                        val out = File(dir, "${baseName}out_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
                         contentResolver.openInputStream(uri)?.use { input ->
                             out.outputStream().use { output -> input.copyTo(output) }
                         }

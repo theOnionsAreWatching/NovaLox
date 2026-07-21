@@ -79,6 +79,15 @@
             android:layout_height="wrap_content" />
 
         <ImageView
+            android:id="@+id/iconAttach"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_marginStart="5dp"
+            android:src="@drawable/ic_paperclip_small"
+            android:visibility="gone"
+            android:contentDescription="@string/snippet_attachment" />
+
+        <ImageView
             android:id="@+id/iconLock"
             android:layout_width="12dp"
             android:layout_height="12dp"

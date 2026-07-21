@@ -168,26 +168,15 @@ class MessageAdapter(
         )
         when (prefs.messageStyle) {
             "accentbar" -> {
-                holder.b.bubbleBox.background = null
-                holder.b.accentBar.visibility = View.VISIBLE
-                // the bar sits on the OUTER side (sender right, received left)
-                // with a matching tail; content indents like the other styles
+                // bar + tail drawn as the BACKGROUND, so long text can never
+                // squeeze it out of the layout; padding keeps a gap to the text
+                holder.b.accentBar.visibility = View.GONE
                 val barColor = if (m.isMine) accent else Color.GRAY
-                holder.b.accentBar.background = AccentBarDrawable(
+                holder.b.bubbleBox.background = AccentBarDrawable(
                     barColor, tailOnRight = m.isMine,
-                    tailPx = dp(6).toFloat(), barPx = dp(4).toFloat()
+                    tailPx = dp(6).toFloat(), barPx = dp(4).toFloat(),
+                    gapPx = dp(7).toFloat()
                 )
-                val barLp = holder.b.accentBar.layoutParams
-                barLp.width = dp(10)
-                holder.b.accentBar.layoutParams = barLp
-                // reorder: bar last for my messages, first for theirs
-                val box = holder.b.bubbleBox
-                val bar = holder.b.accentBar
-                val wantIndex = if (m.isMine) box.childCount - 1 else 0
-                if (box.indexOfChild(bar) != wantIndex) {
-                    box.removeView(bar)
-                    box.addView(bar, wantIndex)
-                }
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
                 bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
@@ -212,9 +201,9 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
-            else -> { // bubble: rounded body with the same small side tail
+            else -> { // bubble: rounded body, the original bottom-corner tail
                 holder.b.accentBar.visibility = View.GONE
-                holder.b.bubbleBox.background = TailBubbleDrawable(
+                holder.b.bubbleBox.background = BottomTailBubbleDrawable(
                     bubbleFillColor(ctx, m.isMine, accent), dp(10).toFloat(),
                     tailOnRight = m.isMine, tailPx = dp(7).toFloat()
                 )
@@ -277,11 +266,19 @@ class MessageAdapter(
             holder.b.attachLabel.textSize = prefs.msgTextSp - 2f
             holder.b.attachLabel.text = when {
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
-                other.isAudio() -> ctx.getString(R.string.attach_audio)
+                other.isAudio() -> other.fileName
                 other.isVCard() -> vcardSummary(ctx, other)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
             }
-            if (other != null && other.isVCard()) {
+            if (other != null && other.isAudio()) {
+                // headphones marker so an audio message is recognizable at a glance
+                holder.b.attachLabel.background = null
+                holder.b.attachLabel.setCompoundDrawablesWithIntrinsicBounds(
+                    io.github.theonionsarewatching.nova.R.drawable.ic_headphones_small, 0, 0, 0
+                )
+                holder.b.attachLabel.compoundDrawablePadding = dp(6)
+                holder.b.attachLabel.setPadding(0, dp(2), 0, dp(2))
+            } else if (other != null && other.isVCard()) {
                 // rounded contact card: icon + name / number / email
                 holder.b.attachLabel.background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
@@ -304,6 +301,8 @@ class MessageAdapter(
 
         // ---- meta line: time + status ----
         holder.b.metaRow.visibility = View.VISIBLE
+        holder.b.iconAttach.visibility =
+            if (row.parts.isNotEmpty()) View.VISIBLE else View.GONE
         holder.b.iconLock.visibility = if (m.locked) View.VISIBLE else View.GONE
         holder.b.iconScheduled.visibility =
             if (m.status == MsgStatus.SCHEDULED) View.VISIBLE else View.GONE
@@ -491,12 +490,14 @@ class TailBubbleDrawable(
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
 
-/** Thin vertical accent bar with the same side tail, for the accent-bar style. */
+/** Accent-bar style background: a thin bar on the outer edge with an outward
+ *  tail; getPadding keeps the text clear of both. */
 class AccentBarDrawable(
     private val color: Int,
     private val tailOnRight: Boolean,
     private val tailPx: Float,
-    private val barPx: Float
+    private val barPx: Float,
+    private val gapPx: Float
 ) : android.graphics.drawable.Drawable() {
     private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
         this.color = this@AccentBarDrawable.color
@@ -506,11 +507,12 @@ class AccentBarDrawable(
 
     override fun draw(canvas: android.graphics.Canvas) {
         val b = bounds
-        // the bar hugs the message; the tail points AWAY from the conversation
         val bar = if (tailOnRight)
-            android.graphics.RectF(b.left.toFloat(), b.top.toFloat(), b.left + barPx, b.bottom.toFloat())
+            android.graphics.RectF(b.right - tailPx - barPx, b.top.toFloat(),
+                b.right - tailPx, b.bottom.toFloat())
         else
-            android.graphics.RectF(b.right - barPx, b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat())
+            android.graphics.RectF(b.left + tailPx, b.top.toFloat(),
+                b.left + tailPx + barPx, b.bottom.toFloat())
         path.reset()
         path.addRect(bar, android.graphics.Path.Direction.CW)
         val t0 = b.top + 5f
@@ -525,6 +527,56 @@ class AccentBarDrawable(
         }
         path.close()
         canvas.drawPath(path, paint)
+    }
+
+    override fun getPadding(padding: android.graphics.Rect): Boolean {
+        val side = (tailPx + barPx + gapPx).toInt()
+        padding.set(if (tailOnRight) 0 else side, 0, if (tailOnRight) side else 0, 0)
+        return true
+    }
+
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+    override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+/** The original bubble tail: a small triangle at the bottom outer corner. */
+class BottomTailBubbleDrawable(
+    private val color: Int,
+    private val radiusPx: Float,
+    private val tailOnRight: Boolean,
+    private val tailPx: Float
+) : android.graphics.drawable.Drawable() {
+    private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = this@BottomTailBubbleDrawable.color
+        style = android.graphics.Paint.Style.FILL
+    }
+    private val path = android.graphics.Path()
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        val b = bounds
+        val body = android.graphics.RectF(
+            b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom - tailPx
+        )
+        path.reset()
+        path.addRoundRect(body, radiusPx, radiusPx, android.graphics.Path.Direction.CW)
+        if (tailOnRight) {
+            path.moveTo(body.right - tailPx * 2.2f, body.bottom)
+            path.lineTo(body.right - tailPx * 0.4f, body.bottom + tailPx)
+            path.lineTo(body.right - tailPx * 0.4f, body.bottom - tailPx)
+        } else {
+            path.moveTo(body.left + tailPx * 2.2f, body.bottom)
+            path.lineTo(body.left + tailPx * 0.4f, body.bottom + tailPx)
+            path.lineTo(body.left + tailPx * 0.4f, body.bottom - tailPx)
+        }
+        path.close()
+        canvas.drawPath(path, paint)
+    }
+
+    override fun getPadding(padding: android.graphics.Rect): Boolean {
+        padding.set(0, 0, 0, tailPx.toInt())
+        return true
     }
 
     override fun setAlpha(alpha: Int) { paint.alpha = alpha }
