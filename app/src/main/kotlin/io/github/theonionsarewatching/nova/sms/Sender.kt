@@ -142,6 +142,7 @@ object Sender {
                 deliveryReports = Prefs.get(context).deliveryReports
                 group = true
             }
+            io.github.theonionsarewatching.nova.util.MmsUserAgent.applyToSettings(context, settings)
             val transaction = Transaction(context, settings)
             val message = Message(text, addresses.toTypedArray())
 

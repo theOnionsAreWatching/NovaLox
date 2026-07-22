@@ -546,4 +546,8 @@
     <string name="player_cant_play">This phone can\u2019t decode this audio format</string>
     <string name="player_open_with">Open with\u2026</string>
     <string name="close">Close</string>
+
+    <!-- v0.9.45 UA additions -->
+    <string name="pref_mms_ua">Verizon audio/image fix</string>
+    <string name="pref_mms_ua_summary">Tell the carrier we\u2019re a modern phone so incoming audio isn\u2019t garbled and images are less compressed. Try this if MMS audio won\u2019t play.</string>
 </resources>

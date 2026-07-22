@@ -501,10 +501,21 @@ class Repo private constructor(private val context: Context) {
                     // trust the bytes over the carrier's label for audio parts
                     var finalFile = outFile
                     var finalMime = p.ct
-                    if (p.ct.startsWith("audio", ignoreCase = true) ||
-                        p.ct.contains("octet", ignoreCase = true)
-                    ) {
+                    val nameLc = (p.name ?: "").lowercase()
+                    val looksAudio = p.ct.startsWith("audio", ignoreCase = true) ||
+                        p.ct.contains("octet", ignoreCase = true) ||
+                        p.ct.contains("qcelp", ignoreCase = true) ||
+                        p.ct.contains("qcp", ignoreCase = true) ||
+                        nameLc.endsWith(".qcp") || nameLc.endsWith(".amr") ||
+                        nameLc.endsWith(".3gp") || nameLc.endsWith(".dat")
+                    if (looksAudio) {
                         val sniffed = io.github.theonionsarewatching.nova.util.AudioSniff.sniff(outFile)
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-part",
+                            "audio candidate: declared=${p.ct} name=${p.name} " +
+                                "magic=${io.github.theonionsarewatching.nova.util.AudioSniff.magicHex(outFile)} " +
+                                "sniff=${sniffed?.second ?: "none"}"
+                        )
                         if (sniffed != null) {
                             val (sExt, sMime) = sniffed
                             io.github.theonionsarewatching.nova.util.DiagLog.log(

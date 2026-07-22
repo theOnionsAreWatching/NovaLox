@@ -568,16 +568,22 @@ class BottomTailBubbleDrawable(
         val body = android.graphics.RectF(
             b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom - tailPx
         )
+        // draw the body, then the tail as a SEPARATE fill that starts a couple
+        // pixels ABOVE the bottom edge — overlapping into the rounded corner so
+        // no background-colored seam shows between tail and bubble
         path.reset()
         path.addRoundRect(body, radiusPx, radiusPx, android.graphics.Path.Direction.CW)
+        canvas.drawPath(path, paint)
+        val overlap = radiusPx + 1f
+        path.reset()
         if (tailOnRight) {
-            path.moveTo(body.right - tailPx * 2.2f, body.bottom)
-            path.lineTo(body.right - tailPx * 0.4f, body.bottom + tailPx)
-            path.lineTo(body.right - tailPx * 0.4f, body.bottom - tailPx)
+            path.moveTo(body.right - tailPx * 2.4f, body.bottom - overlap)
+            path.lineTo(body.right - tailPx * 0.2f, body.bottom + tailPx)
+            path.lineTo(body.right - tailPx * 0.2f, body.bottom - overlap)
         } else {
-            path.moveTo(body.left + tailPx * 2.2f, body.bottom)
-            path.lineTo(body.left + tailPx * 0.4f, body.bottom + tailPx)
-            path.lineTo(body.left + tailPx * 0.4f, body.bottom - tailPx)
+            path.moveTo(body.left + tailPx * 2.4f, body.bottom - overlap)
+            path.lineTo(body.left + tailPx * 0.2f, body.bottom + tailPx)
+            path.lineTo(body.left + tailPx * 0.2f, body.bottom - overlap)
         }
         path.close()
         canvas.drawPath(path, paint)

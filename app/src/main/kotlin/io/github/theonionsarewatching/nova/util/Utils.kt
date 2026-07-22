@@ -218,6 +218,13 @@ object AudioSniff {
     /** Some carriers (Verizon's MMSC notably) relabel audio parts with their
      *  legacy audio/qcelp type. The bytes don't lie: identify the real format
      *  from the file magic and return (extension, mime), or null if unknown. */
+    /** First bytes as hex, for diagnostics when a format isn't recognized. */
+    fun magicHex(file: java.io.File): String = try {
+        val b = ByteArray(12)
+        val n = file.inputStream().use { it.read(b) }
+        (0 until maxOf(0, n)).joinToString(" ") { String.format("%02X", b[it]) }
+    } catch (_: Exception) { "?" }
+
     fun sniff(file: java.io.File): Pair<String, String>? {
         return try {
             val head = ByteArray(16)
@@ -226,11 +233,13 @@ object AudioSniff {
             fun startsWith(sig: String, at: Int = 0) =
                 head.size >= at + sig.length &&
                     String(head, at, sig.length, Charsets.ISO_8859_1) == sig
+            // 3gp/mp4 boxes sometimes wrap AMR audio: ....ftyp3gp / ....ftypM4A
             when {
                 startsWith("#!AMR-WB") -> ".awb" to "audio/amr-wb"
                 startsWith("#!AMR") -> ".amr" to "audio/amr"
                 startsWith("ftyp", 4) -> ".m4a" to "audio/mp4"
                 startsWith("RIFF") && startsWith("QLCM", 8) -> ".qcp" to "audio/qcelp"
+                startsWith("QLCM", 8) -> ".qcp" to "audio/qcelp"
                 startsWith("RIFF") && startsWith("WAVE", 8) -> ".wav" to "audio/wav"
                 startsWith("OggS") -> ".ogg" to "audio/ogg"
                 startsWith("fLaC") -> ".flac" to "audio/flac"

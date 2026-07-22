@@ -27,6 +27,7 @@ class App : Application(), ImageLoaderFactory {
         val um = getSystemService(android.os.UserManager::class.java)
         if (um != null && !um.isUserUnlocked) return
         io.github.theonionsarewatching.nova.util.Formatters.init(this)
+        io.github.theonionsarewatching.nova.util.MmsUserAgent.applyToConfig(this)
         // pre-0.9.41 conversations stored "[Photo]"-style snippets; recompute
         // them once so the new italic words show everywhere
         val prefs0 = io.github.theonionsarewatching.nova.util.Prefs.get(this)

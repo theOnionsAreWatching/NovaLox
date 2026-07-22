@@ -25,6 +25,7 @@ object AudioRecorderDialog {
             .format(java.util.Date())
         val outFile = File(dir, "Recording_${stamp}_out_${System.currentTimeMillis()}.amr")
 
+        var dialogRef: AlertDialog? = null
         var recorder: MediaRecorder? = null
         var recording = false
         var recorded = false
@@ -76,6 +77,10 @@ object AudioRecorderDialog {
             status.text = if (recorded)
                 activity.getString(R.string.rec_done_fmt, seconds / 60, seconds % 60)
             else activity.getString(R.string.rec_ready)
+            // move focus to Attach so the user isn't stranded on Record
+            if (recorded) {
+                dialogRef?.getButton(AlertDialog.BUTTON_POSITIVE)?.requestFocus()
+            }
         }
 
         fun startRecording() {
@@ -111,6 +116,7 @@ object AudioRecorderDialog {
             .setPositiveButton(R.string.attach_recording, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
+        dialogRef = dialog
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 stopRecording()

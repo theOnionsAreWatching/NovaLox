@@ -97,6 +97,12 @@ class Prefs(context: Context) {
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"
     val notifPersist: Boolean get() = sp.getBoolean("notif_persist", false)
+    /** Spoof the MMS User-Agent + UAProf so Verizon's MMSC treats us as a
+     *  modern handset and stops transcoding audio to QCELP / over-compressing
+     *  images. Off by default; the value is the device model token. */
+    var mmsUaSpoof: Boolean
+        get() = sp.getBoolean("mms_ua_spoof", false)
+        set(v) { sp.edit().putBoolean("mms_ua_spoof", v).apply() }
     var snippetWordsFixed: Boolean
         get() = sp.getBoolean("snippet_words_fixed", false)
         set(v) { sp.edit().putBoolean("snippet_words_fixed", v).apply() }
