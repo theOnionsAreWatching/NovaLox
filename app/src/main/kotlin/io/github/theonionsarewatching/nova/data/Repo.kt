@@ -498,10 +498,30 @@ class Repo private constructor(private val context: Context) {
                     outFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 if (outFile.exists() && outFile.length() > 0) {
+                    // trust the bytes over the carrier's label for audio parts
+                    var finalFile = outFile
+                    var finalMime = p.ct
+                    if (p.ct.startsWith("audio", ignoreCase = true) ||
+                        p.ct.contains("octet", ignoreCase = true)
+                    ) {
+                        val sniffed = io.github.theonionsarewatching.nova.util.AudioSniff.sniff(outFile)
+                        if (sniffed != null) {
+                            val (sExt, sMime) = sniffed
+                            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                context, "mms-part",
+                                "audio sniff: declared=${p.ct} actual=$sMime"
+                            )
+                            if (!outFile.name.endsWith(sExt, ignoreCase = true)) {
+                                val renamed = File(dir, outFile.nameWithoutExtension + sExt)
+                                if (outFile.renameTo(renamed)) finalFile = renamed
+                            }
+                            finalMime = sMime
+                        }
+                    }
                     db.parts().insert(
                         PartEntity(
-                            messageId = id, mimeType = p.ct,
-                            filePath = outFile.absolutePath, fileName = p.name, size = outFile.length()
+                            messageId = id, mimeType = finalMime,
+                            filePath = finalFile.absolutePath, fileName = p.name, size = finalFile.length()
                         )
                     )
                 }

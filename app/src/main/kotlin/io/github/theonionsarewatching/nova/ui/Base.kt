@@ -269,9 +269,14 @@ abstract class BaseActivity : AppCompatActivity() {
  *  becomes an Options menu offering Attach and Paste (with a short preview of
  *  what would be pasted). With an empty clipboard it goes straight to attach. */
 object AttachOrPaste {
-    fun open(activity: BaseActivity, target: android.widget.EditText, onAttach: () -> Unit) {
+    fun open(
+        activity: BaseActivity,
+        target: android.widget.EditText,
+        onAttach: () -> Unit,
+        onRecord: (() -> Unit)? = null
+    ) {
         val clip = activity.clipboardText()
-        if (clip.isNullOrBlank()) { onAttach(); return }
+        if (clip.isNullOrBlank() && onRecord == null) { onAttach(); return }
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
         val column = android.widget.LinearLayout(activity).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -288,14 +293,17 @@ object AttachOrPaste {
                 setOnClickListener { dialog?.dismiss(); action() }
             }
         column.addView(row(activity.getString(R.string.softkey_attach)) { onAttach() })
-        column.addView(row(activity.getString(R.string.paste)) {
+        if (onRecord != null) {
+            column.addView(row(activity.getString(R.string.attach_menu_record)) { onRecord() })
+        }
+        if (!clip.isNullOrBlank()) column.addView(row(activity.getString(R.string.paste)) {
             val start = target.selectionStart.coerceAtLeast(0)
             val end = target.selectionEnd.coerceAtLeast(0)
             target.text.replace(minOf(start, end), maxOf(start, end), clip)
             target.requestFocus()
         })
         // a glimpse of what Paste would insert — a few lines, never the whole thing
-        column.addView(android.widget.TextView(activity).apply {
+        if (!clip.isNullOrBlank()) column.addView(android.widget.TextView(activity).apply {
             text = clip
             textSize = 12f
             setTextColor(android.graphics.Color.GRAY)

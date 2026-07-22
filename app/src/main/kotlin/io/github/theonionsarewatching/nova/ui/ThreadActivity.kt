@@ -102,7 +102,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         })
         binding.btnOverflow.setOnClickListener { threadOptions() }
         binding.btnAttach.setOnClickListener {
-            AttachOrPaste.open(this, binding.composeInput) { pickAttachment() }
+            AttachOrPaste.open(this, binding.composeInput,
+                onAttach = { pickAttachment() },
+                onRecord = { recordAudioAttachment() })
         }
         binding.btnSend.setOnClickListener { send() }
         binding.attachmentRow.setOnClickListener { manageAttachments() }
@@ -549,7 +551,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 getString(R.string.softkey_attach) else getString(R.string.softkey_options)
             softkeys?.set(
                 leftLabel, null, getString(R.string.softkey_send),
-                onLeft = { AttachOrPaste.open(this, binding.composeInput) { pickAttachment() } },
+                onLeft = { AttachOrPaste.open(this, binding.composeInput,
+                    onAttach = { pickAttachment() },
+                    onRecord = { recordAudioAttachment() }) },
                 onCenter = null,
                 onRight = { send() },
                 onMenu = { threadOptions() }
@@ -1020,6 +1024,21 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
+    private fun openPartExternally(part: io.github.theonionsarewatching.nova.data.PartEntity) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", File(part.filePath)
+            )
+            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, part.mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, R.string.no_app_for_file,
+                android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun openAttachment(row: MessageRow, index: Int) {
         val part = row.parts.getOrNull(index) ?: return
         if (part.isImage() || part.isVideo()) {
@@ -1029,7 +1048,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             })
             return
         }
-        // audio, vCards and other files: hand off to the system app for that type
+        if (part.isAudio()) {
+            // in-app playback: deterministic on every phone, no chooser lottery
+            io.github.theonionsarewatching.nova.ui.AudioPlayerDialog.show(
+                this, part.filePath, part.fileName
+            ) { openPartExternally(part) }
+            return
+        }
+        // vCards and other files: hand off to the system app for that type
         val mime = if (part.isVCard()) "text/x-vcard" else part.mimeType
         val openLabel = when {
             part.isVCard() -> getString(R.string.open_in_contacts)

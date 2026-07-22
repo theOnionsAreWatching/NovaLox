@@ -48,7 +48,9 @@ class ComposeActivity : BaseActivity() {
         binding.btnStart.setOnClickListener { start() }
         binding.btnSchedule.setOnClickListener { startScheduled() }
         binding.btnComposeAttach.setOnClickListener {
-            AttachOrPaste.open(this, binding.bodyInput) { pickAttachment() }
+            AttachOrPaste.open(this, binding.bodyInput,
+                onAttach = { pickAttachment() },
+                onRecord = { recordAudioAttachment() })
         }
         binding.attachChip.setOnClickListener { manageAttachments() }
 
@@ -479,7 +481,9 @@ class ComposeActivity : BaseActivity() {
             getString(R.string.softkey_attach) else getString(R.string.softkey_options)
         sk?.set(
             leftLabel, null, getString(R.string.softkey_send),
-            onLeft = { AttachOrPaste.open(this, binding.bodyInput) { pickAttachment() } },
+            onLeft = { AttachOrPaste.open(this, binding.bodyInput,
+                onAttach = { pickAttachment() },
+                onRecord = { recordAudioAttachment() }) },
             onCenter = null,
             onRight = { start() }
         )

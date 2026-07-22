@@ -539,4 +539,11 @@
     <string name="rec_nothing">Nothing recorded yet</string>
     <string name="attach_recording">Attach</string>
     <string name="mic_permission_hint">Allow microphone access, then press Record audio again</string>
+
+    <!-- v0.9.45 additions -->
+    <string name="player_play">\u25B6 Play</string>
+    <string name="player_pause">\u2759\u2759 Pause</string>
+    <string name="player_cant_play">This phone can\u2019t decode this audio format</string>
+    <string name="player_open_with">Open with\u2026</string>
+    <string name="close">Close</string>
 </resources>

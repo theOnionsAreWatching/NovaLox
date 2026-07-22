@@ -223,7 +223,16 @@ class MessageAdapter(
             }
         }
         holder.b.bubbleBox.layoutParams = bubbleParams
-        holder.b.bubbleBox.setPadding(dp(8), dp(6), dp(8), dp(6))
+        // the background drawables (tails, accent bar) declare content insets;
+        // a bare setPadding here ERASED them — that's why text touched the bar
+        // and sat on the bubble tail. Merge them into the base padding instead.
+        val bgPad = android.graphics.Rect()
+        val hasBgPad = holder.b.bubbleBox.background?.getPadding(bgPad) == true
+        if (!hasBgPad) bgPad.set(0, 0, 0, 0)
+        holder.b.bubbleBox.setPadding(
+            dp(8) + bgPad.left, dp(6) + bgPad.top,
+            dp(8) + bgPad.right, dp(6) + bgPad.bottom
+        )
 
         // ---- body ----
         holder.b.body.textSize = prefs.msgTextSp

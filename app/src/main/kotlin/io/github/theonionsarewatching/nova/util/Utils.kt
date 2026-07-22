@@ -214,6 +214,35 @@ object MimeExt {
     }
 }
 
+object AudioSniff {
+    /** Some carriers (Verizon's MMSC notably) relabel audio parts with their
+     *  legacy audio/qcelp type. The bytes don't lie: identify the real format
+     *  from the file magic and return (extension, mime), or null if unknown. */
+    fun sniff(file: java.io.File): Pair<String, String>? {
+        return try {
+            val head = ByteArray(16)
+            val n = file.inputStream().use { it.read(head) }
+            if (n < 8) return null
+            fun startsWith(sig: String, at: Int = 0) =
+                head.size >= at + sig.length &&
+                    String(head, at, sig.length, Charsets.ISO_8859_1) == sig
+            when {
+                startsWith("#!AMR-WB") -> ".awb" to "audio/amr-wb"
+                startsWith("#!AMR") -> ".amr" to "audio/amr"
+                startsWith("ftyp", 4) -> ".m4a" to "audio/mp4"
+                startsWith("RIFF") && startsWith("QLCM", 8) -> ".qcp" to "audio/qcelp"
+                startsWith("RIFF") && startsWith("WAVE", 8) -> ".wav" to "audio/wav"
+                startsWith("OggS") -> ".ogg" to "audio/ogg"
+                startsWith("fLaC") -> ".flac" to "audio/flac"
+                startsWith("ID3") -> ".mp3" to "audio/mpeg"
+                (head[0].toInt() and 0xFF) == 0xFF &&
+                    (head[1].toInt() and 0xE0) == 0xE0 -> ".mp3" to "audio/mpeg"
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+}
+
 object ContactsHelper {
 
     data class Contact(val name: String, val number: String, val photoUri: String = "")
