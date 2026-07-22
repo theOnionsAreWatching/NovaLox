@@ -100,8 +100,12 @@ class Prefs(context: Context) {
     /** Spoof the MMS User-Agent + UAProf so Verizon's MMSC treats us as a
      *  modern handset and stops transcoding audio to QCELP / over-compressing
      *  images. Off by default; the value is the device model token. */
+    /** Container/codec for in-app voice notes: "m4a" (AAC, what modern
+     *  handsets send), "3gp" (AMR in a 3GPP container) or "amr" (raw AMR).
+     *  Raw AMR is what Verizon's MMSC most eagerly transcodes to QCELP. */
+    val voiceFormat: String get() = sp.getString("voice_format", "m4a") ?: "m4a"
     var mmsUaSpoof: Boolean
-        get() = sp.getBoolean("mms_ua_spoof", false)
+        get() = sp.getBoolean("mms_ua_spoof", true)
         set(v) { sp.edit().putBoolean("mms_ua_spoof", v).apply() }
     var snippetWordsFixed: Boolean
         get() = sp.getBoolean("snippet_words_fixed", false)

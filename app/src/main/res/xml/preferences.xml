@@ -110,7 +110,15 @@
             android:key="mms_ua_spoof"
             android:title="@string/pref_mms_ua"
             android:summary="@string/pref_mms_ua_summary"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
+        <ListPreference
+            app:iconSpaceReserved="false"
+            android:key="voice_format"
+            android:title="@string/pref_voice_format"
+            android:entries="@array/voice_format_entries"
+            android:entryValues="@array/voice_format_values"
+            android:defaultValue="m4a"
+            android:summary="%s" />
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="default_group_mode"

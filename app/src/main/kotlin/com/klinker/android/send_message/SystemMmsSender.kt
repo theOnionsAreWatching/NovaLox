@@ -160,6 +160,14 @@ object SystemMmsSender {
                 SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
                 io.github.theonionsarewatching.nova.util.CarrierMms.limits(context).maxBytes
             )
+            // Carrier transcoding (Verizon -> QCELP audio, heavy image
+            // recompression) is driven by the capabilities we advertise. These
+            // are THE keys the platform MmsService injects into the outbound
+            // HTTP headers — the same channel Verizon Message+ uses. The
+            // library never passes them, which is why setting MmsConfig's
+            // static UA had no effect on the wire.
+            io.github.theonionsarewatching.nova.util.MmsUserAgent
+                .applyToOverrides(context, this)
         }
 
         val sentIntent = Intent(

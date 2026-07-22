@@ -23,7 +23,13 @@ object AudioRecorderDialog {
         val dir = File(activity.filesDir, "parts").apply { mkdirs() }
         val stamp = java.text.SimpleDateFormat("HHmmss", java.util.Locale.US)
             .format(java.util.Date())
-        val outFile = File(dir, "Recording_${stamp}_out_${System.currentTimeMillis()}.amr")
+        // format is user-selectable: raw AMR is the one carriers transcode
+        val fmt = io.github.theonionsarewatching.nova.util.Prefs.get(activity).voiceFormat
+        val ext = when (fmt) { "amr" -> "amr"; "3gp" -> "3gp"; else -> "m4a" }
+        val mime = when (fmt) {
+            "amr" -> "audio/amr"; "3gp" -> "audio/3gpp"; else -> "audio/mp4"
+        }
+        val outFile = File(dir, "Recording_${stamp}_out_${System.currentTimeMillis()}.$ext")
 
         var dialogRef: AlertDialog? = null
         var recorder: MediaRecorder? = null
@@ -88,8 +94,22 @@ object AudioRecorderDialog {
                 @Suppress("DEPRECATION")
                 val r = MediaRecorder()
                 r.setAudioSource(MediaRecorder.AudioSource.MIC)
-                r.setOutputFormat(MediaRecorder.OutputFormat.AMR_NB)
-                r.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                when (fmt) {
+                    "amr" -> {
+                        r.setOutputFormat(MediaRecorder.OutputFormat.AMR_NB)
+                        r.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                    }
+                    "3gp" -> {
+                        r.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                        r.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                    }
+                    else -> {
+                        r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                        r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                        r.setAudioSamplingRate(44100)
+                        r.setAudioEncodingBitRate(64000)
+                    }
+                }
                 r.setOutputFile(outFile.absolutePath)
                 r.prepare()
                 r.start()
@@ -122,7 +142,7 @@ object AudioRecorderDialog {
                 stopRecording()
                 if (recorded) {
                     dialog.dismiss()
-                    onDone(outFile.absolutePath, "audio/amr", outFile.name)
+                    onDone(outFile.absolutePath, mime, outFile.name)
                 } else {
                     status.text = activity.getString(R.string.rec_nothing)
                 }

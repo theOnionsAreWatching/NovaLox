@@ -243,4 +243,14 @@
         <item>single</item>
         <item>per_convo</item>
     </string-array>
+    <string-array name="voice_format_entries">
+        <item>M4A / AAC (modern phones)</item>
+        <item>3GP / AMR</item>
+        <item>AMR (legacy)</item>
+    </string-array>
+    <string-array name="voice_format_values">
+        <item>m4a</item>
+        <item>3gp</item>
+        <item>amr</item>
+    </string-array>
 </resources>
