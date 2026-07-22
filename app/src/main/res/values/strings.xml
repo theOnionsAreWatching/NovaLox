@@ -549,9 +549,6 @@
     <string name="pref_notif_clear">Clear notification upon:</string>
     <string name="contact_create_new">Create new contact</string>
     <string name="contact_add_existing">Add to existing contact</string>
-    <string name="pref_softkeys_focusable">Softkeys reachable by D-pad</string>
-    <string name="pref_softkeys_focusable_summary">Let the arrow keys move onto the on-screen softkey labels</string>
-    <string name="softkeys_focusable_warning">The softkey labels will become extra stops for the arrow keys on every screen, which can make moving around slower. The physical softkeys keep working either way. Turn on?</string>
     <string name="pref_mms_profile">MMS client identity</string>
     <string name="pref_mms_profile_summary">How the app identifies itself to the carrier\u2019s picture-message server. If audio or pictures arrive degraded, try another identity.</string>
     <string name="pref_mms_custom_ua">Custom identity \u2014 User-Agent</string>
