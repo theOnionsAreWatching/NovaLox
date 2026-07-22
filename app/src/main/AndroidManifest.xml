@@ -142,11 +142,14 @@
             </intent-filter>
         </receiver>
 
-        <!-- 2) Incoming MMS WAP push: handled by the smsmms engine's PushReceiver,
-             which downloads the content and hands the persisted message to
-             .sms.MmsReceiver (located via the MMS_RECEIVED taskAffinity below) -->
+        <!-- 2) Incoming MMS WAP push: handled by OUR receiver, so the download
+             request carries our config overrides (User-Agent). The engine's
+             PushReceiver could only pass httpParams, which the platform does
+             not use as the UA - that was the cause of carrier-transcoded,
+             undecodable incoming audio. Post-download persistence is still the
+             engine's: we re-broadcast to .sms.MmsReceiver. -->
         <receiver
-            android:name="com.android.mms.transaction.PushReceiver"
+            android:name=".sms.MmsPushReceiver"
             android:exported="true"
             android:directBootAware="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
