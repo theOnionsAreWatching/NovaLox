@@ -104,13 +104,27 @@
             android:title="@string/respond_delivery"
             android:summary="@string/respond_delivery_summary"
             android:defaultValue="true" />
-        <SwitchPreferenceCompat
+        <ListPreference
             app:singleLineTitle="false"
             app:iconSpaceReserved="false"
-            android:key="mms_ua_spoof"
-            android:title="@string/pref_mms_ua"
-            android:summary="@string/pref_mms_ua_summary"
-            android:defaultValue="true" />
+            android:key="mms_client_profile"
+            android:title="@string/pref_mms_profile"
+            android:summary="@string/pref_mms_profile_summary"
+            android:entries="@array/mms_profile_entries"
+            android:entryValues="@array/mms_profile_values"
+            android:defaultValue="carrier" />
+        <EditTextPreference
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="mms_custom_ua"
+            android:title="@string/pref_mms_custom_ua"
+            android:summary="@string/pref_mms_custom_ua_summary" />
+        <EditTextPreference
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="mms_custom_uaprof"
+            android:title="@string/pref_mms_custom_uaprof"
+            android:summary="@string/pref_mms_custom_uaprof_summary" />
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="voice_format"

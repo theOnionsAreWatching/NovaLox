@@ -104,9 +104,19 @@ class Prefs(context: Context) {
      *  handsets send), "3gp" (AMR in a 3GPP container) or "amr" (raw AMR).
      *  Raw AMR is what Verizon's MMSC most eagerly transcodes to QCELP. */
     val voiceFormat: String get() = sp.getString("voice_format", "m4a") ?: "m4a"
-    var mmsUaSpoof: Boolean
-        get() = sp.getBoolean("mms_ua_spoof", true)
-        set(v) { sp.edit().putBoolean("mms_ua_spoof", v).apply() }
+    // 0.9.52: the boolean spoof switch became a profile picker. Migration:
+    // an existing explicit OFF carries over; everything else starts on the
+    // carrier identity (the previous behavior).
+    val mmsClientProfile: String
+        get() {
+            val v = sp.getString("mms_client_profile", null)
+            if (v != null) return v
+            return if (sp.getBoolean("mms_ua_spoof", true)) "carrier" else "off"
+        }
+    val mmsCustomUa: String
+        get() = sp.getString("mms_custom_ua", "") ?: ""
+    val mmsCustomUaProf: String
+        get() = sp.getString("mms_custom_uaprof", "") ?: ""
     var phantomsPurged: Boolean
         get() = sp.getBoolean("phantoms_purged", false)
         set(v) { sp.edit().putBoolean("phantoms_purged", v).apply() }

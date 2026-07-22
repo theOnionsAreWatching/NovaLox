@@ -548,7 +548,11 @@
     <string name="close">Close</string>
 
     <!-- v0.9.45 UA additions -->
-    <string name="pref_mms_ua">Carrier MMS compatibility</string>
-    <string name="pref_mms_ua_summary">Identify to the carrier the same way its own messaging app does, so incoming audio isn\u2019t converted to an unplayable format and pictures are less compressed. Currently applies on Verizon and its resellers.</string>
+    <string name="pref_mms_profile">MMS client identity</string>
+    <string name="pref_mms_profile_summary">How the app identifies itself to the carrier\u2019s picture-message server. The server converts audio and pictures down to what it thinks this client can play \u2014 an identity it recognizes gets original quality. If audio arrives unplayable, try another identity.</string>
+    <string name="pref_mms_custom_ua">Custom identity \u2014 User-Agent</string>
+    <string name="pref_mms_custom_ua_summary">Used when the identity above is Custom. Example: vzmmms1.0</string>
+    <string name="pref_mms_custom_uaprof">Custom identity \u2014 profile URL</string>
+    <string name="pref_mms_custom_uaprof_summary">Optional capability profile URL (x-wap-profile) sent with the custom identity.</string>
     <string name="pref_voice_format">Voice note format</string>
 </resources>

@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="mms_profile_entries">
+        <item>Off</item>
+        <item>Carrier app (Verizon SIMs)</item>
+        <item>Android default</item>
+        <item>Samsung Galaxy</item>
+        <item>Custom\u2026</item>
+    </string-array>
+    <string-array name="mms_profile_values">
+        <item>off</item>
+        <item>carrier</item>
+        <item>aosp</item>
+        <item>samsung</item>
+        <item>custom</item>
+    </string-array>
+
     <string-array name="theme_entries">
         <item>Follow system</item>
         <item>Light</item>

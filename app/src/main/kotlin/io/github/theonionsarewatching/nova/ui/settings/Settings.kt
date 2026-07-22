@@ -255,15 +255,20 @@ class SettingsActivity : BaseActivity() {
                 } catch (_: Exception) { "" }
                 pref.summary = getString(R.string.about_summary_fmt, v)
             }
-            findPreference<androidx.preference.SwitchPreferenceCompat>("mms_ua_spoof")
-                ?.setOnPreferenceChangeListener { _, _ ->
-                    // re-seed the MMS config immediately; also applied at startup
-                    view?.post {
-                        io.github.theonionsarewatching.nova.util.MmsUserAgent
-                            .applyToConfig(requireContext())
-                    }
-                    true
+            val reseedIdentity = androidx.preference.Preference.OnPreferenceChangeListener { _, _ ->
+                // re-seed the MMS config immediately; also applied at startup
+                view?.post {
+                    io.github.theonionsarewatching.nova.util.MmsUserAgent
+                        .applyToConfig(requireContext())
                 }
+                true
+            }
+            findPreference<androidx.preference.ListPreference>("mms_client_profile")
+                ?.onPreferenceChangeListener = reseedIdentity
+            findPreference<androidx.preference.EditTextPreference>("mms_custom_ua")
+                ?.onPreferenceChangeListener = reseedIdentity
+            findPreference<androidx.preference.EditTextPreference>("mms_custom_uaprof")
+                ?.onPreferenceChangeListener = reseedIdentity
             find("sent_color") {
                 val act = requireActivity()
                 io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(act) { hex ->

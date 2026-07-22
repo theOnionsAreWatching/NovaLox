@@ -5,30 +5,37 @@ import android.os.Bundle
 import android.telephony.SmsManager
 
 /**
- * Carrier MMS compatibility.
+ * Carrier MMS compatibility — the client identity presented to the MMSC.
  *
  * FIELD EVIDENCE (captured from platform MmsService logs while Verizon's own
  * Message+ app received an MMS):
  *
  *     HTTP: User-Agent=vzmmms1.0
  *     mms config: userAgent=  uaProfUrl=  uaProfTagName=Profile
- *                 httpParams=X-VzW-MDN: 1##LINE1NOCOUNTRYCODE##
  *
- * Message+ presents the CARRIER'S OWN client UA and sends no UAProf at all.
- * Verizon's MMSC serves original audio to that client, and transcodes to QCELP
- * (audio/vnd.qcelp — unplayable on most handsets) for anything else. This is
- * why incoming audio, including plain MP3s from other senders, arrives dead.
+ * MMSCs run content adaptation: they transcode media DOWN to what they think
+ * the receiving client can play, judged by its User-Agent and UAProf
+ * (capability profile) headers. A client the MMSC doesn't recognize AND that
+ * presents no capability profile gets the lowest common denominator — on
+ * Verizon that is QCELP audio, unplayable on most handsets. This is how
+ * Handcent's "profile spoofing" works: it presents a known device identity
+ * with a rich capability profile, and the MMSC serves original media.
  *
- * So the fix is not "look modern" — it is to present the exact client string
- * the carrier's MMSC treats as first-class, on BOTH legs:
+ * 0.9.52: the identity is now a user-selectable profile (Settings ->
+ * "MMS client identity"), because which identity a given MMSC honors is
+ * empirical:
  *
- *   SEND     — our own sender passes config overrides directly.
- *   DOWNLOAD — the engine's download path forwards only MMS_CONFIG_HTTP_PARAMS,
- *              so the UA rides in there as an extra header (the platform's
- *              extra-header pass uses setRequestProperty, which overrides the
- *              User-Agent it set earlier). The carrier's own httpParams are
- *              preserved and merged, so required headers like X-VzW-MDN and
- *              their ##LINE1## macros keep working.
+ *   carrier — the carrier app's own token (vzmmms1.0 on Verizon SIMs; no-op
+ *             on other carriers). The MMSC treats its own client first-class.
+ *   aosp    — stock Android Messaging's classic identity with Google's
+ *             capability profile URL.
+ *   samsung — a current Galaxy handset identity with Samsung's published
+ *             UAProf, advertising AMR/AAC/MP3 and large messages.
+ *   custom  — user-entered UA and UAProf URL, Handcent-style.
+ *
+ * Applied on BOTH legs: SEND via SystemMmsSender's overrides, DOWNLOAD via
+ * MmsPushReceiver's overrides (the platform merges caller overrides with
+ * mmsConfig.putAll — verified in MmsService.java).
  */
 object MmsUserAgent {
 
@@ -46,29 +53,49 @@ object MmsUserAgent {
         val uaProfTagName: String
     )
 
-    /** Known-good client identities, taken from each carrier's own app. */
+    private fun simIsVerizon(context: Context): Boolean = try {
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE)
+            as android.telephony.TelephonyManager
+        tm.simOperator.orEmpty() in VERIZON
+    } catch (_: Exception) { false }
+
+    /** The selected client identity, or null when off / not applicable. */
     private fun profileFor(context: Context): Profile? {
-        val mccmnc = try {
-            val tm = context.getSystemService(Context.TELEPHONY_SERVICE)
-                as android.telephony.TelephonyManager
-            tm.simOperator.orEmpty()
-        } catch (_: Exception) { "" }
-        return when {
-            mccmnc in VERIZON -> Profile("vzmmms1.0", "", "Profile")
+        val prefs = Prefs.get(context)
+        return when (prefs.mmsClientProfile) {
+            "off" -> null
+            "carrier" ->
+                if (simIsVerizon(context)) Profile("vzmmms1.0", "", "Profile")
+                else null
+            "aosp" -> Profile(
+                "Android-Mms/2.0",
+                "http://www.google.com/oha/rdf/ua-profile-kila.xml",
+                "x-wap-profile"
+            )
+            "samsung" -> Profile(
+                "SAMSUNG-SM-G991U",
+                "http://wap.samsungmobile.com/uaprof/SM-G991U.xml",
+                "x-wap-profile"
+            )
+            "custom" -> {
+                val ua = prefs.mmsCustomUa.trim()
+                if (ua.isEmpty()) null
+                else Profile(ua, prefs.mmsCustomUaProf.trim(), "x-wap-profile")
+            }
             else -> null
         }
     }
 
-    private fun enabled(context: Context) = Prefs.get(context).mmsUaSpoof
-
-    /** SEND path: overrides are honored directly by the platform MmsService. */
+    /** Overrides are honored directly by the platform MmsService on both legs. */
     fun applyToOverrides(context: Context, b: Bundle) {
-        if (!enabled(context)) return
         val p = profileFor(context) ?: return
         b.putString(SmsManager.MMS_CONFIG_USER_AGENT, p.userAgent)
         b.putString(SmsManager.MMS_CONFIG_UA_PROF_URL, p.uaProfUrl)
         b.putString(SmsManager.MMS_CONFIG_UA_PROF_TAG_NAME, p.uaProfTagName)
-        DiagLog.log(context, "mms-ua", "send UA=${p.userAgent} uaProf=<${p.uaProfUrl}>")
+        DiagLog.log(
+            context, "mms-ua",
+            "identity UA=${p.userAgent} uaProf=<${p.uaProfUrl}>"
+        )
     }
 
     /** The carrier's own httpParams, so required headers survive our merge. */
@@ -79,14 +106,11 @@ object MmsUserAgent {
     } catch (_: Exception) { null }
 
     /**
-     * DOWNLOAD path: inject the UA as an extra header through httpParams.
-     * MmsConfig.mHttpParams has no public setter (it is normally filled from
-     * carrier XML), so it is set reflectively. MmsConfig.init() only assigns
-     * keys present in its XML — httpParams is not among them — so the value
-     * survives the init() call the push receiver makes before each download.
+     * Engine-path fallback (any residual download or legacy transaction the
+     * engine still runs): seed its static MmsConfig so those requests carry
+     * the same identity. Our own send and download paths do not need this.
      */
     fun applyToConfig(context: Context) {
-        if (!enabled(context)) return
         val p = profileFor(context) ?: return
         try {
             com.android.mms.MmsConfig.setUserAgent(p.userAgent)
@@ -100,11 +124,7 @@ object MmsUserAgent {
             val f = com.android.mms.MmsConfig::class.java.getDeclaredField("mHttpParams")
             f.isAccessible = true
             f.set(null, merged)
-            DiagLog.log(
-                context, "mms-ua",
-                "download UA=${p.userAgent} (via httpParams; platform applies " +
-                    "extra headers AFTER its own User-Agent, so this wins) params=$merged"
-            )
+            DiagLog.log(context, "mms-ua", "engine config seeded UA=${p.userAgent}")
         } catch (e: Exception) {
             DiagLog.log(context, "mms-ua", "httpParams inject failed: ${e.message}")
         }
