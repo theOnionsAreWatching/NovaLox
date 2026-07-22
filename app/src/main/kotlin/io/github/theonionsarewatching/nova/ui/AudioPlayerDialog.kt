@@ -65,7 +65,13 @@ object AudioPlayerDialog {
             if (prepared) return true
             return try {
                 val mp = MediaPlayer()
-                mp.setDataSource(path)
+                // setDataSource(FileDescriptor) makes the decoder read the
+                // container magic instead of keying off the .qcp extension —
+                // Qualcomm devices decode QCELP in hardware this way even when
+                // an extension-based open would be refused.
+                java.io.FileInputStream(java.io.File(path)).use { fis ->
+                    mp.setDataSource(fis.fd)
+                }
                 mp.prepare()
                 mp.setOnCompletionListener {
                     toggle.text = activity.getString(R.string.player_play)

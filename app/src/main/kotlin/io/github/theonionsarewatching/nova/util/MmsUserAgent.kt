@@ -35,16 +35,31 @@ object MmsUserAgent {
         }
     }
 
-    /** Applied once at startup: seed the static config the download path reads. */
+    /** Seed the MMS config. The system-sending path (both send AND download)
+     *  reads its wire headers ONLY from MmsConfig.getHttpParams(), whose field
+     *  has no public setter — so we set it reflectively. The public
+     *  setUserAgent/setUaProfUrl only feed the legacy HttpClient path, but we
+     *  set them too for completeness. */
     fun applyToConfig(context: Context) {
         if (!Prefs.get(context).mmsUaSpoof) return
+        val ua = UA
+        val prof = uaProfUrl()
         try {
-            com.android.mms.MmsConfig.setUserAgent(UA)
-            com.android.mms.MmsConfig.setUaProfUrl(uaProfUrl())
+            com.android.mms.MmsConfig.setUserAgent(ua)
+            com.android.mms.MmsConfig.setUaProfUrl(prof)
             com.android.mms.MmsConfig.setUaProfTagName("x-wap-profile")
-            DiagLog.log(context, "mms-ua", "UA spoof active: UA=$UA UAProf=${uaProfUrl()}")
+        } catch (_: Exception) {}
+        // the real channel: httpParams, injected reflectively. Pipe-delimited
+        // name:value pairs — the platform MmsService reads User-Agent and
+        // x-wap-profile out of these when the app supplies config overrides.
+        try {
+            val params = "User-Agent:$ua|x-wap-profile:$prof"
+            val f = com.android.mms.MmsConfig::class.java.getDeclaredField("mHttpParams")
+            f.isAccessible = true
+            f.set(null, params)
+            DiagLog.log(context, "mms-ua", "httpParams set: $params")
         } catch (e: Exception) {
-            DiagLog.log(context, "mms-ua", "config set failed: ${e.message}")
+            DiagLog.log(context, "mms-ua", "httpParams reflect failed: ${e.message}")
         }
     }
 
