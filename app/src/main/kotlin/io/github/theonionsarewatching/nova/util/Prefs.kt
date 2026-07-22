@@ -107,6 +107,9 @@ class Prefs(context: Context) {
     var mmsUaSpoof: Boolean
         get() = sp.getBoolean("mms_ua_spoof", true)
         set(v) { sp.edit().putBoolean("mms_ua_spoof", v).apply() }
+    var phantomsPurged: Boolean
+        get() = sp.getBoolean("phantoms_purged", false)
+        set(v) { sp.edit().putBoolean("phantoms_purged", v).apply() }
     var snippetWordsFixed: Boolean
         get() = sp.getBoolean("snippet_words_fixed", false)
         set(v) { sp.edit().putBoolean("snippet_words_fixed", v).apply() }

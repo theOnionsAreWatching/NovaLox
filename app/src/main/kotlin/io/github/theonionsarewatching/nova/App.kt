@@ -31,6 +31,15 @@ class App : Application(), ImageLoaderFactory {
         // pre-0.9.41 conversations stored "[Photo]"-style snippets; recompute
         // them once so the new italic words show everywhere
         val prefs0 = io.github.theonionsarewatching.nova.util.Prefs.get(this)
+        if (!prefs0.phantomsPurged) {
+            val repoP = io.github.theonionsarewatching.nova.data.Repo.get(this)
+            repoP.scope.launch {
+                try {
+                    repoP.purgePhantomPlaceholders()
+                    prefs0.phantomsPurged = true
+                } catch (_: Exception) {}
+            }
+        }
         if (!prefs0.snippetWordsFixed) {
             val repo0 = io.github.theonionsarewatching.nova.data.Repo.get(this)
             repo0.scope.launch {

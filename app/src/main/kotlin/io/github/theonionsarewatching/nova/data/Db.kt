@@ -308,6 +308,9 @@ interface MessageDao {
     @Query("UPDATE messages SET read = 1 WHERE read = 0")
     suspend fun markAllRead()
 
+    @Query("SELECT * FROM messages WHERE isMms = 1 AND body = :placeholder AND deletedAt IS NULL")
+    suspend fun placeholderMms(placeholder: String): List<MessageEntity>
+
     @Query(
         """UPDATE messages SET read = 1 WHERE convoId = :convoId AND read = 0
            AND (date < :date OR (date = :date AND id <= :id))"""

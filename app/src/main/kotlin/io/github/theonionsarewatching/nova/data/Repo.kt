@@ -319,22 +319,42 @@ class Repo private constructor(private val context: Context) {
         if (mType == 132 && !trId.isNullOrBlank()) {
             try {
                 var alreadyHave = false
+                var existingMsgId = 0L
                 resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
                     "m_type = 132 AND tr_id = ? AND _id != ?",
                     arrayOf(trId, mmsId.toString()), null)?.use { c ->
                     while (c.moveToNext()) {
-                        if (db.messages().byTelephonyMms(c.getLong(0)) != null) {
+                        db.messages().byTelephonyMms(c.getLong(0))?.let { existing ->
                             alreadyHave = true
+                            existingMsgId = existing.id
                         }
                     }
                 }
                 if (alreadyHave) {
-                    io.github.theonionsarewatching.nova.util.DiagLog.log(
-                        context, "mms-ingest",
-                        "duplicate incoming copy tr_id=$trId tid=$mmsId — deleted (carrier push retry)"
-                    )
-                    try { resolver.delete(Uri.parse("content://mms/$mmsId"), null, null) } catch (_: Exception) {}
-                    return null
+                    // The carrier's push retry can deliver the SAME message a
+                    // second time TRANSCODED DIFFERENTLY — field logs showed one
+                    // copy as audio/vnd.qcelp (undecodable on most phones) and
+                    // the retry as audio/amr seconds later. Blindly keeping the
+                    // first copy threw the playable one away. Keep whichever
+                    // copy has usable audio.
+                    val newIsBetter = copyHasPlayableAudio(mmsId) &&
+                        !messageHasPlayableAudio(existingMsgId)
+                    if (newIsBetter) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-ingest",
+                            "duplicate tr_id=$trId tid=$mmsId has PLAYABLE audio while the " +
+                                "stored copy is undecodable — replacing the stored copy"
+                        )
+                        try { deleteMessage(existingMsgId) } catch (_: Exception) {}
+                        // fall through and ingest this better copy
+                    } else {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-ingest",
+                            "duplicate incoming copy tr_id=$trId tid=$mmsId — deleted (carrier push retry)"
+                        )
+                        try { resolver.delete(Uri.parse("content://mms/$mmsId"), null, null) } catch (_: Exception) {}
+                        return null
+                    }
                 }
             } catch (_: Exception) {}
             try {
@@ -570,6 +590,69 @@ class Repo private constructor(private val context: Context) {
         val fromName = name.substringAfterLast('.', "")
         if (fromName.isNotBlank() && fromName.length <= 4) return ".$fromName"
         return io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
+    }
+
+    /** Audio the phone can actually decode: anything except the carrier's
+     *  legacy QCELP conversion. */
+    private fun playableAudioMime(mime: String?): Boolean {
+        val m = (mime ?: "").lowercase()
+        if (!m.startsWith("audio")) return false
+        return !m.contains("qcelp") && !m.contains("qcp") && !m.contains("evrc")
+    }
+
+    /** Does this not-yet-ingested system MMS row carry playable audio? */
+    private fun copyHasPlayableAudio(mmsId: Long): Boolean {
+        var sawAudio = false
+        var sawPlayable = false
+        try {
+            context.contentResolver.query(
+                Uri.parse("content://mms/part"), arrayOf("ct"),
+                "mid = ?", arrayOf(mmsId.toString()), null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val ct = c.getString(0)
+                    if ((ct ?: "").startsWith("audio", ignoreCase = true)) {
+                        sawAudio = true
+                        if (playableAudioMime(ct)) sawPlayable = true
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return sawAudio && sawPlayable
+    }
+
+    /** Does the stored message have playable audio? (false when its only
+     *  audio part is the undecodable carrier conversion) */
+    private suspend fun messageHasPlayableAudio(messageId: Long): Boolean {
+        if (messageId <= 0L) return false
+        return try {
+            val parts = db.parts().byMessage(messageId)
+            val audio = parts.filter { (it.mimeType).startsWith("audio", ignoreCase = true) }
+            audio.isNotEmpty() && audio.any { playableAudioMime(it.mimeType) }
+        } catch (_: Exception) { false }
+    }
+
+    /** One-time cleanup: phantom "not downloaded" rows created by older builds
+     *  survive in the database even after the code stopped making them. */
+    suspend fun purgePhantomPlaceholders(): Int {
+        if (!Prefs.get(context).autoDownloadMms) return 0
+        val placeholder = context.getString(
+            io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
+        var removed = 0
+        try {
+            for (m in db.messages().placeholderMms(placeholder)) {
+                if (db.parts().byMessage(m.id).isEmpty()) {
+                    deleteMessage(m.id)
+                    removed++
+                }
+            }
+        } catch (_: Exception) {}
+        if (removed > 0) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest", "purged $removed phantom placeholder message(s)"
+            )
+        }
+        return removed
     }
 
     // ============================== Keywords / blocking ==============================
