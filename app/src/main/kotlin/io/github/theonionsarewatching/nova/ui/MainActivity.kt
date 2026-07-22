@@ -115,8 +115,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     override fun onResume() {
         super.onResume()
         // arriving at the conversation list dismisses everything by default;
-        // the setting keeps them until each thread is opened
-        if (!prefs.notifPersist) {
+        // the other mode clears each thread's notification only when opened
+        if (prefs.notifClearMode == "app") {
             try {
                 androidx.core.app.NotificationManagerCompat.from(this).cancelAll()
             } catch (_: Exception) {}
@@ -561,12 +561,32 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 }
             } else if (number.isNotBlank()) {
                 items += getString(R.string.add_to_contacts) to {
-                    try {
-                        startActivity(Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
-                            type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
-                            putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
-                        })
-                    } catch (_: Exception) {}
+                    // some contacts apps show only the pick-existing list for
+                    // INSERT_OR_EDIT, with no create-new row; offer the choice
+                    // ourselves so both paths always exist
+                    val labels = arrayOf(
+                        getString(R.string.contact_create_new),
+                        getString(R.string.contact_add_existing)
+                    )
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle(number)
+                        .setItems(labels) { _, which ->
+                            try {
+                                if (which == 0) {
+                                    startActivity(Intent(Intent.ACTION_INSERT).apply {
+                                        type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
+                                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                                    })
+                                } else {
+                                    startActivity(Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+                                        type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
+                                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                                    })
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
                 }
             }
         }

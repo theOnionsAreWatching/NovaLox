@@ -96,7 +96,15 @@ class Prefs(context: Context) {
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"
-    val notifPersist: Boolean get() = sp.getBoolean("notif_persist", false)
+    // migration: the old "keep until conversation opened" toggle maps to
+    // clearing on conversation open
+    val notifClearMode: String
+        get() {
+            val v = sp.getString("notif_clear_mode", null)
+            if (v != null) return v
+            return if (sp.getBoolean("notif_persist", false)) "conversation" else "app"
+        }
+    val softkeysFocusable: Boolean get() = sp.getBoolean("softkeys_focusable", false)
     /** Spoof the MMS User-Agent + UAProf so Verizon's MMSC treats us as a
      *  modern handset and stops transcoding audio to QCELP / over-compressing
      *  images. Off by default; the value is the device model token. */

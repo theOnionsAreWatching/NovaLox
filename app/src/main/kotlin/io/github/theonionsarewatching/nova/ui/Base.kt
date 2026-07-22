@@ -314,6 +314,8 @@ object AttachOrPaste {
         dialog = android.app.AlertDialog.Builder(activity)
             .setView(column)
             .setNegativeButton(android.R.string.cancel, null)
+            // a stray MENU event must never dismiss this menu (Sonim XP3plus)
+            .setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_MENU }
             .show()
     }
 }
@@ -352,7 +354,17 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
      *  a just-finished setup takes effect without restarting the app). */
     fun refreshVisibility() {
         binding.root.visibility = if (shouldShow()) View.VISIBLE else View.GONE
-
+        // optional: let the D-pad land on the on-screen softkeys (off by default;
+        // it inserts three extra focus stops into every screen's navigation)
+        val focusable = prefs.softkeysFocusable
+        listOf(binding.softLeft, binding.softCenter, binding.softRight).forEach { v ->
+            v.isFocusable = focusable
+            v.isClickable = focusable
+        }
+        if (focusable && binding.softLeft.getTag(R.id.softkey_focus_wired) == null) {
+            binding.softLeft.setTag(R.id.softkey_focus_wired, true)
+            ThemeUtils.applyFocusHighlight(binding.softLeft, binding.softCenter, binding.softRight)
+        }
     }
 
     fun set(left: String?, center: String?, right: String?,
@@ -368,19 +380,24 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
     }
 
     /** Returns true when the event was consumed as a softkey. MENU maps to the menu action
-     *  (defaults to the left action when no separate menu action is set). */
+     *  (defaults to the left action when no separate menu action is set).
+     *
+     *  Actions fire on key UP, not DOWN. Firing on DOWN opened a dialog whose
+     *  window then received the same keypress's UP event — and a MENU key-up
+     *  dismisses dialog panels. On most phones the race is lost slowly enough
+     *  to go unnoticed; on the Sonim XP3plus 5G it closed the just-opened
+     *  options menu instantly (visible as a flash). Consuming DOWN silently
+     *  and acting on UP means the dialog only exists after the keypress is
+     *  fully over. */
     fun handleKey(event: KeyEvent): Boolean {
-        if (event.action != KeyEvent.ACTION_DOWN) {
-            // consume matching UP events too so they don't leak
-            return event.action == KeyEvent.ACTION_UP && codeMatches(event.keyCode)
+        if (!codeMatches(event.keyCode)) return false
+        if (event.action != KeyEvent.ACTION_UP) return true
+        when (event.keyCode) {
+            prefs.softkeyLeftCode -> leftAction?.invoke()
+            prefs.softkeyRightCode -> rightAction?.invoke()
+            KeyEvent.KEYCODE_MENU -> menuAction?.invoke()
         }
-        if (event.repeatCount > 0) return codeMatches(event.keyCode)
-        return when (event.keyCode) {
-            prefs.softkeyLeftCode -> { leftAction?.invoke(); leftAction != null }
-            prefs.softkeyRightCode -> { rightAction?.invoke(); rightAction != null }
-            KeyEvent.KEYCODE_MENU -> { menuAction?.invoke(); menuAction != null }
-            else -> false
-        }
+        return true
     }
 
     private fun codeMatches(code: Int): Boolean =

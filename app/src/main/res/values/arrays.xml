@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="notif_clear_entries">
+        <item>Opening app</item>
+        <item>Opening conversation</item>
+    </string-array>
+    <string-array name="notif_clear_values">
+        <item>app</item>
+        <item>conversation</item>
+    </string-array>
+
     <string-array name="mms_profile_entries">
         <item>Off</item>
         <item>Carrier app (Verizon SIMs)</item>

@@ -255,7 +255,21 @@ class SettingsActivity : BaseActivity() {
                 } catch (_: Exception) { "" }
                 pref.summary = getString(R.string.about_summary_fmt, v)
             }
-            val reseedIdentity = androidx.preference.Preference.OnPreferenceChangeListener { _, _ ->
+            val customUaPref =
+                findPreference<androidx.preference.EditTextPreference>("mms_custom_ua")
+            val customUaProfPref =
+                findPreference<androidx.preference.EditTextPreference>("mms_custom_uaprof")
+            val profilePref =
+                findPreference<androidx.preference.ListPreference>("mms_client_profile")
+            // the custom fields belong to the picker: shown only when Custom is chosen
+            fun showCustomFields(value: String?) {
+                val custom = value == "custom"
+                customUaPref?.isVisible = custom
+                customUaProfPref?.isVisible = custom
+            }
+            showCustomFields(profilePref?.value)
+            val reseedIdentity = androidx.preference.Preference.OnPreferenceChangeListener { pref, newValue ->
+                if (pref.key == "mms_client_profile") showCustomFields(newValue as? String)
                 // re-seed the MMS config immediately; also applied at startup
                 view?.post {
                     io.github.theonionsarewatching.nova.util.MmsUserAgent
@@ -263,12 +277,23 @@ class SettingsActivity : BaseActivity() {
                 }
                 true
             }
-            findPreference<androidx.preference.ListPreference>("mms_client_profile")
-                ?.onPreferenceChangeListener = reseedIdentity
-            findPreference<androidx.preference.EditTextPreference>("mms_custom_ua")
-                ?.onPreferenceChangeListener = reseedIdentity
-            findPreference<androidx.preference.EditTextPreference>("mms_custom_uaprof")
-                ?.onPreferenceChangeListener = reseedIdentity
+            profilePref?.onPreferenceChangeListener = reseedIdentity
+            customUaPref?.onPreferenceChangeListener = reseedIdentity
+            customUaProfPref?.onPreferenceChangeListener = reseedIdentity
+            findPreference<androidx.preference.SwitchPreferenceCompat>("softkeys_focusable")
+                ?.setOnPreferenceChangeListener { pref, newValue ->
+                    if (newValue == true) {
+                        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.pref_softkeys_focusable)
+                            .setMessage(R.string.softkeys_focusable_warning)
+                            .setPositiveButton(android.R.string.ok) { _, _ ->
+                                (pref as androidx.preference.SwitchPreferenceCompat).isChecked = true
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                        false
+                    } else true
+                }
             find("sent_color") {
                 val act = requireActivity()
                 io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(act) { hex ->

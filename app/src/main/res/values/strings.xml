@@ -507,8 +507,6 @@
     <string name="pref_sent_color_summary">Pick a color for your own bubbles</string>
     <string name="sent_color_set">Sent message color set</string>
     <string name="background_set">Background set</string>
-    <string name="pref_notif_persist">Keep notifications until the conversation is opened</string>
-    <string name="pref_notif_persist_summary">Off: opening the app clears all message notifications</string>
     <string name="pref_export_contacts">Export contacts</string>
     <string name="pref_export_contacts_summary">Save every contact to one .vcf file in Downloads</string>
     <string name="export_contacts_empty">No contacts to export</string>
@@ -548,8 +546,14 @@
     <string name="close">Close</string>
 
     <!-- v0.9.45 UA additions -->
+    <string name="pref_notif_clear">Clear notification upon:</string>
+    <string name="contact_create_new">Create new contact</string>
+    <string name="contact_add_existing">Add to existing contact</string>
+    <string name="pref_softkeys_focusable">Softkeys reachable by D-pad</string>
+    <string name="pref_softkeys_focusable_summary">Let the arrow keys move onto the on-screen softkey labels</string>
+    <string name="softkeys_focusable_warning">The softkey labels will become extra stops for the arrow keys on every screen, which can make moving around slower. The physical softkeys keep working either way. Turn on?</string>
     <string name="pref_mms_profile">MMS client identity</string>
-    <string name="pref_mms_profile_summary">How the app identifies itself to the carrier\u2019s picture-message server. The server converts audio and pictures down to what it thinks this client can play \u2014 an identity it recognizes gets original quality. If audio arrives unplayable, try another identity.</string>
+    <string name="pref_mms_profile_summary">How the app identifies itself to the carrier\u2019s picture-message server. If audio or pictures arrive degraded, try another identity.</string>
     <string name="pref_mms_custom_ua">Custom identity \u2014 User-Agent</string>
     <string name="pref_mms_custom_ua_summary">Used when the identity above is Custom. Example: vzmmms1.0</string>
     <string name="pref_mms_custom_uaprof">Custom identity \u2014 profile URL</string>
