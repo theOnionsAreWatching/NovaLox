@@ -291,7 +291,14 @@ class Repo private constructor(private val context: Context) {
         // when auto-download is ON, the notification-ind is transient bookkeeping —
         // the downloaded copy (132) arrives moments later. Ingesting it created a
         // phantom "not downloaded" message next to every MMS.
-        if (mType == 130 && Prefs.get(context).autoDownloadMms) return null
+        if (mType == 130) {
+            val auto = Prefs.get(context).autoDownloadMms
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest",
+                "notification-ind (m_type=130) mmsId=$mmsId tr_id=$trId autoDownload=$auto"
+            )
+            if (auto) return null
+        }
         val notDownloaded = mType == 130
         // the mms table also holds protocol rows with no content — delivery reports,
         // delivery-ind (134): the carrier's "your picture message was delivered"
@@ -429,6 +436,18 @@ class Repo private constructor(private val context: Context) {
             bodyText = if (bodyText.isBlank()) subject else subject + "\n" + bodyText
         }
         if (notDownloaded && bodyText.isBlank()) {
+            // second line of defence: the notification-ind skip above should
+            // already have returned, so reaching here with auto-download ON
+            // means another path ingested the stub. Log it and refuse to
+            // create the phantom message.
+            if (Prefs.get(context).autoDownloadMms) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "STUB SUPPRESSED: m_type=130 reached ingest with auto-download ON " +
+                        "(mmsId=$mmsId tr_id=$trId) — not creating placeholder"
+                )
+                return null
+            }
             bodyText = context.getString(io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
         }
 

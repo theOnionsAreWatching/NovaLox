@@ -100,7 +100,11 @@ object MmsUserAgent {
             val f = com.android.mms.MmsConfig::class.java.getDeclaredField("mHttpParams")
             f.isAccessible = true
             f.set(null, merged)
-            DiagLog.log(context, "mms-ua", "download httpParams=$merged")
+            DiagLog.log(
+                context, "mms-ua",
+                "download UA=${p.userAgent} (via httpParams; platform applies " +
+                    "extra headers AFTER its own User-Agent, so this wins) params=$merged"
+            )
         } catch (e: Exception) {
             DiagLog.log(context, "mms-ua", "httpParams inject failed: ${e.message}")
         }

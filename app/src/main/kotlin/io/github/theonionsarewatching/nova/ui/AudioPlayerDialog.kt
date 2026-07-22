@@ -18,7 +18,13 @@ import java.io.File
  */
 object AudioPlayerDialog {
 
-    fun show(activity: Activity, path: String, title: String, onOpenExternal: () -> Unit) {
+    fun show(
+        activity: Activity,
+        path: String,
+        title: String,
+        onOpenExternal: () -> Unit,
+        onSave: (() -> Unit)? = null
+    ) {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
         var player: MediaPlayer? = null
         var prepared = false
@@ -105,6 +111,7 @@ object AudioPlayerDialog {
         val dialog = AlertDialog.Builder(activity)
             .setTitle(title.ifBlank { File(path).name })
             .setView(column)
+            .setPositiveButton(R.string.save) { _, _ -> onSave?.invoke() }
             .setNeutralButton(R.string.player_open_with) { _, _ -> onOpenExternal() }
             .setNegativeButton(R.string.close, null)
             .create()

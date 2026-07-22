@@ -1051,8 +1051,22 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         if (part.isAudio()) {
             // in-app playback: deterministic on every phone, no chooser lottery
             io.github.theonionsarewatching.nova.ui.AudioPlayerDialog.show(
-                this, part.filePath, part.fileName
-            ) { openPartExternally(part) }
+                this, part.filePath, part.fileName,
+                onOpenExternal = { openPartExternally(part) },
+                onSave = {
+                    lifecycleScope.launch {
+                        val ok = io.github.theonionsarewatching.nova.ui.Saver.saveToDownloads(
+                            this@ThreadActivity, File(part.filePath),
+                            part.fileName, part.mimeType
+                        )
+                        android.widget.Toast.makeText(
+                            this@ThreadActivity,
+                            if (ok) R.string.saved_to_downloads else R.string.save_failed,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            )
             return
         }
         // vCards and other files: hand off to the system app for that type
