@@ -4,7 +4,7 @@
     android:viewportWidth="108" android:viewportHeight="108">
     <!-- content scaled into the adaptive-icon safe zone (center ~66dp) so the
          mask never clips it and it isn't jammed to the edges -->
-    <group android:scaleX="0.80" android:scaleY="0.80"
+    <group android:scaleX="0.95" android:scaleY="0.95"
         android:pivotX="54" android:pivotY="54">
         <!-- soft shadow -->
         <path android:fillColor="#26000000"

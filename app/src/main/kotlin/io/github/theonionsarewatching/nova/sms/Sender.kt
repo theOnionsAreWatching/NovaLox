@@ -210,6 +210,38 @@ object Sender {
             try {
                 val wantReport = Prefs.get(context).deliveryReports
                 val repo0 = Repo.get(context)
+                // a BROADCAST group must not become one group MMS — each
+                // recipient gets their own individual copy, exactly like
+                // broadcast SMS. Only GROUP_MMS mode sends the single shared
+                // message with everyone in To.
+                val broadcast = addresses.size > 1 && kotlinx.coroutines.runBlocking {
+                    val convo = repo0.db.messages().byId(messageId)
+                        ?.let { repo0.db.conversations().byId(it.convoId) }
+                    convo?.groupMode == io.github.theonionsarewatching.nova.data.GroupMode.BROADCAST
+                }
+                if (broadcast) {
+                    var firstTid = -1L
+                    for (addr in addresses) {
+                        val t = com.klinker.android.send_message.SystemMmsSender.send(
+                            context, messageId, text, listOf(addr), finalAtts,
+                            requestDeliveryReport = wantReport,
+                            requestReadReport = Prefs.get(context).requestReadReports,
+                            groupMms = false,
+                            linkRow = { linkedTid ->
+                                if (firstTid == -1L) {
+                                    firstTid = linkedTid
+                                    kotlinx.coroutines.runBlocking {
+                                        repo0.db.messages().setTelephonyId(messageId, linkedTid, true)
+                                    }
+                                }
+                            }
+                        )
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-send", "broadcast copy -> $addr tid=$t"
+                        )
+                    }
+                    return
+                }
                 val tid = com.klinker.android.send_message.SystemMmsSender.send(
                     context, messageId, text, addresses, finalAtts,
                     requestDeliveryReport = wantReport,

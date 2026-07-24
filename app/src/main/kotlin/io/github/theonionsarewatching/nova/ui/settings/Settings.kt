@@ -306,7 +306,39 @@ class SettingsActivity : BaseActivity() {
                     io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS, host
                 )
             }
-            find("about_footer") { showAboutDetails() }
+            find("auto_delete_keep_row") { promptAutoDeleteCount() }
+            findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
+                val version = try {
+                    requireContext().packageManager
+                        .getPackageInfo(requireContext().packageName, 0).versionName
+                } catch (_: Exception) { "" }
+                pref.summary = "NovaLox $version\nPolyForm Noncommercial 1.0.0\n" +
+                    "github.com/theOnionsAreWatching\nby theonionsarewatching"
+            }
+            find("about_footer") {
+                // seven taps in a row, each within 3 seconds of the last
+                val now = System.currentTimeMillis()
+                if (now - lastAboutTap > 3000L) aboutTaps = 0
+                lastAboutTap = now
+                aboutTaps++
+                if (aboutTaps >= 7) {
+                    aboutTaps = 0
+                    val tv = android.widget.TextView(requireContext()).apply {
+                        text = getString(R.string.onions_toast)
+                        gravity = android.view.Gravity.CENTER
+                        textSize = 16f
+                        setPadding(48, 28, 48, 28)
+                        setBackgroundColor(0xCC222222.toInt())
+                        setTextColor(0xFFFFFFFF.toInt())
+                    }
+                    @Suppress("DEPRECATION")
+                    Toast(requireContext()).apply {
+                        duration = Toast.LENGTH_LONG
+                        view = tv
+                        setGravity(android.view.Gravity.CENTER, 0, 0)
+                    }.show()
+                }
+            }
             // fill the About summary with the live version name
             findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
                 val v = try {
@@ -548,6 +580,9 @@ class SettingsActivity : BaseActivity() {
         }
 
         /** Accent picker with a color swatch beside each name. */
+        private var aboutTaps = 0
+        private var lastAboutTap = 0L
+
         private fun showAboutDetails() {
             val ctx = requireContext()
             val version = try {
@@ -582,6 +617,7 @@ class SettingsActivity : BaseActivity() {
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     val keep = input.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 1000
                     prefs.autoDeleteKeep = keep
+                    if (!prefs.autoDeleteOld) return@setPositiveButton
                     AlertDialog.Builder(ctx)
                         .setMessage(getString(R.string.auto_delete_apply_warning, keep))
                         .setPositiveButton(android.R.string.ok) { _, _ ->

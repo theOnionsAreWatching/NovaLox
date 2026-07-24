@@ -363,6 +363,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val anchor = rows.getOrNull(lastVis)?.msg
             val changed = if (anchor != null) {
                 repo.db.messages().markReadUpTo(convoId, anchor.date, anchor.id)
+            repo.sendPendingReadRecs(convoId)
             } else 0
             val left = repo.db.messages().unreadCount(convoId)
             binding.unreadChip.text = left.toString()
@@ -917,17 +918,36 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 71)
         }
-        try {
-            val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = mime
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            }
-            val chooser = Intent.createChooser(pick, getString(R.string.softkey_attach))
-            if (capture != null) {
-                chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(capture))
-            }
-            startActivityForResult(chooser, 201)
-        } catch (_: Exception) {}
+        // some keypad phones (Schok Classic Flip in the field) have no app
+        // registered for GET_CONTENT, so the chooser came up empty or threw —
+        // fall back to the classic gallery picker, then the documents UI
+        fun tryStart(i: Intent): Boolean = try {
+            startActivityForResult(i, 201); true
+        } catch (_: Exception) { false }
+        val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = mime
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        val chooser = Intent.createChooser(pick, getString(R.string.softkey_attach))
+        if (capture != null) {
+            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(capture))
+        }
+        val started = (pick.resolveActivity(packageManager) != null && tryStart(chooser)) ||
+            tryStart(Intent(Intent.ACTION_PICK).apply {
+                setDataAndType(
+                    if (mime.startsWith("video"))
+                        android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    else android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    mime
+                )
+            }) ||
+            tryStart(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = mime
+            })
+        if (!started) {
+            android.widget.Toast.makeText(this, R.string.no_gallery,
+                android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     /** In-app voice recording: the fleet's recorder apps don't implement the

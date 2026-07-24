@@ -1048,6 +1048,64 @@ class Repo private constructor(private val context: Context) {
 
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
+    /** Answer read-report requests: for incoming MMS in this conversation
+     *  whose sender asked for a read report (rr=128 on the telephony row),
+     *  send an M-Read-Rec.ind now that the user has read them. The provider
+     *  row's rr is set to 129 afterwards so each is answered exactly once. */
+    suspend fun sendPendingReadRecs(convoId: Long) {
+        if (!Prefs.get(context).respondReadReports) return
+        try {
+            val since = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
+            val msgs = db.messages().threadMessagesForDelete(convoId, 1)
+                .filter { !it.isMine && it.telephonyIsMms && it.date >= since }
+            for (m in msgs) {
+                val tid = m.telephonyId ?: continue
+                var mid: String? = null
+                var rr = -1
+                context.contentResolver.query(
+                    Uri.parse("content://mms"), arrayOf("m_id", "rr"),
+                    "_id = ?", arrayOf(tid.toString()), null
+                )?.use { c ->
+                    if (c.moveToFirst()) {
+                        mid = c.getString(0)
+                        rr = try { c.getInt(1) } catch (_: Exception) { -1 }
+                    }
+                }
+                if (rr != 128 || mid.isNullOrBlank()) continue
+                try {
+                    val from = com.google.android.mms.pdu_alt.EncodedStringValue("insert-address-token")
+                    val ind = com.google.android.mms.pdu_alt.ReadRecInd(
+                        from, mid!!.toByteArray(), 18, /* 1.2 */
+                        com.google.android.mms.pdu_alt.PduHeaders.READ_STATUS_READ
+                    )
+                    ind.to = arrayOf(com.google.android.mms.pdu_alt.EncodedStringValue(m.address))
+                    ind.date = System.currentTimeMillis() / 1000
+                    val bytes = com.google.android.mms.pdu_alt.PduComposer(context, ind).make()
+                        ?: continue
+                    val f = File(context.cacheDir, "read_rec_${System.currentTimeMillis()}")
+                    f.writeBytes(bytes)
+                    val uri = Uri.Builder()
+                        .authority(context.packageName + ".MmsFileProvider")
+                        .path(f.name).scheme(android.content.ContentResolver.SCHEME_CONTENT)
+                        .build()
+                    android.telephony.SmsManager.getDefault()
+                        .sendMultimediaMessage(context, uri, null, null, null)
+                    val cv = android.content.ContentValues(1).apply { put("rr", 129) }
+                    context.contentResolver.update(
+                        Uri.parse("content://mms/$tid"), cv, null, null
+                    )
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-delivery", "read-rec sent for m_id=$mid to ${m.address}"
+                    )
+                } catch (e: Exception) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-delivery", "read-rec failed: ${e.message}"
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     /** Delete downloaded MMS media files from app storage. Messages and their
      *  part rows are kept; the file re-downloads from the carrier when the
      *  message is next opened. Frees space without losing any conversation. */
@@ -1219,6 +1277,34 @@ class Repo private constructor(private val context: Context) {
                 delivered && m.status in listOf(MsgStatus.SENDING, MsgStatus.SENT) ->
                     setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
             }
+            // group message: record WHICH recipient this notice is about, from
+            // the indication's TO address row, so the meta line can say
+            // "Delivered to X \u00b7 Read by Y"
+            try {
+                if (m.address.contains(",") || m.address.contains(";")) {
+                    var who: String? = null
+                    context.contentResolver.query(
+                        Uri.parse("content://mms/$indId/addr"),
+                        arrayOf("address", "type"), null, null, null
+                    )?.use { c ->
+                        while (c.moveToNext()) {
+                            if (c.getInt(1) == 151) { who = c.getString(0); break }
+                        }
+                    }
+                    if (!who.isNullOrBlank()) {
+                        val key = PhoneUtils.normalize(who!!)
+                        val map = m.recipientStatuses.split(",")
+                            .filter { it.contains("=") }
+                            .associate { it.substringBefore("=") to it.substringAfter("=") }
+                            .toMutableMap()
+                        val mark = if (isRead) "R" else "D"
+                        if (!(map[key] == "R" && mark == "D")) map[key] = mark
+                        db.messages().setRecipientStatuses(
+                            m.id, map.entries.joinToString(",") { "${it.key}=${it.value}" }
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
             // applied: mark the indication row so no future pass re-runs it
             try {
                 val cv = android.content.ContentValues(1).apply { put("read", 1) }

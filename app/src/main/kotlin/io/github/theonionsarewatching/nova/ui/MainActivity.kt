@@ -505,17 +505,22 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     } else {
-                        // the old code inserted straight into the system store
-                        // and swallowed any failure, so a refusal looked like
-                        // "nothing happened"; now we always block locally and
-                        // report what actually happened
-                        val systemOk = repo.blockNumber(number)
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            if (systemOk) R.string.number_blocked
-                            else R.string.number_blocked_local,
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle(R.string.block_number)
+                            .setMessage(R.string.block_number_warning)
+                            .setPositiveButton(R.string.block_number) { _, _ ->
+                                lifecycleScope.launch {
+                                    val systemOk = repo.blockNumber(number)
+                                    android.widget.Toast.makeText(
+                                        this@MainActivity,
+                                        if (systemOk) R.string.number_blocked
+                                        else R.string.number_blocked_local,
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
                     }
                 }
             }

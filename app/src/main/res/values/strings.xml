@@ -340,6 +340,13 @@
     <string name="pref_delivery_group">Delivery &amp; read reports</string>
     <string name="pref_delivery_group_summary">Request and respond to delivery and read reports</string>
     <string name="pref_request_delivery">Request delivery reports</string>
+    <string name="pref_respond_read">Send read reports</string>
+    <string name="pref_respond_read_summary">When someone asks for a read report on a picture message, confirm once you\u2019ve read it</string>
+    <string name="delivered_to_n">Delivered to %1$d</string>
+    <string name="read_by_n">Read by %1$d</string>
+    <string name="auto_delete_count_summary">How many recent messages each conversation keeps when auto-delete is on</string>
+    <string name="invalid_recipient">Not a valid phone number or email: %1$s</string>
+    <string name="onions_toast">The Onions Are Watching\u2026\n\uD83D\uDC40 \uD83D\uDC40</string>
     <string name="pref_request_read">Request read reports (picture messages)</string>
     <string name="pref_request_read_summary">Ask the recipient\u2019s phone to confirm when a picture message is opened. Off by default: on some carriers this causes duplicate messages to appear. Read confirmations that arrive on their own are always shown either way.</string>
     <string name="pref_request_delivery_summary">Ask the carrier to confirm when your messages are delivered</string>

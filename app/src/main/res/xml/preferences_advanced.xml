@@ -23,6 +23,11 @@
         android:defaultValue="false" />
     <Preference
         app:iconSpaceReserved="false"
+        android:key="auto_delete_keep_row"
+        android:title="@string/auto_delete_count_title"
+        android:summary="@string/auto_delete_count_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
         android:key="clear_mms_cache"
         android:title="@string/pref_clear_cache"
         android:summary="@string/pref_clear_cache_summary" />

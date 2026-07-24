@@ -133,6 +133,58 @@ class ComposeActivity : BaseActivity() {
         return true
     }
 
+    /** A free-typed recipient must look like a phone number (3+ digits,
+     *  optional +()-. separators) or an email — random letters are refused. */
+    private fun isValidRecipient(s: String): Boolean {
+        val t = s.trim()
+        if (t.isEmpty()) return false
+        if (t.contains("@")) {
+            return Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(t)
+        }
+        if (!Regex("^[+]?[0-9()\\-\\s.]+$").matches(t)) return false
+        return t.count { it.isDigit() } >= 3
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // D-pad through the suggestion list: default focus search only reaches
+        // laid-out children, so focus escaped to the group-mode button after
+        // the last VISIBLE row and the rest of the list was unreachable. Move
+        // selection manually and scroll as needed.
+        if (event.action == android.view.KeyEvent.ACTION_DOWN &&
+            (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) &&
+            binding.suggestionList.visibility == android.view.View.VISIBLE
+        ) {
+            val focused = currentFocus
+            if (focused != null && isChildOf(focused, binding.suggestionList)) {
+                val holder = binding.suggestionList.findContainingViewHolder(focused)
+                val pos = holder?.bindingAdapterPosition ?: -1
+                val last = (binding.suggestionList.adapter?.itemCount ?: 0) - 1
+                val next = if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN)
+                    pos + 1 else pos - 1
+                if (pos >= 0 && next in 0..last) {
+                    binding.suggestionList.scrollToPosition(next)
+                    binding.suggestionList.post {
+                        binding.suggestionList
+                            .findViewHolderForAdapterPosition(next)
+                            ?.itemView?.requestFocus()
+                    }
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun isChildOf(v: android.view.View, parent: android.view.View): Boolean {
+        var cur: android.view.ViewParent? = v.parent
+        while (cur != null) {
+            if (cur === parent) return true
+            cur = (cur as? android.view.View)?.parent ?: return false
+        }
+        return false
+    }
+
     private fun handleIncomingIntent() {
         try {
             val data: Uri? = intent.data
@@ -219,6 +271,13 @@ class ComposeActivity : BaseActivity() {
         val typed = binding.recipientInput.text?.toString()?.trim().orEmpty()
         if (typed.isBlank()) return
         if (recipients.none { PhoneUtils.normalize(it) == PhoneUtils.normalize(typed) }) {
+            if (!isValidRecipient(typed)) {
+                android.widget.Toast.makeText(
+                    this, getString(R.string.invalid_recipient, typed),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
             recipients.add(typed)
         }
         binding.recipientInput.setText("")

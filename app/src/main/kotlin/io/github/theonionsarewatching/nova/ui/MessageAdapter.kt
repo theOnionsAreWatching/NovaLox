@@ -102,7 +102,7 @@ class MessageAdapter(
             val time = if (m.status == MsgStatus.SCHEDULED && m.scheduledAt != null)
                 ctx.getString(R.string.scheduled_for, Formatters.full(m.scheduledAt))
             else Formatters.messageStamp(m.date)
-            val status = if (m.isMine) Sender.statusLabel(ctx, m.status) else ""
+            val status = if (m.isMine) groupAwareStatus(ctx, m) else ""
             holder.b.metaLine.text = if (status.isNotBlank()) "$time \u00B7 $status" else time
             holder.b.metaLine.setTextColor(
                 when (m.status) {
@@ -389,7 +389,7 @@ class MessageAdapter(
         val time = if (m.status == MsgStatus.SCHEDULED && m.scheduledAt != null)
             ctx.getString(R.string.scheduled_for, Formatters.full(m.scheduledAt))
         else Formatters.messageStamp(m.date)
-        val status = if (m.isMine) Sender.statusLabel(ctx, m.status) else ""
+        val status = if (m.isMine) groupAwareStatus(ctx, m) else ""
         holder.b.metaLine.text = if (status.isNotBlank()) "$time \u00B7 $status" else time
         holder.b.metaLine.setTextColor(
             when (m.status) {
@@ -517,6 +517,25 @@ private fun customIncomingColor(ctx: android.content.Context): Int? {
     val parsed = try { Color.parseColor(hex) } catch (_: Exception) { null }
     incomingColorCache = hex to parsed
     return parsed
+}
+
+/** "Delivered to 2 \u00b7 Read by 1" for group sends with per-recipient
+ *  reports; falls back to the plain single status otherwise. */
+private fun groupAwareStatus(
+    ctx: android.content.Context,
+    m: io.github.theonionsarewatching.nova.data.MessageEntity
+): String {
+    val rs = m.recipientStatuses
+    if (rs.isBlank()) return Sender.statusLabel(ctx, m.status)
+    val marks = rs.split(",").filter { it.contains("=") }.map { it.substringAfter("=") }
+    if (marks.isEmpty()) return Sender.statusLabel(ctx, m.status)
+    val read = marks.count { it == "R" }
+    val delivered = marks.count { it == "D" } + read
+    val parts = ArrayList<String>()
+    if (delivered > 0) parts += ctx.getString(R.string.delivered_to_n, delivered)
+    if (read > 0) parts += ctx.getString(R.string.read_by_n, read)
+    return if (parts.isEmpty()) Sender.statusLabel(ctx, m.status)
+    else parts.joinToString("  \u00b7  ")
 }
 
 private fun bubbleFillColor(
