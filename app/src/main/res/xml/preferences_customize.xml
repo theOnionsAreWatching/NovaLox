@@ -6,22 +6,49 @@
         app:iconSpaceReserved="false"
         android:key="accent_picker"
         android:title="@string/pref_accent" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="message_style"
-            android:title="@string/pref_message_style"
-            android:entries="@array/style_entries"
-            android:entryValues="@array/style_values"
-            android:defaultValue="bubble"
-            android:summary="%s" />
-    <Preference
+    <ListPreference
         app:iconSpaceReserved="false"
-        android:key="sent_color"
-        android:title="@string/pref_sent_color"
-        android:summary="@string/pref_sent_color_summary" />
+        android:key="message_style"
+        android:title="@string/pref_message_style"
+        android:entries="@array/style_entries"
+        android:entryValues="@array/style_values"
+        android:defaultValue="bubble"
+        android:summary="%s" />
     <Preference
         app:iconSpaceReserved="false"
         android:key="all_backgrounds"
         android:title="@string/pref_all_backgrounds"
         android:summary="@string/pref_all_backgrounds_summary" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="sent_colored"
+        android:title="@string/pref_sent_colored"
+        android:summary="@string/pref_sent_colored_summary"
+        android:defaultValue="true" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="color_incoming"
+        android:title="@string/pref_color_incoming"
+        android:summary="@string/pref_color_incoming_summary"
+        android:defaultValue="false" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="group_member_colors"
+        android:title="@string/pref_group_colors"
+        android:summary="@string/pref_group_colors_summary"
+        android:defaultValue="false" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="show_search_bar"
+        android:title="@string/pref_show_search_short"
+        android:defaultValue="false" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_advanced_display"
+        android:title="@string/pref_advanced_display"
+        android:summary="@string/pref_advanced_display_summary" />
 </PreferenceScreen>

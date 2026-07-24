@@ -13,11 +13,14 @@ import io.github.theonionsarewatching.nova.R
 
 object Dialogs {
     /** Long dialog text on tiny screens: guaranteed scrollable, never cut off. */
-    fun scrollableMessage(activity: Activity, textRes: Int): View {
+    fun scrollableMessage(activity: Activity, textRes: Int): View =
+        scrollableMessageText(activity, activity.getString(textRes))
+
+    fun scrollableMessageText(activity: Activity, text: CharSequence): View {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
         val scroll = android.widget.ScrollView(activity)
         val tv = TextView(activity).apply {
-            setText(textRes)
+            setText(text)
             textSize = 14f
             setPadding(dp(22), dp(8), dp(22), dp(8))
         }

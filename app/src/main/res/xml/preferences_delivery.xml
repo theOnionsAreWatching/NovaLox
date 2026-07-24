@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="delivery_reports"
+        android:title="@string/pref_request_delivery"
+        android:summary="@string/pref_request_delivery_summary"
+        android:defaultValue="true" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="respond_delivery"
+        android:title="@string/respond_delivery"
+        android:summary="@string/respond_delivery_summary"
+        android:defaultValue="true" />
+</PreferenceScreen>

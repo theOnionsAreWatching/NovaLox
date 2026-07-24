@@ -76,6 +76,24 @@ class Repo private constructor(private val context: Context) {
         db.conversations().updateSummary(
             convoId, snippet, newest?.date ?: convo.snippetDate, newest?.isMine ?: false, unread
         )
+        maybeTrimConversation(convoId)
+    }
+
+    /** If auto-delete is on and this conversation is over the keep limit, drop
+     *  its oldest unlocked messages. Cheap: only runs when the setting is on. */
+    private suspend fun maybeTrimConversation(convoId: Long) {
+        val prefs = Prefs.get(context)
+        if (!prefs.autoDeleteOld) return
+        val keep = prefs.autoDeleteKeep
+        val victims = db.messages().messagesBeyondKeep(convoId, keep)
+        if (victims.isEmpty()) return
+        for (m in victims) {
+            db.parts().byMessage(m.id).forEach { runCatching { File(it.filePath).delete() } }
+            db.parts().deleteByMessage(m.id)
+            db.elements().deleteByMessage(m.id)
+            deleteFromTelephony(m)
+            db.messages().hardDelete(m.id)
+        }
     }
 
     private suspend fun snippetFor(m: MessageEntity): String {
@@ -152,7 +170,11 @@ class Repo private constructor(private val context: Context) {
             }
         }
         if (mmsId < 0) return null
-        if (db.messages().existsByTelephonyId(mmsId, true)) return null
+        // a row already linked to a real message is a duplicate — skip it.
+        // EXCEPTION: a download stub is linked to this same row (tap-to-download
+        // updates 130 -> 132 in place); it must pass so ingestMms can replace it.
+        val linked = db.messages().byTelephonyMms(mmsId)
+        if (linked != null && !MmsStub.isStub(linked.body)) return null
         return ingestMms(mmsId, date, msgBox)
     }
 
@@ -258,6 +280,16 @@ class Repo private constructor(private val context: Context) {
         // each telephony row exactly once — and if the first pass caught it before
         // its text parts were written (blank body), heal it now instead.
         db.messages().byTelephonyMms(mmsId)?.let { existing ->
+            // tap-to-download turns the notification row (130) into the
+            // downloaded message (132) IN PLACE, so this existing row is our
+            // download stub. Drop the stub and fall through to ingest the real
+            // content — otherwise the "Tap to download" line never went away.
+            if (MmsStub.isStub(existing.body)) {
+                val convoId = existing.convoId
+                db.messages().hardDelete(existing.id)
+                refreshConversation(convoId)
+                return@let  // continue to full ingest below
+            }
             if (existing.isMine) {
                 // the engine moves the box (outbox -> sent/failed) after we linked:
                 // reflect reality on our row
@@ -368,6 +400,20 @@ class Repo private constructor(private val context: Context) {
                             db.messages().hardDelete(ph.id)
                             refreshConversation(ph.convoId)
                         }
+                    }
+                }
+            } catch (_: Exception) {}
+            // tap-to-download replaces the row IN PLACE (130 -> 132, same _id),
+            // so the query above finds no leftover 130 row and the stub
+            // survived. Match the stub by the transaction id encoded in its
+            // body and delete it directly.
+            try {
+                val pat = "%" + trId + "%"
+                for (cand in db.messages().messagesWithBodyLike(pat)) {
+                    val info = MmsStub.decode(cand.body) ?: continue
+                    if (info.transactionId == trId) {
+                        db.messages().hardDelete(cand.id)
+                        refreshConversation(cand.convoId)
                     }
                 }
             } catch (_: Exception) {}
@@ -871,6 +917,44 @@ class Repo private constructor(private val context: Context) {
 
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
+    /** Delete downloaded MMS media files from app storage. Messages and their
+     *  part rows are kept; the file re-downloads from the carrier when the
+     *  message is next opened. Frees space without losing any conversation. */
+    suspend fun clearMmsCache() {
+        try {
+            File(context.filesDir, "parts").listFiles()?.forEach { f ->
+                runCatching { f.delete() }
+            }
+        } catch (_: Exception) {}
+        // also the transient download scratch files
+        try {
+            context.cacheDir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("download.")) runCatching { f.delete() }
+            }
+        } catch (_: Exception) {}
+        ChangeBus.ping()
+    }
+
+    /** Auto-delete: keep only the newest `keep` messages per conversation,
+     *  removing older unlocked ones (and their telephony rows, so they can't
+     *  resurrect). Locked messages are always kept and don't count. */
+    suspend fun enforceAutoDelete(keep: Int) {
+        if (keep < 1) return
+        for (c in db.conversations().visible()) {
+            val victims = db.messages().messagesBeyondKeep(c.id, keep)
+            if (victims.isEmpty()) continue
+            for (m in victims) {
+                db.parts().byMessage(m.id).forEach { runCatching { File(it.filePath).delete() } }
+                db.parts().deleteByMessage(m.id)
+                db.elements().deleteByMessage(m.id)
+                deleteFromTelephony(m)
+                db.messages().hardDelete(m.id)
+            }
+            refreshConversation(c.id)
+        }
+        ChangeBus.ping()
+    }
+
     /** Auto-download off: ingest a freshly persisted notification-ind as the
      *  tappable download stub, and notify like any incoming message. */
     suspend fun ingestNotificationStub(mmsId: Long) {
@@ -1185,6 +1269,25 @@ class Repo private constructor(private val context: Context) {
             File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
         } catch (_: Exception) {}
         importFromTelephony(onProgress)
+        ChangeBus.ping()
+    }
+
+    /** Mute a conversation. Muting and blocking are mutually exclusive — set
+     *  one and the other clears, so the menu never shows a stale "unmute" next
+     *  to an active block. */
+    suspend fun setMuted(convoId: Long, muted: Boolean) {
+        db.conversations().setMuted(convoId, muted)
+        if (muted) db.conversations().setNotifBlocked(convoId, false)
+        io.github.theonionsarewatching.nova.notify.NotificationHelper
+            .refreshConvoChannels(context, convoId)
+        ChangeBus.ping()
+    }
+
+    suspend fun setNotifBlocked(convoId: Long, blocked: Boolean) {
+        db.conversations().setNotifBlocked(convoId, blocked)
+        if (blocked) db.conversations().setMuted(convoId, false)
+        io.github.theonionsarewatching.nova.notify.NotificationHelper
+            .refreshConvoChannels(context, convoId)
         ChangeBus.ping()
     }
 

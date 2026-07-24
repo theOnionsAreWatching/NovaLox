@@ -26,28 +26,9 @@
             android:defaultValue="1.0" />
         <Preference
             app:iconSpaceReserved="false"
-            android:key="open_sizes"
-            android:title="@string/pref_advanced_resize"
-            android:summary="@string/pref_sizes_summary" />
-        <Preference
-            app:iconSpaceReserved="false"
             android:key="open_customize"
             android:title="@string/pref_customize"
             android:summary="@string/pref_customize_summary" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="show_search_bar"
-            android:title="@string/pref_show_search_short"
-            android:defaultValue="false" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="layout_direction"
-            android:title="@string/pref_layout_direction"
-            android:entries="@array/direction_entries"
-            android:entryValues="@array/direction_values"
-            android:defaultValue="auto"
-            android:summary="%s" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_sound">
@@ -85,7 +66,7 @@
             android:summary="%s" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_behavior">
+    <PreferenceCategory android:title="@string/settings_mms">
         <SwitchPreferenceCompat
             app:singleLineTitle="false"
             app:iconSpaceReserved="false"
@@ -93,48 +74,6 @@
             android:title="@string/pref_auto_mms"
             android:summary="@string/pref_auto_mms_summary"
             android:defaultValue="true" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="delivery_reports"
-            android:title="@string/pref_delivery_reports"
-            android:defaultValue="true" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="respond_delivery"
-            android:title="@string/respond_delivery"
-            android:summary="@string/respond_delivery_summary"
-            android:defaultValue="true" />
-        <ListPreference
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="mms_client_profile"
-            android:title="@string/pref_mms_profile"
-            android:summary="@string/pref_mms_profile_summary"
-            android:entries="@array/mms_profile_entries"
-            android:entryValues="@array/mms_profile_values"
-            android:defaultValue="carrier" />
-        <EditTextPreference
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="mms_custom_ua"
-            android:title="@string/pref_mms_custom_ua"
-            android:summary="@string/pref_mms_custom_ua_summary" />
-        <EditTextPreference
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="mms_custom_uaprof"
-            android:title="@string/pref_mms_custom_uaprof"
-            android:summary="@string/pref_mms_custom_uaprof_summary" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="voice_format"
-            android:title="@string/pref_voice_format"
-            android:entries="@array/voice_format_entries"
-            android:entryValues="@array/voice_format_values"
-            android:defaultValue="m4a"
-            android:summary="%s" />
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="default_group_mode"
@@ -143,17 +82,19 @@
             android:entryValues="@array/group_mode_values"
             android:defaultValue="group_mms"
             android:summary="%s" />
-        <ListPreference
+        <Preference
             app:iconSpaceReserved="false"
-            android:key="link_opening"
-            android:title="@string/pref_link_opening"
-            android:entries="@array/link_entries"
-            android:entryValues="@array/link_values"
-            android:defaultValue="ask"
-            android:summary="%s" />
+            android:key="open_mms_advanced"
+            android:title="@string/pref_mms_advanced"
+            android:summary="@string/pref_mms_advanced_summary" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_blocking">
+    <PreferenceCategory android:title="@string/settings_messages">
+        <Preference
+            app:iconSpaceReserved="false"
+            android:key="open_delivery"
+            android:title="@string/pref_delivery_group"
+            android:summary="@string/pref_delivery_group_summary" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_keywords"
@@ -162,48 +103,26 @@
             app:iconSpaceReserved="false"
             android:key="open_blocked"
             android:title="@string/open_blocked_pref" />
-    </PreferenceCategory>
-
-    <PreferenceCategory android:title="@string/settings_data">
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="bin_retention"
-            android:title="@string/pref_bin_retention"
-            android:entries="@array/bin_entries"
-            android:entryValues="@array/bin_values"
-            android:defaultValue="30"
-            android:summary="%s" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_bin"
-            android:title="@string/open_bin_pref" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_hidden"
             android:title="@string/open_hidden_pref" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_other">
         <Preference
             app:iconSpaceReserved="false"
-            android:key="backup_now"
-            android:title="@string/pref_backup" />
+            android:key="resync"
+            android:title="@string/resync_pref" />
         <Preference
             app:iconSpaceReserved="false"
-            android:key="restore_backup"
-            android:title="@string/pref_restore" />
+            android:key="refresh_contacts"
+            android:title="@string/refresh_contacts_pref" />
         <Preference
             app:iconSpaceReserved="false"
-            android:key="reimport"
-            android:title="@string/pref_reimport"
-            android:summary="@string/pref_reimport_summary" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="export_contacts"
-            android:title="@string/pref_export_contacts"
-            android:summary="@string/pref_export_contacts_summary" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="save_diag_log"
-            android:title="@string/pref_save_log"
-            android:summary="@string/pref_save_log_summary" />
+            android:key="open_softkeys_settings"
+            android:title="@string/pref_softkey_settings"
+            android:summary="@string/pref_softkey_settings_summary" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="check_updates"
@@ -215,41 +134,14 @@
             android:title="@string/pref_delete_apk"
             android:summary="@string/pref_delete_apk_summary"
             android:defaultValue="true" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="resync"
-            android:title="@string/resync_pref" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="refresh_contacts"
-            android:title="@string/refresh_contacts_pref" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_device">
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="softkey_mode"
-            android:title="@string/pref_softkey_mode"
-            android:entries="@array/softkey_entries"
-            android:entryValues="@array/softkey_values"
-            android:defaultValue="auto"
-            android:summary="%s" />
+    <PreferenceCategory android:title="@string/settings_advanced">
         <Preference
             app:iconSpaceReserved="false"
-            android:key="open_softkeys"
-            android:title="@string/open_softkey_config" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="softkeys_focusable"
-            android:title="@string/pref_softkeys_focusable"
-            android:summary="@string/pref_softkeys_focusable_summary"
-            android:defaultValue="false" />
-
-        <Preference
-            app:iconSpaceReserved="false"
-            android:selectable="false"
-            android:summary="@string/softkey_trouble_hint" />
+            android:key="open_advanced"
+            android:title="@string/pref_advanced_group"
+            android:summary="@string/pref_advanced_group_summary" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/about_title">

@@ -175,17 +175,25 @@ class MessageAdapter(
                 // squeeze it out of the layout; padding keeps a gap to the text
                 holder.b.accentBar.visibility = View.GONE
                 val barColor = if (m.isMine) accent else Color.GRAY
+                val tail = dp(6); val barW = dp(4); val gap = dp(7)
                 val card = GradientDrawable().apply {
                     cornerRadius = dp(6).toFloat()
                     setColor(cardColor(ctx))
                 }
+                // the white card must begin at the bar, not extend out under
+                // the tail — inset the card past the tail + bar on the bar side
+                val cardLayer = android.graphics.drawable.LayerDrawable(arrayOf(card)).apply {
+                    val inset = tail + barW
+                    if (m.isMine) setLayerInset(0, 0, 0, inset, 0)
+                    else setLayerInset(0, inset, 0, 0, 0)
+                }
                 holder.b.bubbleBox.background = android.graphics.drawable.LayerDrawable(
                     arrayOf(
-                        card,
+                        cardLayer,
                         AccentBarDrawable(
                             barColor, tailOnRight = m.isMine,
-                            tailPx = dp(6).toFloat(), barPx = dp(4).toFloat(),
-                            gapPx = dp(7).toFloat()
+                            tailPx = tail.toFloat(), barPx = barW.toFloat(),
+                            gapPx = gap.toFloat()
                         )
                     )
                 )
@@ -207,7 +215,7 @@ class MessageAdapter(
             }
             "square" -> { // square corners with a small side tail
                 holder.b.accentBar.visibility = View.GONE
-                val fill = bubbleFillColor(ctx, m.isMine, accent)
+                val fill = bubbleFillColor(ctx, m.isMine, accent, m.address)
                 holder.b.bubbleBox.background = TailBubbleDrawable(
                     fill, dp(4).toFloat(), tailOnRight = m.isMine, tailPx = dp(7).toFloat()
                 )
@@ -219,7 +227,7 @@ class MessageAdapter(
             else -> { // bubble: rounded body, the original bottom-corner tail
                 holder.b.accentBar.visibility = View.GONE
                 holder.b.bubbleBox.background = BottomTailBubbleDrawable(
-                    bubbleFillColor(ctx, m.isMine, accent), dp(10).toFloat(),
+                    bubbleFillColor(ctx, m.isMine, accent, m.address), dp(10).toFloat(),
                     tailOnRight = m.isMine, tailPx = dp(7).toFloat()
                 )
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -243,7 +251,7 @@ class MessageAdapter(
             "plain", "accentbar" -> cardColor(ctx)
             else -> if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null)
                 customSentColor(ctx)!!
-            else bubbleFillColor(ctx, m.isMine, accent)
+            else bubbleFillColor(ctx, m.isMine, accent, m.address)
         }
         holder.b.bubbleBox.layoutParams = bubbleParams
         // the background drawables (tails, accent bar) declare content insets;
@@ -286,8 +294,11 @@ class MessageAdapter(
         val other = row.parts.firstOrNull { !it.isImage() && !it.isVideo() }
         if (visual != null) {
             holder.b.thumb.visibility = View.VISIBLE
+            val tmax = dp(prefs.thumbMaxDp)
+            holder.b.thumb.maxWidth = tmax
+            holder.b.thumb.maxHeight = tmax
             holder.b.thumb.load(File(visual.filePath)) {
-                size(dp(220), dp(220))
+                size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black
                 if (visual.isVideo()) videoFrameMillis(1000)
             }
@@ -405,7 +416,23 @@ class MessageAdapter(
             val fillOnScreen = androidx.core.graphics.ColorUtils
                 .compositeColors(effectiveFill, backdrop)
             fun lum(c: Int) = androidx.core.graphics.ColorUtils.calculateLuminance(c)
-            val candidates = listOf(accent, Color.WHITE, 0xFF202020.toInt())
+            // a brighter accent for use on dark bubbles, where the base accent
+            // can be too dim to read
+            val brightAccent = run {
+                val hsv = FloatArray(3)
+                Color.colorToHSV(accent, hsv)
+                hsv[1] = (hsv[1] * 0.75f)          // less saturated -> more luminous
+                hsv[2] = kotlin.math.max(hsv[2], 0.92f)
+                Color.HSVToColor(hsv)
+            }
+            // on a dark bubble prefer bright ring colors; on a light bubble
+            // prefer dark ones — ordered so the FIRST that clears both surfaces
+            // is also the most visible
+            val fillDark = lum(fillOnScreen) < 0.4
+            val candidates = if (fillDark)
+                listOf(brightAccent, Color.WHITE, accent, 0xFF202020.toInt())
+            else
+                listOf(accent, 0xFF202020.toInt(), Color.WHITE, brightAccent)
             val ringColor = candidates.firstOrNull { c ->
                 kotlin.math.abs(lum(c) - lum(fillOnScreen)) >= 0.22 &&
                     kotlin.math.abs(lum(c) - lum(backdrop)) >= 0.22
@@ -474,13 +501,28 @@ private fun customSentColor(ctx: android.content.Context): Int? {
     return parsed
 }
 
-private fun bubbleFillColor(ctx: android.content.Context, isMine: Boolean, accent: Int): Int {
-    // dark theme: darker neutral bubbles with light text; colored fills
-    // (accent tint / custom sent color) are a light-theme look only
-    if (ThemeUtils.isNight(ctx)) {
+private fun bubbleFillColor(
+    ctx: android.content.Context, isMine: Boolean, accent: Int,
+    senderKey: String? = null
+): Int {
+    val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+    val night = ThemeUtils.isNight(ctx)
+    // group member colors: a stable hue per sender, easier to tell apart
+    if (!isMine && senderKey != null && prefs.groupMemberColors) {
+        val hue = ((senderKey.hashCode() and 0xFFFFFF) % 360).toFloat()
+        return if (night) Color.HSVToColor(floatArrayOf(hue, 0.30f, 0.28f))
+        else Color.HSVToColor(floatArrayOf(hue, 0.22f, 0.94f))
+    }
+    if (night) {
         return if (isMine) 0xFF37373E.toInt() else 0xFF2A2A2E.toInt()
     }
-    if (isMine) customSentColor(ctx)?.let { return it }
+    if (isMine) {
+        if (!prefs.sentColored)
+            return androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
+        customSentColor(ctx)?.let { return it }
+    }
+    // incoming bubbles colored on request (a lighter accent tint)
+    if (!isMine && prefs.colorIncoming) return withAlpha(accent, 32)
     return if (isMine) withAlpha(accent, 56)
     else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
 }

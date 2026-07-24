@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="thumb_entries">
+        <item>Small</item>
+        <item>Medium</item>
+        <item>Large</item>
+    </string-array>
+    <string-array name="thumb_values">
+        <item>110</item>
+        <item>160</item>
+        <item>220</item>
+    </string-array>
+
     <string-array name="notif_clear_entries">
         <item>Opening app</item>
         <item>Opening conversation</item>

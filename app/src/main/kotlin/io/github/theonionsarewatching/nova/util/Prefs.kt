@@ -85,6 +85,21 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putString("dark_chat_bg", v).apply() }
     val accent: String get() = sp.getString("accent", "blue") ?: "blue"
     val msgTextSp: Float get() = (sp.getString("msg_text_size", "16") ?: "16").toFloatOrNull() ?: 16f
+    // media thumbnail max edge (dp); smaller default than the old 220
+    val thumbMaxDp: Int get() = (sp.getString("thumb_max", "160") ?: "160").toIntOrNull() ?: 160
+    // color incoming bubbles too (not just sent)
+    val colorIncoming: Boolean get() = sp.getBoolean("color_incoming", false)
+    // color own bubbles at all (light theme); off = neutral sent bubbles
+    val sentColored: Boolean get() = sp.getBoolean("sent_colored", true)
+    // auto-delete: keep only the most recent N per conversation (0 = off)
+    var autoDeleteOld: Boolean
+        get() = sp.getBoolean("auto_delete_old", false)
+        set(v) { sp.edit().putBoolean("auto_delete_old", v).apply() }
+    var autoDeleteKeep: Int
+        get() = (sp.getString("auto_delete_keep", "1000") ?: "1000").toIntOrNull() ?: 1000
+        set(v) { sp.edit().putString("auto_delete_keep", v.toString()).apply() }
+    // in group chats, give each sender a distinct bubble color
+    val groupMemberColors: Boolean get() = sp.getBoolean("group_member_colors", false)
     val timeTextSp: Float get() = (sp.getString("time_text_size", "11") ?: "11").toFloatOrNull() ?: 11f
     // compact / comfortable / spacious
     val listDensity: String get() = sp.getString("list_density", "comfortable") ?: "comfortable"

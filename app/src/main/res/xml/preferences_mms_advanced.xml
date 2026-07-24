@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="mms_client_profile"
+        android:title="@string/pref_mms_spoof"
+        android:summary="@string/pref_mms_spoof_summary"
+        android:entries="@array/mms_profile_entries"
+        android:entryValues="@array/mms_profile_values"
+        android:defaultValue="carrier" />
+    <EditTextPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="mms_custom_ua"
+        android:title="@string/pref_mms_custom_ua"
+        android:summary="@string/pref_mms_custom_ua_summary" />
+    <EditTextPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="mms_custom_uaprof"
+        android:title="@string/pref_mms_custom_uaprof"
+        android:summary="@string/pref_mms_custom_uaprof_summary" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="voice_format"
+        android:title="@string/pref_voice_format"
+        android:entries="@array/voice_format_entries"
+        android:entryValues="@array/voice_format_values"
+        android:defaultValue="m4a"
+        android:summary="%s" />
+</PreferenceScreen>

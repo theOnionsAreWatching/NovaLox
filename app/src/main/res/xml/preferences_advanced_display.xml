@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="sent_color"
+        android:title="@string/pref_sent_color"
+        android:summary="@string/pref_sent_color_summary" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="layout_direction"
+        android:title="@string/pref_layout_direction"
+        android:entries="@array/direction_entries"
+        android:entryValues="@array/direction_values"
+        android:defaultValue="auto"
+        android:summary="%s" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="thumb_max"
+        android:title="@string/pref_thumb_size"
+        android:summary="@string/pref_thumb_size_summary"
+        android:entries="@array/thumb_entries"
+        android:entryValues="@array/thumb_values"
+        android:defaultValue="160" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="msg_text_size"
+        android:title="@string/pref_msg_text_size"
+        android:summary="@string/desc_msg_text_size"
+        android:entries="@array/msg_size_entries"
+        android:entryValues="@array/msg_size_values"
+        android:defaultValue="16" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="time_text_size"
+        android:title="@string/pref_time_text_size"
+        android:summary="@string/desc_time_text_size"
+        android:entries="@array/time_size_entries"
+        android:entryValues="@array/time_size_values"
+        android:defaultValue="11" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="list_density"
+        android:title="@string/pref_list_density"
+        android:summary="@string/desc_list_density"
+        android:entries="@array/density_entries"
+        android:entryValues="@array/density_values"
+        android:defaultValue="comfortable" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="ui_scale"
+        android:title="@string/pref_ui_scale"
+        android:summary="@string/desc_ui_scale"
+        android:entries="@array/scale_entries"
+        android:entryValues="@array/scale_values"
+        android:defaultValue="1.0" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="focus_stroke"
+        android:title="@string/pref_focus_stroke"
+        android:summary="@string/desc_focus_stroke"
+        android:entries="@array/stroke_entries"
+        android:entryValues="@array/stroke_values"
+        android:defaultValue="2" />
+    <ListPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="compose_max_lines"
+        android:title="@string/pref_compose_max_lines"
+        android:summary="@string/desc_compose_max_lines"
+        android:entries="@array/compose_lines_entries"
+        android:entryValues="@array/compose_lines_values"
+        android:defaultValue="4" />
+</PreferenceScreen>

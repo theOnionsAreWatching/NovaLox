@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="bin_retention"
+        android:title="@string/pref_bin_retention"
+        android:entries="@array/bin_entries"
+        android:entryValues="@array/bin_values"
+        android:defaultValue="30"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_bin"
+        android:title="@string/open_bin_pref" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="auto_delete_old"
+        android:title="@string/pref_auto_delete"
+        android:summary="@string/pref_auto_delete_summary"
+        android:defaultValue="false" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="clear_mms_cache"
+        android:title="@string/pref_clear_cache"
+        android:summary="@string/pref_clear_cache_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="backup_now"
+        android:title="@string/pref_backup" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="restore_backup"
+        android:title="@string/pref_restore" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="reimport"
+        android:title="@string/pref_reimport"
+        android:summary="@string/pref_reimport_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="export_contacts"
+        android:title="@string/pref_export_contacts"
+        android:summary="@string/pref_export_contacts_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="save_diag_log"
+        android:title="@string/pref_save_log"
+        android:summary="@string/pref_save_log_summary" />
+</PreferenceScreen>

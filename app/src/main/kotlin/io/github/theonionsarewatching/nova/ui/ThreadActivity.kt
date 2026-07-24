@@ -143,6 +143,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             binding.threadSubtitle.text =
                 if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
                 else c.addressList().firstOrNull() ?: ""
+            updateNotifStatusIcon(c)
             adapter = MessageAdapter(
                 isGroup = c.isGroup,
                 onPress = { pressMessage(it) },
@@ -169,6 +170,23 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     override fun onStop() {
         super.onStop()
         ChangeBus.unregister(changeListener)
+    }
+
+    /** Bell-off / mute / vibrate-only badge on the thread bar. Priority:
+     *  notifications blocked > muted > vibrate-only. */
+    private fun updateNotifStatusIcon(c: ConversationEntity) {
+        val icon = when {
+            c.notifBlocked -> R.drawable.ic_notif_blocked
+            c.muted -> R.drawable.ic_muted
+            c.vibrateMode == 1 -> R.drawable.ic_vibrate
+            else -> 0
+        }
+        if (icon == 0) {
+            binding.threadNotifIcon.visibility = View.GONE
+        } else {
+            binding.threadNotifIcon.setImageResource(icon)
+            binding.threadNotifIcon.visibility = View.VISIBLE
+        }
     }
 
     override fun onResume() {

@@ -110,6 +110,47 @@ class SettingsActivity : BaseActivity() {
             find("open_hidden") { startActivity(Intent(requireContext(), HiddenConversationsActivity::class.java)) }
             find("open_softkeys") { startActivity(Intent(requireContext(), SoftkeyConfigActivity::class.java)) }
             find("open_sizes") { startActivity(Intent(requireContext(), SizeSettingsActivity::class.java)) }
+            fun openXml(xml: Int) = startActivity(
+                Intent(requireContext(), SettingsActivity::class.java)
+                    .putExtra(SettingsFragment.ARG_XML, xml)
+            )
+            find("open_mms_advanced") { openXml(R.xml.preferences_mms_advanced) }
+            find("open_delivery") { openXml(R.xml.preferences_delivery) }
+            find("open_softkeys_settings") { openXml(R.xml.preferences_softkeys) }
+            find("open_advanced") { openXml(R.xml.preferences_advanced) }
+            find("open_advanced_display") { openXml(R.xml.preferences_advanced_display) }
+            find("clear_mms_cache") {
+                val ctx = requireContext()
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.pref_clear_cache)
+                    .setMessage(R.string.clear_cache_warning)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                io.github.theonionsarewatching.nova.data.Repo.get(ctx).clearMmsCache()
+                            }
+                            Toast.makeText(ctx, R.string.clear_cache_done, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            findPreference<androidx.preference.SwitchPreferenceCompat>("auto_delete_old")
+                ?.setOnPreferenceChangeListener { pref, newValue ->
+                    if (newValue == true) {
+                        val ctx = requireContext()
+                        AlertDialog.Builder(ctx)
+                            .setTitle(R.string.pref_auto_delete)
+                            .setMessage(R.string.auto_delete_warning)
+                            .setPositiveButton(android.R.string.ok) { _, _ ->
+                                (pref as androidx.preference.SwitchPreferenceCompat).isChecked = true
+                                promptAutoDeleteCount()
+                            }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                        false
+                    } else true
+                }
             find("accent_picker") { showAccentPicker() }
             find("default_tone") {
                 val act = requireActivity() as BaseActivity
@@ -241,12 +282,7 @@ class SettingsActivity : BaseActivity() {
                     io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS, host
                 )
             }
-            find("about_footer") {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/theOnionsAreWatching")))
-                } catch (_: Exception) {}
-            }
+            find("about_footer") { showAboutDetails() }
             // fill the About summary with the live version name
             findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
                 val v = try {
@@ -471,6 +507,57 @@ class SettingsActivity : BaseActivity() {
         }
 
         /** Accent picker with a color swatch beside each name. */
+        private fun showAboutDetails() {
+            val ctx = requireContext()
+            val version = try {
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            } catch (_: Exception) { "" }
+            val msg = getString(R.string.about_details, version)
+            val view = io.github.theonionsarewatching.nova.ui.Dialogs
+                .scrollableMessageText(requireActivity(), msg)
+            AlertDialog.Builder(ctx)
+                .setTitle(R.string.about_app_name)
+                .setView(view)
+                .setPositiveButton(R.string.about_open_repo) { _, _ ->
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(
+                            "https://github.com/theOnionsAreWatching/NovaLox")))
+                    } catch (_: Exception) {}
+                }
+                .setNegativeButton(android.R.string.ok, null)
+                .show()
+        }
+
+        private fun promptAutoDeleteCount() {
+            val ctx = requireContext()
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+            val input = android.widget.EditText(ctx).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                setText(prefs.autoDeleteKeep.toString())
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle(R.string.auto_delete_count_title)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val keep = input.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 1000
+                    prefs.autoDeleteKeep = keep
+                    AlertDialog.Builder(ctx)
+                        .setMessage(getString(R.string.auto_delete_apply_warning, keep))
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    io.github.theonionsarewatching.nova.data.Repo.get(ctx)
+                                        .enforceAutoDelete(keep)
+                                }
+                            }
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         private fun showAccentPicker() {
             val ctx = requireContext()
             val options = accentOptions()

@@ -52,8 +52,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:adjustViewBounds="true"
-                android:maxWidth="220dp"
-                android:maxHeight="220dp"
+                android:maxWidth="160dp"
+                android:maxHeight="160dp"
                 android:visibility="gone"
                 android:contentDescription="@string/snippet_attachment" />
 

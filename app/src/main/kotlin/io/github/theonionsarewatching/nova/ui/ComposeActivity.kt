@@ -88,8 +88,31 @@ class ComposeActivity : BaseActivity() {
         }
 
         handleIncomingIntent()
+        // sms:/smsto: from the dialer with exactly one recipient and no body
+        // to review: jump straight to that number's thread instead of the
+        // compose screen. The thread already handles an unknown number (shows
+        // the number until it's saved) and won't persist an empty conversation.
+        if (maybeRouteSingleRecipientToThread()) return
         updateRecipientLabel()
         binding.recipientInput.requestFocus()
+    }
+
+    /** Returns true (and finishes) if we handed off to a thread. */
+    private fun maybeRouteSingleRecipientToThread(): Boolean {
+        val fromDialer = intent.action == Intent.ACTION_SENDTO ||
+            intent.action == Intent.ACTION_VIEW
+        if (!fromDialer) return false
+        if (recipients.size != 1) return false
+        if (binding.bodyInput.text?.isNotBlank() == true) return false
+        if (pendingAttachments.isNotEmpty()) return false
+        val number = recipients.first()
+        lifecycleScope.launch {
+            val convo = repo.getOrCreateConversation(listOf(number))
+            startActivity(Intent(this@ComposeActivity, ThreadActivity::class.java)
+                .putExtra(ThreadActivity.EXTRA_CONVO_ID, convo.id))
+            finish()
+        }
+        return true
     }
 
     private fun handleIncomingIntent() {

@@ -368,6 +368,13 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0")
     suspend fun countInConvo(convoId: Long): Int
 
+    // oldest unlocked live messages in a conversation beyond the newest `keep`,
+    // for auto-delete. Locked messages are never returned.
+    @Query("""SELECT * FROM messages WHERE convoId = :convoId AND deletedAt IS NULL
+              AND locked = 0
+              ORDER BY date DESC LIMIT -1 OFFSET :keep""")
+    suspend fun messagesBeyondKeep(convoId: Long, keep: Int): List<MessageEntity>
+
     @Query(
         """SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL
            AND blockedByKeyword = 0 AND (date < :beforeDate OR (date = :beforeDate AND id < :beforeId))"""
@@ -432,6 +439,12 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms LIMIT 1")
     suspend fun byTelephonyId(tId: Long, isMms: Boolean): MessageEntity?
+
+    // download stubs carry their transaction id inside the encoded body; a
+    // downloaded copy matches its stub on that substring, whatever telephony
+    // row each is linked to
+    @Query("SELECT * FROM messages WHERE deletedAt IS NULL AND body LIKE :pattern")
+    suspend fun messagesWithBodyLike(pattern: String): List<MessageEntity>
 
     @Query(
         """SELECT * FROM messages WHERE convoId = :convoId AND isMine = 1 AND isMms = :isMms

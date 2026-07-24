@@ -297,6 +297,11 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         .thenByDescending { it.snippetDate })
             }
             adapter.submit(list)
+            // total unread across all conversations, shown on the title bar
+            val totalUnread = repo.db.conversations().visible().sumOf { it.unreadCount }
+            binding.mainTitle.text = if (totalUnread > 0)
+                getString(R.string.app_name) + "  (" + totalUnread + ")"
+            else getString(R.string.app_name)
             refreshScheduledIds()
             binding.emptyLabel.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         }
@@ -473,10 +478,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun notificationOptions(c: ConversationEntity) {
         val items = ArrayList<Pair<String, () -> Unit>>()
         items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
-            lifecycleScope.launch { repo.db.conversations().setMuted(c.id, !c.muted); ChangeBus.ping() }
+            lifecycleScope.launch { repo.setMuted(c.id, !c.muted) }
         }
         items += (if (c.notifBlocked) getString(R.string.unblock_notifications) else getString(R.string.block_notifications)) to {
-            lifecycleScope.launch { repo.db.conversations().setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
+            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked) }
         }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         if (Build.VERSION.SDK_INT >= 24 && !c.isGroup) {
