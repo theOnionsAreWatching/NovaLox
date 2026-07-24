@@ -9,6 +9,7 @@ import coil.load
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
+import io.github.theonionsarewatching.nova.data.GroupMode
 import io.github.theonionsarewatching.nova.databinding.ItemConversationBinding
 import io.github.theonionsarewatching.nova.util.Formatters
 import io.github.theonionsarewatching.nova.util.Prefs
@@ -142,6 +143,15 @@ class ConversationAdapter(
         // one mutually-exclusive status badge (blocked number / notifications
         // blocked / muted / vibrate-only), resolved the same way as the
         // thread's top bar
+        if (c.isGroup) {
+            holder.b.iconGroupMode.setImageResource(
+                if (c.groupMode == GroupMode.GROUP_MMS) R.drawable.ic_group_mms
+                else R.drawable.ic_broadcast
+            )
+            holder.b.iconGroupMode.visibility = android.view.View.VISIBLE
+        } else {
+            holder.b.iconGroupMode.visibility = android.view.View.GONE
+        }
         val statusIcon = ConvoStatusIcon.forConversation(holder.itemView.context, c)
         if (statusIcon == 0) {
             holder.b.iconStatus.visibility = android.view.View.GONE

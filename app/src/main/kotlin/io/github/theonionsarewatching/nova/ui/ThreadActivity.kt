@@ -194,6 +194,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Bell-off / mute / vibrate-only badge on the thread bar. Priority:
      *  notifications blocked > muted > vibrate-only. */
     private fun updateNotifStatusIcon(c: ConversationEntity) {
+        if (c.isGroup) {
+            binding.iconGroupModeThread.setImageResource(
+                if (c.groupMode == GroupMode.GROUP_MMS) R.drawable.ic_group_mms
+                else R.drawable.ic_broadcast
+            )
+            binding.iconGroupModeThread.visibility = View.VISIBLE
+        } else {
+            binding.iconGroupModeThread.visibility = View.GONE
+        }
         binding.iconPinThread.visibility = if (c.pinned) View.VISIBLE else View.GONE
         // these states are mutually exclusive in practice — a blocked number
         // has no notification to mute, a muted thread can't vibrate — so show
@@ -363,8 +372,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val anchor = rows.getOrNull(lastVis)?.msg
             val changed = if (anchor != null) {
                 repo.db.messages().markReadUpTo(convoId, anchor.date, anchor.id)
-            repo.sendPendingReadRecs(convoId)
             } else 0
+            // answer any read-report requests now that these are read
+            repo.sendPendingReadRecs(convoId)
             val left = repo.db.messages().unreadCount(convoId)
             binding.unreadChip.text = left.toString()
             binding.unreadChip.visibility = if (left > 0) View.VISIBLE else View.GONE

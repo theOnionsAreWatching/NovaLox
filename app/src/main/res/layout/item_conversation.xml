@@ -60,6 +60,15 @@
                 android:contentDescription="@string/pin" />
 
             <ImageView
+                android:id="@+id/iconGroupMode"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginStart="4dp"
+                android:scaleType="centerInside"
+                android:visibility="gone"
+                android:contentDescription="@string/group_send_mode" />
+
+            <ImageView
                 android:id="@+id/iconStatus"
                 android:layout_width="24dp"
                 android:layout_height="24dp"

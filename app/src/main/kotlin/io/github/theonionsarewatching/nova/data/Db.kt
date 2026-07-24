@@ -100,9 +100,6 @@ data class MessageEntity(
     val date: Long,
     val isMine: Boolean,
     val status: Int,
-    // group sends: per-recipient report state, "addr=D" / "addr=R" joined by
-    // "," — renders as "Delivered to X · Read by Y"
-    val recipientStatuses: String = "",
     val read: Boolean = true,
     val locked: Boolean = false,
     val deletedAt: Long? = null,
@@ -439,9 +436,6 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = 1 LIMIT 1")
     suspend fun byTelephonyMms(tId: Long): MessageEntity?
-
-    @Query("UPDATE messages SET recipientStatuses = :v WHERE id = :id")
-    suspend fun setRecipientStatuses(id: Long, v: String)
 
     @Query("SELECT * FROM messages WHERE telephonyId = :tId AND telephonyIsMms = :isMms LIMIT 1")
     suspend fun byTelephonyId(tId: Long, isMms: Boolean): MessageEntity?

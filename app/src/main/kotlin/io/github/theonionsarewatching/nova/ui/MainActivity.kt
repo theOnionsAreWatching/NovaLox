@@ -532,6 +532,144 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             .show()
     }
 
+    /** Same grouping as the thread's options menu. */
+    private fun blockAndMenu(c: ConversationEntity) {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
+            lifecycleScope.launch { repo.setMuted(c.id, !c.muted); ChangeBus.ping() }
+        }
+        items += (if (c.notifBlocked) getString(R.string.unblock_notifications)
+        else getString(R.string.block_notifications)) to {
+            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
+        }
+        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
+            lifecycleScope.launch {
+                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
+            }
+        }
+        items += getString(R.string.hide_conversation) to {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.hide_confirm)
+                .setPositiveButton(R.string.hide) { _, _ ->
+                    lifecycleScope.launch {
+                        repo.db.conversations().setHidden(c.id, true); ChangeBus.ping()
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+        if (!c.isGroup) {
+            val number = c.addressList().firstOrNull().orEmpty()
+            val blocked = number.isNotBlank() && repo.isNumberBlocked(number)
+            items += (if (blocked) getString(R.string.unblock_number)
+            else getString(R.string.block_number)) to {
+                if (blocked) {
+                    lifecycleScope.launch {
+                        repo.unblockNumber(number)
+                        android.widget.Toast.makeText(this@MainActivity,
+                            R.string.number_unblocked, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.block_number)
+                        .setMessage(R.string.block_number_warning)
+                        .setPositiveButton(R.string.block_number) { _, _ ->
+                            lifecycleScope.launch {
+                                val systemOk = repo.blockNumber(number)
+                                android.widget.Toast.makeText(this@MainActivity,
+                                    if (systemOk) R.string.number_blocked
+                                    else R.string.number_blocked_local,
+                                    android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.block_and_menu)
+            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
+            .show()
+    }
+
+    /** Same grouping as the thread's options menu. */
+    private fun customizeMenu(c: ConversationEntity) {
+        val items = arrayListOf<Pair<String, () -> Unit>>(
+            getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) },
+            getString(R.string.chat_background) to {
+                bgTargetConvoId = c.id
+                io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
+            },
+            getString(R.string.pref_message_style) to { pickMessageStyleMain() },
+            getString(R.string.pref_message_color) to { messageColorDialogMain(c) }
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.customize_menu)
+            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
+            .show()
+    }
+
+    private fun pickMessageStyleMain() {
+        val values = resources.getStringArray(R.array.style_values)
+        val labels = resources.getStringArray(R.array.style_entries)
+        val current = values.indexOf(prefs.messageStyle).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_message_style)
+            .setSingleChoiceItems(labels, current) { d, w ->
+                d.dismiss()
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                    .edit().putString("message_style", values[w]).apply()
+                ChangeBus.ping()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun messageColorDialogMain(c: ConversationEntity) {
+        val sp = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val column = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        fun addSwitch(labelRes: Int, key: String, default: Boolean, chooser: () -> Unit) {
+            val sw = androidx.appcompat.widget.SwitchCompat(this).apply {
+                text = getString(labelRes)
+                textSize = 15f
+                isChecked = sp.getBoolean(key, default)
+                setPadding(dp(8), dp(12), dp(8), dp(12))
+                isFocusable = true
+                setOnCheckedChangeListener { _, on ->
+                    sp.edit().putBoolean(key, on).apply()
+                    ChangeBus.ping()
+                    if (on) chooser()
+                }
+            }
+            column.addView(sw)
+        }
+        addSwitch(R.string.pref_sent_colored, "sent_colored", true) {
+            io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                this, topOptionRes = R.string.sent_color_accent,
+                onTop = { prefs.sentColor = ""; ChangeBus.ping() }
+            ) { hex -> prefs.sentColor = hex; ChangeBus.ping() }
+        }
+        addSwitch(R.string.pref_color_incoming, "color_incoming", false) {
+            io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                this, topOptionRes = R.string.incoming_color_accent,
+                onTop = { prefs.incomingColor = "accent"; ChangeBus.ping() }
+            ) { hex -> prefs.incomingColor = hex; ChangeBus.ping() }
+        }
+        if (c.isGroup) {
+            addSwitch(R.string.pref_group_colors, "group_member_colors", false) {}
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_message_color)
+            .setView(android.widget.ScrollView(this).apply { addView(column) })
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun nameGroupDialog(c: ConversationEntity) {
         val input = android.widget.EditText(this).apply {
             setText(c.customName)
@@ -627,30 +765,15 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         items += (if (c.pinned) getString(R.string.unpin) else getString(R.string.pin)) to {
             lifecycleScope.launch { repo.db.conversations().setPinned(c.id, !c.pinned); ChangeBus.ping() }
         }
-        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
-            lifecycleScope.launch { repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping() }
-        }
-        items += getString(R.string.notifications_submenu) to { notificationOptions(c) }
+        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
+        items += getString(R.string.customize_menu) to { customizeMenu(c) }
         if (c.isGroup) {
             items += getString(R.string.participants_title, c.addressList().size) to {
                 GroupParticipants.show(this, c)
             }
         }
         items += getString(R.string.schedule_send) to { scheduleForConvo(c) }
-        items += getString(R.string.chat_background) to {
-            bgTargetConvoId = c.id
-            io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
-        }
         items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }
-        items += getString(R.string.hide_conversation) to {
-            AlertDialog.Builder(this)
-                .setMessage(R.string.hide_confirm)
-                .setPositiveButton(R.string.hide) { _, _ ->
-                    lifecycleScope.launch { repo.db.conversations().setHidden(c.id, true); ChangeBus.ping() }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
         val hasUnread = c.unreadCount > 0
         items += (if (hasUnread) getString(R.string.mark_read) else getString(R.string.mark_unread)) to {
             lifecycleScope.launch {

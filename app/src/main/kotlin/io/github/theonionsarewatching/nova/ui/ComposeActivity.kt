@@ -145,37 +145,6 @@ class ComposeActivity : BaseActivity() {
         return t.count { it.isDigit() } >= 3
     }
 
-    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        // D-pad through the suggestion list: default focus search only reaches
-        // laid-out children, so focus escaped to the group-mode button after
-        // the last VISIBLE row and the rest of the list was unreachable. Move
-        // selection manually and scroll as needed.
-        if (event.action == android.view.KeyEvent.ACTION_DOWN &&
-            (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
-                event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) &&
-            binding.suggestionList.visibility == android.view.View.VISIBLE
-        ) {
-            val focused = currentFocus
-            if (focused != null && isChildOf(focused, binding.suggestionList)) {
-                val holder = binding.suggestionList.findContainingViewHolder(focused)
-                val pos = holder?.bindingAdapterPosition ?: -1
-                val last = (binding.suggestionList.adapter?.itemCount ?: 0) - 1
-                val next = if (event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN)
-                    pos + 1 else pos - 1
-                if (pos >= 0 && next in 0..last) {
-                    binding.suggestionList.scrollToPosition(next)
-                    binding.suggestionList.post {
-                        binding.suggestionList
-                            .findViewHolderForAdapterPosition(next)
-                            ?.itemView?.requestFocus()
-                    }
-                    return true
-                }
-            }
-        }
-        return super.dispatchKeyEvent(event)
-    }
-
     private fun isChildOf(v: android.view.View, parent: android.view.View): Boolean {
         var cur: android.view.ViewParent? = v.parent
         while (cur != null) {
@@ -446,6 +415,32 @@ class ComposeActivity : BaseActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // D-pad through the suggestion list: default focus search only reaches
+        // laid-out children, so focus escaped to the group-mode button after
+        // the last VISIBLE row and the rest of the list was unreachable. Move
+        // selection manually and scroll as needed.
+        if (event.action == KeyEvent.ACTION_DOWN &&
+            (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+                event.keyCode == KeyEvent.KEYCODE_DPAD_UP) &&
+            binding.suggestionList.visibility == View.VISIBLE
+        ) {
+            val focused = currentFocus
+            if (focused != null && isChildOf(focused, binding.suggestionList)) {
+                val holder = binding.suggestionList.findContainingViewHolder(focused)
+                val pos = holder?.bindingAdapterPosition ?: -1
+                val last = (binding.suggestionList.adapter?.itemCount ?: 0) - 1
+                val next = if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) pos + 1 else pos - 1
+                if (pos >= 0 && next in 0..last) {
+                    binding.suggestionList.scrollToPosition(next)
+                    binding.suggestionList.post {
+                        binding.suggestionList
+                            .findViewHolderForAdapterPosition(next)
+                            ?.itemView?.requestFocus()
+                    }
+                    return true
+                }
+            }
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             val chipsVisible = binding.recipientChips.isShown && recipients.isNotEmpty()
             when (event.keyCode) {

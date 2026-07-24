@@ -1075,11 +1075,10 @@ class Repo private constructor(private val context: Context) {
                 try {
                     val from = com.google.android.mms.pdu_alt.EncodedStringValue("insert-address-token")
                     val ind = com.google.android.mms.pdu_alt.ReadRecInd(
-                        from, mid!!.toByteArray(), 18, /* 1.2 */
-                        com.google.android.mms.pdu_alt.PduHeaders.READ_STATUS_READ
+                        from, mid!!.toByteArray(), 18, /* MMS 1.2 */
+                        com.google.android.mms.pdu_alt.PduHeaders.READ_STATUS_READ,
+                        arrayOf(com.google.android.mms.pdu_alt.EncodedStringValue(m.address))
                     )
-                    ind.to = arrayOf(com.google.android.mms.pdu_alt.EncodedStringValue(m.address))
-                    ind.date = System.currentTimeMillis() / 1000
                     val bytes = com.google.android.mms.pdu_alt.PduComposer(context, ind).make()
                         ?: continue
                     val f = File(context.cacheDir, "read_rec_${System.currentTimeMillis()}")
