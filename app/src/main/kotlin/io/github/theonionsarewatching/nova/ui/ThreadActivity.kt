@@ -613,6 +613,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private fun updateSendHint() {
         binding.sendHintBar.visibility = if (sendHintActive()) View.VISIBLE else View.GONE
+        // when the softkeys are D-pad selectable and in compose mode, the right
+        // slot is Send — make D-pad-down from the text box land there first,
+        // instead of Android's default nearest pick (the attach slot on the left)
+        if (prefs.softkeysFocusable && composeMode && softkeys?.shouldShow() == true) {
+            binding.composeInput.nextFocusDownId = binding.softkeyBar.softRight.id
+        } else {
+            binding.composeInput.nextFocusDownId = View.NO_ID
+        }
     }
 
     private fun enterComposeMode() {

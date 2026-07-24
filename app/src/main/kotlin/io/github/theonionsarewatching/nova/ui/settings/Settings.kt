@@ -119,6 +119,7 @@ class SettingsActivity : BaseActivity() {
             find("open_softkeys_settings") { openXml(R.xml.preferences_softkeys) }
             find("open_advanced") { openXml(R.xml.preferences_advanced) }
             find("open_advanced_display") { openXml(R.xml.preferences_advanced_display) }
+            find("open_message_color") { openXml(R.xml.preferences_message_color) }
             find("clear_mms_cache") {
                 val ctx = requireContext()
                 AlertDialog.Builder(ctx)

@@ -277,11 +277,13 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:padding="6dp"
+        android:minHeight="30dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
         android:visibility="gone"
         android:textSize="13sp"
-        android:textStyle="bold"
-        android:text="@string/send_hint"
+        android:fontFamily="sans-serif-medium"
+        android:text="@string/softkey_send"
         android:background="?attr/colorSurfaceContainerHigh" />
 
     <include
