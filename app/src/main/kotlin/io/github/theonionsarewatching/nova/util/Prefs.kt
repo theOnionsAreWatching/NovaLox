@@ -154,6 +154,9 @@ class Prefs(context: Context) {
     var sentColor: String
         get() = sp.getString("sent_color", "") ?: ""
         set(v) { sp.edit().putString("sent_color", v).apply() }
+    var incomingColor: String
+        get() = sp.getString("incoming_color", "") ?: ""
+        set(v) { sp.edit().putString("incoming_color", v).apply() }
     var wasDefaultSms: Boolean
         get() = sp.getBoolean("was_default_sms", false)
         set(v) { sp.edit().putBoolean("was_default_sms", v).apply() }

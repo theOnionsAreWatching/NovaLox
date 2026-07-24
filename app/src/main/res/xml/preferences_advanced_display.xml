@@ -7,6 +7,11 @@
         android:key="sent_color"
         android:title="@string/pref_sent_color"
         android:summary="@string/pref_sent_color_summary" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="incoming_color"
+        android:title="@string/pref_incoming_color"
+        android:summary="@string/pref_incoming_color_summary" />
     <ListPreference
         app:iconSpaceReserved="false"
         android:key="layout_direction"

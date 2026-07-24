@@ -345,6 +345,21 @@ class SettingsActivity : BaseActivity() {
                     Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
                 }
             }
+            find("incoming_color") {
+                val act = requireActivity()
+                io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                    act,
+                    topOptionRes = R.string.incoming_color_default,
+                    onTop = {
+                        // default: the standard incoming tint (clears any custom)
+                        io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = ""
+                        Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
+                    }
+                ) { hex ->
+                    io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = hex
+                    Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
+                }
+            }
             find("export_contacts") {
                 val ctx = requireContext()
                 AlertDialog.Builder(ctx)

@@ -417,6 +417,23 @@ class Repo private constructor(private val context: Context) {
                     }
                 }
             } catch (_: Exception) {}
+            // AND purge any leftover m_type=130 notification row for this
+            // transaction from the telephony provider itself. If the platform
+            // left it behind (download landed in a NEW 132 row rather than
+            // updating 130 in place), the content observer's syncRecentFrom
+            // Telephony re-ingested that orphan 130 row 2.5s later and the
+            // "Tap to download" stub reappeared. Remove it at the source.
+            try {
+                resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                    "m_type = 130 AND tr_id = ?", arrayOf(trId), null)?.use { c ->
+                    while (c.moveToNext()) {
+                        val nid = c.getLong(0)
+                        if (nid != mmsId) {
+                            resolver.delete(Uri.parse("content://mms/$nid"), null, null)
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
         }
 
         // addresses
@@ -1567,6 +1584,33 @@ class Repo private constructor(private val context: Context) {
                                 if (existing.isMine) applyBoxHeal(existing, c.getInt(2))
                             }
                             continue
+                        }
+                        // a bare notification row (130) whose real message has
+                        // already been downloaded and ingested under a different
+                        // _id: skip it, or the "Tap to download" stub reappears
+                        var trId130: String? = null
+                        var mType130 = 0
+                        try {
+                            resolver.query(Uri.parse("content://mms"),
+                                arrayOf("tr_id", "m_type"), "_id = ?",
+                                arrayOf(id.toString()), null)?.use { mc ->
+                                if (mc.moveToFirst()) {
+                                    trId130 = mc.getString(0); mType130 = mc.getInt(1)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                        if (mType130 == 130 && !trId130.isNullOrBlank()) {
+                            var already = false
+                            try {
+                                resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                                    "m_type = 132 AND tr_id = ?", arrayOf(trId130), null)
+                                    ?.use { dc -> already = dc.count > 0 }
+                            } catch (_: Exception) {}
+                            if (already) {
+                                try { resolver.delete(Uri.parse("content://mms/$id"), null, null) }
+                                catch (_: Exception) {}
+                                continue
+                            }
                         }
                         ingestMms(id, c.getLong(1) * 1000L, c.getInt(2))
                     }

@@ -501,6 +501,19 @@ private fun customSentColor(ctx: android.content.Context): Int? {
     return parsed
 }
 
+private var incomingColorCache: Pair<String, Int?>? = null
+
+/** The user's custom incoming-bubble color, or null for the default. */
+private fun customIncomingColor(ctx: android.content.Context): Int? {
+    val hex = io.github.theonionsarewatching.nova.util.Prefs.get(ctx).incomingColor
+    incomingColorCache?.let { if (it.first == hex) return it.second }
+    val parsed = hex.takeIf { it.isNotBlank() }?.let {
+        try { Color.parseColor(it) } catch (_: Exception) { null }
+    }
+    incomingColorCache = hex to parsed
+    return parsed
+}
+
 private fun bubbleFillColor(
     ctx: android.content.Context, isMine: Boolean, accent: Int,
     senderKey: String? = null
@@ -521,8 +534,11 @@ private fun bubbleFillColor(
             return androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
         customSentColor(ctx)?.let { return it }
     }
-    // incoming bubbles colored on request (a lighter accent tint)
-    if (!isMine && prefs.colorIncoming) return withAlpha(accent, 32)
+    if (!isMine && prefs.colorIncoming) {
+        // a chosen incoming color takes precedence over the default accent tint
+        customIncomingColor(ctx)?.let { return it }
+        return withAlpha(accent, 32)
+    }
     return if (isMine) withAlpha(accent, 56)
     else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
 }
