@@ -52,8 +52,8 @@
 
             <ImageView
                 android:id="@+id/iconPin"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="4dp"
                 android:src="@drawable/ic_pin"
                 android:visibility="gone"
@@ -61,8 +61,8 @@
 
             <ImageView
                 android:id="@+id/iconMuted"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="4dp"
                 android:src="@drawable/ic_muted"
                 android:visibility="gone"
@@ -70,8 +70,8 @@
 
             <ImageView
                 android:id="@+id/iconBlocked"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="4dp"
                 android:src="@drawable/ic_notif_blocked"
                 android:visibility="gone"
@@ -79,8 +79,8 @@
 
             <ImageView
                 android:id="@+id/iconNumberBlocked"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="4dp"
                 android:src="@drawable/ic_blocked"
                 android:visibility="gone"
@@ -88,8 +88,8 @@
 
             <ImageView
                 android:id="@+id/iconScheduled"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_marginStart="4dp"
                 android:src="@drawable/ic_schedule"
                 android:visibility="gone"

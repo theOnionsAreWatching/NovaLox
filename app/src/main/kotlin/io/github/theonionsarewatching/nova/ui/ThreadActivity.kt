@@ -185,19 +185,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun updateNotifStatusIcon(c: ConversationEntity) {
         val numberBlocked = !c.isGroup &&
             c.addressList().firstOrNull()?.let { repo.isNumberBlocked(it) } == true
-        val icon = when {
-            numberBlocked -> R.drawable.ic_blocked
-            c.notifBlocked -> R.drawable.ic_notif_blocked
-            c.muted -> R.drawable.ic_muted
-            c.vibrateMode == 1 -> R.drawable.ic_vibrate
-            else -> 0
+        fun show(v: View, on: Boolean) {
+            v.visibility = if (on) View.VISIBLE else View.GONE
         }
-        if (icon == 0) {
-            binding.threadNotifIcon.visibility = View.GONE
-        } else {
-            binding.threadNotifIcon.setImageResource(icon)
-            binding.threadNotifIcon.visibility = View.VISIBLE
-        }
+        // every applicable state shows, rather than only the highest-priority
+        // one — the thread bar now mirrors the conversation list's badges
+        show(binding.iconPinThread, c.pinned)
+        show(binding.iconNumberBlockedThread, numberBlocked)
+        show(binding.iconNotifBlockedThread, c.notifBlocked)
+        show(binding.iconMutedThread, c.muted && !c.notifBlocked)
+        show(binding.iconVibrateThread, c.vibrateMode == 1)
     }
 
     override fun onResume() {
