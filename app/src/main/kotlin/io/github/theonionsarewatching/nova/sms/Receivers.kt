@@ -147,17 +147,44 @@ class MmsSentReceiverImpl : BroadcastReceiver() {
                         val accepted = carrierVerdict == 128
                         val mid = sendConf.messageId?.let { String(it) }
                         val uriString2 = intent.getStringExtra("content_uri")
+                        var stored = false
                         if (accepted && !mid.isNullOrBlank() && uriString2 != null) {
                             val values = ContentValues(2).apply {
                                 put(Telephony.Mms.MESSAGE_ID, mid)
                                 put(Telephony.Mms.RESPONSE_STATUS, carrierVerdict)
                             }
-                            context.contentResolver.update(Uri.parse(uriString2), values, null, null)
+                            var rows = 0
+                            try {
+                                rows = context.contentResolver
+                                    .update(Uri.parse(uriString2), values, null, null)
+                            } catch (_: Exception) {}
+                            // The URI we were handed points into the OUTBOX, but
+                            // a successful send moves the row to the SENT box.
+                            // MmsProvider resolves content://mms/outbox/N as
+                            // "_id = N AND msg_box = 4", so once the row has
+                            // moved that update matches NOTHING and the
+                            // Message-ID is never stored — which silently
+                            // breaks every later delivery/read report for that
+                            // message. Retry against the box-agnostic
+                            // content://mms/N form, which matches on _id alone.
+                            if (rows == 0) {
+                                val rowId = Uri.parse(uriString2).lastPathSegment
+                                    ?.toLongOrNull()
+                                if (rowId != null) {
+                                    try {
+                                        rows = context.contentResolver.update(
+                                            Uri.parse("content://mms/$rowId"),
+                                            values, null, null
+                                        )
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                            stored = rows > 0
                         }
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-sent",
                             "send-conf: resp=$carrierVerdict (${respName(carrierVerdict)}) " +
-                                "m_id=$mid stored=${accepted && !mid.isNullOrBlank()}"
+                                "m_id=$mid stored=$stored"
                         )
                     } else {
                         io.github.theonionsarewatching.nova.util.DiagLog.log(

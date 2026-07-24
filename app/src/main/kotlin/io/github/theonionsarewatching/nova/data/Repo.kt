@@ -1106,30 +1106,47 @@ class Repo private constructor(private val context: Context) {
         try {
             var origMessageId: String? = null
             var st = -1
-            var readStatus = -1
-            // delivery-ind carries X-Mms-Status in the "st" column;
-            // read-orig-ind carries X-Mms-Read-Status in "read_status".
-            // Reading only "st" for both (the old code) meant read notices
-            // arrived as st=0 and were treated as "read" by message-type alone,
-            // which couldn't tell READ (0x80/128) from DELETED-UNREAD (0x81/129).
+            // ONLY m_id and st here. These two columns exist on every provider.
+            // 0.9.60 added read_status to this same projection — and on any ROM
+            // whose provider lacks that column the whole query throws, which
+            // took DELIVERY reports down along with read reports. read_status
+            // is now read separately below so it can never do that again.
             context.contentResolver.query(
-                Uri.parse("content://mms"),
-                arrayOf("m_id", "st", Telephony.Mms.READ_STATUS),
+                Uri.parse("content://mms"), arrayOf("m_id", "st"),
                 "_id = ?", arrayOf(indId.toString()), null
             )?.use { c ->
                 if (c.moveToFirst()) {
                     origMessageId = c.getString(0)
                     st = try { c.getInt(1) } catch (_: Exception) { -1 }
-                    readStatus = try { c.getInt(2) } catch (_: Exception) { -1 }
                 }
             }
+            // X-Mms-Read-Status, best-effort and fully isolated.
+            var readStatus = -1
+            if (mType == 136) {
+                try {
+                    context.contentResolver.query(
+                        Uri.parse("content://mms"), arrayOf(Telephony.Mms.READ_STATUS),
+                        "_id = ?", arrayOf(indId.toString()), null
+                    )?.use { c -> if (c.moveToFirst()) readStatus = c.getInt(0) }
+                } catch (_: Exception) { readStatus = -1 }
+            }
+            val kind = if (mType == 136) "read-orig-ind" else "delivery-ind"
             io.github.theonionsarewatching.nova.util.DiagLog.log(
                 context, "mms-delivery",
-                "${if (mType == 136) "read-orig-ind" else "delivery-ind"}: " +
-                    "m_id=$origMessageId st=$st read_status=$readStatus"
+                "$kind: m_id=$origMessageId st=$st read_status=$readStatus"
             )
-            val mid = origMessageId ?: return
-            // find the SENT telephony row carrying that Message-ID
+            val mid = origMessageId
+            if (mid.isNullOrBlank()) {
+                // no Message-ID on the notice: nothing to match it against
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-delivery", "$kind has no m_id — dropped"
+                )
+                return
+            }
+            // find the SENT telephony row carrying that Message-ID. This only
+            // works if the M-Send.conf gave us a Message-ID at send time and we
+            // stored it (see MmsSentReceiverImpl) — the usual reason a report
+            // "does nothing" is that this lookup misses, so it is logged.
             var sentTelephonyId: Long? = null
             context.contentResolver.query(
                 Uri.parse("content://mms"), arrayOf(Telephony.Mms._ID),
@@ -1138,55 +1155,57 @@ class Repo private constructor(private val context: Context) {
             )?.use { c -> if (c.moveToFirst()) sentTelephonyId = c.getLong(0) }
             val tId = sentTelephonyId ?: run {
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
-                    context, "mms-delivery", "no sent row matches m_id=$mid — dropped"
+                    context, "mms-delivery",
+                    "$kind: no SENT row carries m_id=$mid — dropped (was the " +
+                        "Message-ID stored at send time?)"
                 )
                 return
             }
-            val m = db.messages().byTelephonyMms(tId) ?: return
+            val m = db.messages().byTelephonyMms(tId) ?: run {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-delivery",
+                    "$kind: telephony row $tId has no linked message — dropped"
+                )
+                return
+            }
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
 
-            if (mType == 136) {
-                // READ_STATUS: 0x80/128 = read, 0x81/129 = deleted without
-                // being read. Some carriers leave read_status unset (-1/0) and
-                // signal read purely by sending the read-orig-ind at all; treat
-                // "not explicitly deleted-unread" as read.
-                val deletedUnread = readStatus == 129
-                val isRead = !deletedUnread
-                db.messages().appendDeliveryDebug(
-                    m.id,
-                    "[$stamp] MMS read report read_status=$readStatus -> " +
-                        "${if (isRead) "read" else "deleted unread"}\n"
-                )
-                // upgrade to READ from any pre-read outgoing state (never demote
-                // a cancelled/failed row, and never move backwards)
-                if (isRead && m.status in
-                    listOf(MsgStatus.SENDING, MsgStatus.SENT, MsgStatus.DELIVERED)
-                ) {
-                    setStatusRespectingCancel(m.id, MsgStatus.READ_BY_RECIPIENT)
-                }
-                refreshAndPing(m.convoId)
-                return
-            }
+            // read-orig-ind (136) carries X-Mms-Read-Status: 0x81/129 means
+            // "deleted without being read". Anything else — INCLUDING an unset
+            // or absent value — means read: carriers commonly omit the field
+            // and signal read purely by sending the notice at all.
+            val isRead = mType == 136 && readStatus != 129
+            // A read notice implies delivery a fortiori: nothing can be read
+            // that was never delivered. This is the rule that worked before
+            // 0.9.60 split the two apart.
+            val delivered = st == 129 || isRead
 
-            // delivery-ind (134): X-Mms-Status. 129 = Retrieved (delivered).
-            // 130 = rejected, 135 = unreachable, etc. — not delivered.
-            val delivered = st == 129
             db.messages().appendDeliveryDebug(
                 m.id,
-                "[$stamp] MMS delivery report st=$st -> " +
-                    "${if (delivered) "delivered" else "not delivered"}\n"
+                if (mType == 136)
+                    "[$stamp] MMS read report read_status=$readStatus -> " +
+                        "${if (isRead) "read" else "deleted unread"}\n"
+                else
+                    "[$stamp] MMS delivery report st=$st -> " +
+                        "${if (delivered) "delivered" else "not delivered"}\n"
             )
-            // upgrade to DELIVERED from SENDING or SENT (a delivery notice can
-            // race ahead of our own send-confirmation on fast networks); never
-            // demote an already-read message
-            if (delivered && m.status in listOf(MsgStatus.SENDING, MsgStatus.SENT)) {
-                setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
+            // Upgrade only, and never past a terminal state. A late delivery
+            // notice must not demote an already-read message, and a report
+            // arriving before our own send-confirmation (fast networks) must
+            // still land — hence SENDING is an acceptable starting point.
+            when {
+                isRead && m.status in listOf(
+                    MsgStatus.SENDING, MsgStatus.SENT, MsgStatus.DELIVERED
+                ) -> setStatusRespectingCancel(m.id, MsgStatus.READ_BY_RECIPIENT)
+
+                delivered && m.status in listOf(MsgStatus.SENDING, MsgStatus.SENT) ->
+                    setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
             }
             refreshAndPing(m.convoId)
         } catch (e: Exception) {
             io.github.theonionsarewatching.nova.util.DiagLog.log(
-                context, "mms-delivery", "delivery-ind handling failed: ${e.message}"
+                context, "mms-delivery", "indication handling failed: ${e.message}"
             )
         }
     }

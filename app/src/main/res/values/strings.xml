@@ -83,8 +83,8 @@
     <string name="mode_group_mms">Group MMS (shared thread, replies to all)</string>
     <string name="switched_broadcast">Switched to broadcast for future messages</string>
     <string name="switched_group_mms">Switched to group MMS for future messages</string>
-    <string name="schedule_send">Send later…</string>
-    <string name="schedule_needs_text">Type the message first, then choose Send later</string>
+    <string name="schedule_send">Schedule…</string>
+    <string name="schedule_needs_text">Type the message first, then choose Schedule</string>
     <string name="schedule_in_past">That time is in the past</string>
     <string name="scheduled_for">Scheduled for %1$s</string>
     <string name="send_now">Send now</string>
@@ -345,7 +345,7 @@
     <string name="pref_clear_cache">Clear MMS cache</string>
     <string name="pref_clear_cache_summary">Remove downloaded MMS media files. Messages are kept; media re-downloads when opened.</string>
     <string name="pref_advanced_display">Advanced display settings</string>
-    <string name="pref_advanced_display_summary">Bubble color, layout direction, thumbnail and text sizes</string>
+    <string name="pref_advanced_display_summary">Layout direction, thumbnail and text sizes</string>
     <string name="pref_sent_colored">Color sent messages</string>
     <string name="pref_sent_colored_summary">Tint your own message bubbles (light theme)</string>
     <string name="pref_color_incoming">Color incoming messages</string>

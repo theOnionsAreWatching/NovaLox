@@ -525,11 +525,9 @@ private fun bubbleFillColor(
 ): Int {
     val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
     val night = ThemeUtils.isNight(ctx)
-    // group member colors: a stable hue per sender, easier to tell apart
+    // group member colors: a distinct bubble per sender
     if (!isMine && senderKey != null && prefs.groupMemberColors) {
-        val hue = ((senderKey.hashCode() and 0xFFFFFF) % 360).toFloat()
-        return if (night) Color.HSVToColor(floatArrayOf(hue, 0.30f, 0.28f))
-        else Color.HSVToColor(floatArrayOf(hue, 0.22f, 0.94f))
+        return MemberPalette.colorFor(senderKey, night)
     }
     if (night) {
         return if (isMine) 0xFF37373E.toInt() else 0xFF2A2A2E.toInt()
