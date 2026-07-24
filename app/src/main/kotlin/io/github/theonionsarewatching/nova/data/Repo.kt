@@ -1273,10 +1273,18 @@ class Repo private constructor(private val context: Context) {
 
     private suspend fun applyAggregate(messageId: Long, map: Map<String, Int>) {
         val values = map.values
+        // READ_BY_RECIPIENT is 7, which is >= SENT, so the old chain collapsed
+        // a read message back to "Sent". Rank the read state explicitly.
         val agg = when {
             values.any { it == MsgStatus.FAILED } -> MsgStatus.FAILED
-            values.all { it == MsgStatus.DELIVERED } -> MsgStatus.DELIVERED
-            values.all { it >= MsgStatus.SENT } -> MsgStatus.SENT
+            values.all { it == MsgStatus.READ_BY_RECIPIENT } -> MsgStatus.READ_BY_RECIPIENT
+            values.all {
+                it == MsgStatus.DELIVERED || it == MsgStatus.READ_BY_RECIPIENT
+            } -> MsgStatus.DELIVERED
+            values.all {
+                it == MsgStatus.SENT || it == MsgStatus.DELIVERED ||
+                    it == MsgStatus.READ_BY_RECIPIENT
+            } -> MsgStatus.SENT
             else -> MsgStatus.SENDING
         }
         setStatusRespectingCancel(messageId, agg)

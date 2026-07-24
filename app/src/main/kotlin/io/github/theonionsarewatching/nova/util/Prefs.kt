@@ -120,6 +120,10 @@ class Prefs(context: Context) {
         set(v) { sp.edit().putStringSet("blocked_numbers", v).apply() }
 
     val deliveryReports: Boolean get() = sp.getBoolean("delivery_reports", true)
+    // OFF by default on purpose: requesting read reports makes some carriers
+    // deliver the recipient's read-rec PDU back as an ordinary MMS, i.e.
+    // phantom duplicate messages. Opt-in, with that warning in Settings.
+    val requestReadReports: Boolean get() = sp.getBoolean("request_read_reports", false)
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"

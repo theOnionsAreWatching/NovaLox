@@ -335,6 +335,8 @@
     <string name="pref_delivery_group">Delivery &amp; read reports</string>
     <string name="pref_delivery_group_summary">Request and respond to delivery and read reports</string>
     <string name="pref_request_delivery">Request delivery reports</string>
+    <string name="pref_request_read">Request read reports (picture messages)</string>
+    <string name="pref_request_read_summary">Ask the recipient\u2019s phone to confirm when a picture message is opened. Off by default: on some carriers this causes duplicate messages to appear. Read confirmations that arrive on their own are always shown either way.</string>
     <string name="pref_request_delivery_summary">Ask the carrier to confirm when your messages are delivered</string>
     <string name="pref_softkey_settings">Softkey settings</string>
     <string name="pref_softkey_settings_summary">Softkey mode, key mapping, D-pad reachability</string>

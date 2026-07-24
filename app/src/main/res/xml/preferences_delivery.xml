@@ -12,6 +12,13 @@
     <SwitchPreferenceCompat
         app:singleLineTitle="false"
         app:iconSpaceReserved="false"
+        android:key="request_read_reports"
+        android:title="@string/pref_request_read"
+        android:summary="@string/pref_request_read_summary"
+        android:defaultValue="false" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
         android:key="respond_delivery"
         android:title="@string/respond_delivery"
         android:summary="@string/respond_delivery_summary"

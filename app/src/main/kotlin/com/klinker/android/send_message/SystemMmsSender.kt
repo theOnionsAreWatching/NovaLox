@@ -56,6 +56,7 @@ object SystemMmsSender {
         addresses: List<String>,
         attachments: List<Triple<ByteArray, String, String>>, // bytes, mime, name
         requestDeliveryReport: Boolean,
+        requestReadReport: Boolean = false,
         groupMms: Boolean,
         linkRow: (Long) -> Unit = {}
     ): Long? {
@@ -120,14 +121,16 @@ object SystemMmsSender {
             // THE line the engine got wrong:
             req.deliveryReport =
                 if (requestDeliveryReport) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
-            // NEVER request read reports (VALUE_NO, permanently). Field
-            // evidence: requesting them made recipient phones emit read-rec
-            // PDUs that some carriers deliver back as ordinary MMS — duplicate
-            // phantom messages — and disrupted the clean unsolicited
-            // read-orig-inds this carrier already sends. We only LISTEN:
-            // when a read-orig-ind (136) arrives on its own, the message
-            // shows "Read". Do not change this flag again.
-            req.readReport = PduHeaders.VALUE_NO
+            // Read reports default to VALUE_NO and the default must stay NO.
+            // Field evidence: requesting them made recipient phones emit
+            // read-rec PDUs that some carriers deliver back as ordinary MMS —
+            // phantom duplicate messages. Without the request we still LISTEN,
+            // and an unsolicited read-orig-ind (136) marks the message "Read";
+            // that already works on some carriers. Users who want read
+            // receipts reliably can opt in from Settings, which is the only
+            // thing that may set this to YES.
+            req.readReport =
+                if (requestReadReport) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
         } catch (_: Exception) {
         }
 

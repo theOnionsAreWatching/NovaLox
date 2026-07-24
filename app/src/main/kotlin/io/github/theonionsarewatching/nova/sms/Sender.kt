@@ -212,7 +212,9 @@ object Sender {
                 val repo0 = Repo.get(context)
                 val tid = com.klinker.android.send_message.SystemMmsSender.send(
                     context, messageId, text, addresses, finalAtts,
-                    requestDeliveryReport = wantReport, groupMms = true,
+                    requestDeliveryReport = wantReport,
+                    requestReadReport = Prefs.get(context).requestReadReports,
+                    groupMms = true,
                     linkRow = { linkedTid ->
                         // synchronous link before the store row can be observed
                         kotlinx.coroutines.runBlocking {
