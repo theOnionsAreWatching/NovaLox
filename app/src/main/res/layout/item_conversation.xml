@@ -73,7 +73,7 @@
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:layout_marginStart="4dp"
-                android:src="@drawable/ic_blocked"
+                android:src="@drawable/ic_notif_blocked"
                 android:visibility="gone"
                 android:contentDescription="@string/block_notifications" />
 

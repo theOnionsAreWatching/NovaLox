@@ -3,6 +3,12 @@
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24"
     android:tint="?android:attr/textColorSecondary">
-    <!-- bell with a slash: notifications off (distinct from contact-block) -->
-    <path android:fillColor="#FF000000" android:pathData="M20,18.69L7.84,6.14 5.27,3.49 4,4.76l2.8,2.8v0.01c-0.52,0.99 -0.8,2.16 -0.8,3.42v5l-2,2v1h13.24l1.74,1.74 1.27,-1.27L20,18.69zM12,22c1.11,0 2,-0.89 2,-2h-4C10,21.11 10.89,22 12,22zM18,14.68V11c0,-3.08 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68c-0.24,0.06 -0.47,0.15 -0.7,0.24L18,14.68z"/>
+    <!-- a bell with a bold prohibition ring + slash across it: clearly
+         "notifications blocked", distinct from the plain bell-slash mute and
+         from the contact-block circle -->
+    <path android:fillColor="#FF000000" android:pathData="M11.5,3.5c0,-0.28 0.22,-0.5 0.5,-0.5c2.86,0.68 4.5,3.24 4.5,6.32v2.36l-1.5,-1.5V9c0,-2.48 -1.51,-4.5 -3.5,-4.5c-0.28,0 -0.5,-0.22 -0.5,-0.5z"/>
+    <path android:fillColor="#FF000000" android:pathData="M6.5,9c0,-1.02 0.23,-1.95 0.63,-2.75L5.7,4.83C5.26,5.86 5,7.02 5,8.28V13l-2,2v1h11.17l-2,-2H6.5V9z"/>
+    <path android:fillColor="#FF000000" android:pathData="M12,20c1.11,0 2,-0.89 2,-2h-4C10,19.11 10.89,20 12,20z"/>
+    <!-- prohibition ring, top-right -->
+    <path android:fillColor="#FF000000" android:pathData="M18,4c-2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4 -1.79,-4 -4,-4zM15.5,8c0,-1.38 1.12,-2.5 2.5,-2.5c0.5,0 0.96,0.15 1.35,0.4l-3.45,3.45C15.65,8.96 15.5,8.5 15.5,8zM18,10.5c-0.5,0 -0.96,-0.15 -1.35,-0.4l3.45,-3.45c0.25,0.39 0.4,0.85 0.4,1.35C20.5,9.38 19.38,10.5 18,10.5z"/>
 </vector>

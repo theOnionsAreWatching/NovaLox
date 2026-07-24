@@ -237,8 +237,11 @@ class MessageAdapter(
             }
         }
         // custom sent-side color: white text when the chosen fill is dark
-        // (light theme only; night uses fixed dark fills + light text_primary)
-        if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null &&
+        // (light theme only; night uses fixed dark fills + light text_primary).
+        // Guard on sentColored — with sent coloring OFF the bubble is the
+        // neutral light fill, so forcing white text left it invisible.
+        if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
+            customSentColor(ctx) != null &&
             prefs.messageStyle != "plain" && prefs.messageStyle != "accentbar"
         ) {
             val fill = customSentColor(ctx)!!
@@ -249,7 +252,8 @@ class MessageAdapter(
         // the effective fill this row sits on — drives adaptive text below
         val effectiveFill = when (prefs.messageStyle) {
             "plain", "accentbar" -> cardColor(ctx)
-            else -> if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null)
+            else -> if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
+                customSentColor(ctx) != null)
                 customSentColor(ctx)!!
             else bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null)
         }

@@ -32,6 +32,9 @@ class SearchActivity : BaseActivity() {
         binding.resultList.adapter = adapter
 
         binding.btnBack.setOnClickListener { finish() }
+        binding.btnSearchGo.setOnClickListener {
+            run(binding.searchInput.text?.toString()?.trim().orEmpty())
+        }
         binding.searchInput.setOnEditorActionListener { v, _, _ ->
             run(v.text?.toString()?.trim().orEmpty())
             true
@@ -45,7 +48,7 @@ class SearchActivity : BaseActivity() {
             )
         }
 
-        ThemeUtils.applyFocusHighlightRound(binding.btnBack)
+        ThemeUtils.applyFocusHighlightRound(binding.btnBack, binding.btnSearchGo)
         ThemeUtils.applyFocusHighlight(binding.searchInput)
 
         val initial = intent.getStringExtra("query").orEmpty()
@@ -74,7 +77,7 @@ class SearchActivity : BaseActivity() {
                 }
             }
             val combined = (convoRows + body).distinctBy { it.id }
-            adapter.submit(combined, titles)
+            adapter.submit(combined, titles, query)
             binding.emptyLabel.visibility =
                 if (combined.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
         }
@@ -96,10 +99,12 @@ class SearchActivity : BaseActivity() {
 
         private var items: List<SearchRow> = emptyList()
         private var titles: Map<Long, String> = emptyMap()
+        private var query: String = ""
 
-        fun submit(list: List<SearchRow>, t: Map<Long, String>) {
+        fun submit(list: List<SearchRow>, t: Map<Long, String>, q: String) {
             items = list
             titles = t
+            query = q
             notifyDataSetChanged()
         }
 
@@ -117,10 +122,47 @@ class SearchActivity : BaseActivity() {
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val r = items[position]
-            holder.b.suggestionName.text =
-                (titles[r.convoId] ?: "") + "  \u00B7  " + Formatters.listStamp(r.date)
-            holder.b.suggestionNumber.text = r.body.take(120)
+            val title = titles[r.convoId] ?: ""
+            holder.b.suggestionName.text = android.text.SpannableStringBuilder()
+                .append(boldMatches(title, query))
+                .append("  \u00B7  ")
+                .append(Formatters.listStamp(r.date))
+            // show a window of the body around the match so the bolded term is
+            // visible even in a long message, not just the first 120 chars
+            holder.b.suggestionNumber.text = boldMatches(snippetAround(r.body, query), query)
             holder.itemView.setOnClickListener { onOpen(r) }
+        }
+
+        /** A ~120-char window of the body centered on the first match. */
+        private fun snippetAround(body: String, q: String): String {
+            if (q.isBlank() || body.length <= 120) return body.take(120)
+            val idx = body.indexOf(q, ignoreCase = true)
+            if (idx < 0) return body.take(120)
+            val start = (idx - 40).coerceAtLeast(0)
+            val end = (start + 120).coerceAtMost(body.length)
+            val prefix = if (start > 0) "\u2026" else ""
+            val suffix = if (end < body.length) "\u2026" else ""
+            return prefix + body.substring(start, end) + suffix
+        }
+
+        /** Bold every case-insensitive occurrence of the query in the text. */
+        private fun boldMatches(text: String, q: String): CharSequence {
+            if (q.isBlank()) return text
+            val sp = android.text.SpannableString(text)
+            val lower = text.lowercase()
+            val needle = q.lowercase()
+            var from = 0
+            while (true) {
+                val i = lower.indexOf(needle, from)
+                if (i < 0) break
+                sp.setSpan(
+                    android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                    i, i + needle.length,
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                from = i + needle.length
+            }
+            return sp
         }
     }
 }
