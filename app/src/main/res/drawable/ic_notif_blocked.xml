@@ -3,18 +3,17 @@
     android:width="24dp" android:height="24dp"
     android:viewportWidth="24" android:viewportHeight="24"
     android:tint="?android:attr/textColorSecondary">
-    <!-- a bell, with the circle-and-line "blocked" mark beside it -->
+    <!-- Full-size bell (same height as the mute bell) with the circle-and-line
+         "blocked" mark as a badge. The badge sits in a gap cut through the bell
+         (evenOdd) so it stays readable in a single-colour tinted icon. -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2zM12.1,17.5a5.4,5.4 0 1,0 10.8,0a5.4,5.4 0 1,0 -10.8,0z" />
     <group
-        android:scaleX="0.62" android:scaleY="0.62"
+        android:scaleX="0.45" android:scaleY="0.45"
         android:pivotX="12" android:pivotY="12"
-        android:translateX="-5.2">
-        <path android:fillColor="#FF000000"
-            android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
-    </group>
-    <group
-        android:scaleX="0.52" android:scaleY="0.52"
-        android:pivotX="12" android:pivotY="12"
-        android:translateX="5.4">
+        android:translateX="5.5" android:translateY="5.5">
         <path android:fillColor="#FF000000"
             android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM4,12c0,-4.42 3.58,-8 8,-8 1.85,0 3.55,0.63 4.9,1.69L5.69,16.9C4.63,15.55 4,13.85 4,12zM12,20c-1.85,0 -3.55,-0.63 -4.9,-1.69L18.31,7.1C19.37,8.45 20,10.15 20,12c0,4.42 -3.58,8 -8,8z" />
     </group>

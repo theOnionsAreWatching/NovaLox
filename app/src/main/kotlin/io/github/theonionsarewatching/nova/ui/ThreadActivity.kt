@@ -183,7 +183,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Bell-off / mute / vibrate-only badge on the thread bar. Priority:
      *  notifications blocked > muted > vibrate-only. */
     private fun updateNotifStatusIcon(c: ConversationEntity) {
+        val numberBlocked = !c.isGroup &&
+            c.addressList().firstOrNull()?.let { repo.isNumberBlocked(it) } == true
         val icon = when {
+            numberBlocked -> R.drawable.ic_blocked
             c.notifBlocked -> R.drawable.ic_notif_blocked
             c.muted -> R.drawable.ic_muted
             c.vibrateMode == 1 -> R.drawable.ic_vibrate

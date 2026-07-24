@@ -9,6 +9,7 @@ import coil.load
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
+import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.databinding.ItemConversationBinding
 import io.github.theonionsarewatching.nova.util.Formatters
 import io.github.theonionsarewatching.nova.util.Prefs
@@ -143,6 +144,10 @@ class ConversationAdapter(
             if (c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.iconMuted.visibility =
             if (c.muted && !c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
+        holder.b.iconNumberBlocked.visibility =
+            if (!c.isGroup && c.addressList().firstOrNull()
+                    ?.let { Repo.get(holder.itemView.context).isNumberBlocked(it) } == true
+            ) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.iconScheduled.visibility =
             if (hasScheduled(c.id)) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.convoTitle.textSize = prefs.msgTextSp

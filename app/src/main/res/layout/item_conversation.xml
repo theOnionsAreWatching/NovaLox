@@ -78,6 +78,15 @@
                 android:contentDescription="@string/block_notifications" />
 
             <ImageView
+                android:id="@+id/iconNumberBlocked"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="4dp"
+                android:src="@drawable/ic_blocked"
+                android:visibility="gone"
+                android:contentDescription="@string/block_number" />
+
+            <ImageView
                 android:id="@+id/iconScheduled"
                 android:layout_width="14dp"
                 android:layout_height="14dp"
