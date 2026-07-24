@@ -48,6 +48,11 @@
     <string name="pin">Pin</string>
     <string name="unpin">Unpin</string>
     <string name="archive">Archive</string>
+    <string name="block_and_menu">Block and\u2026</string>
+    <string name="customize_menu">Customize</string>
+    <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>
+    <string name="pref_send_left">Send button on the left</string>
+    <string name="pref_send_left_summary">Puts Send on the left softkey and the left side of the message box. For phones whose keyboard takes over the right softkey or treats right on the D-pad as Space.</string>
     <string name="unarchive">Unarchive</string>
     <string name="mute">Mute (silent notifications)</string>
     <string name="unmute">Unmute</string>

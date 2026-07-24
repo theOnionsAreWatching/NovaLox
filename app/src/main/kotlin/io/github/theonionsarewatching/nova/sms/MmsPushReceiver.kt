@@ -343,6 +343,7 @@ class MmsPushReceiver : BroadcastReceiver() {
                 (overrides.getString(SmsManager.MMS_CONFIG_USER_AGENT)
                     ?.let { "UA=$it" } ?: "none")
         )
+        markDownloadInFlight(transactionId)
         sm.downloadMultimediaMessage(context, location, contentUri, overrides, pi)
     }
 
@@ -371,6 +372,22 @@ class MmsPushReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        // downloads currently running, keyed by transaction id — lets the
+        // sync-path fallback see that the push receiver is already on it,
+        // instead of firing a second download of the same message
+        private val inFlight: MutableMap<String, Long> =
+            Collections.synchronizedMap(HashMap<String, Long>())
+
+        fun markDownloadInFlight(transactionId: String?) {
+            if (!transactionId.isNullOrBlank()) inFlight[transactionId] = System.currentTimeMillis()
+        }
+
+        fun isDownloadInFlight(transactionId: String?): Boolean {
+            if (transactionId.isNullOrBlank()) return false
+            val t = inFlight[transactionId] ?: return false
+            return System.currentTimeMillis() - t < 90_000L
+        }
+
         private const val ACTION_PREFIX =
             "io.github.theonionsarewatching.nova.MMS_DOWNLOADED."
         private val downloadedLocations: MutableSet<String> =

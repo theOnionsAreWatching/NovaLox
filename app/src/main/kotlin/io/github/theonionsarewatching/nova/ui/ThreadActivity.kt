@@ -9,6 +9,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import coil.load
 import androidx.lifecycle.lifecycleScope
@@ -141,6 +142,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // small "Send" hint bar appears so it's discoverable — only while the
         // box is focused.
         binding.composeInput.setOnFocusChangeListener { _, _ -> updateSendHint() }
+        if (prefs.sendOnLeft) {
+            // move the on-screen Send button to the left end of the compose row
+            // (and Attach to the right) so the option holds with softkeys off too
+            (binding.btnSend.parent as? android.widget.LinearLayout)?.let { row ->
+                row.removeView(binding.btnSend)
+                row.addView(binding.btnSend, 0)
+                row.removeView(binding.btnAttach)
+                row.addView(binding.btnAttach)
+            }
+        }
         updateSendHint()
         updateSoftkeys()
 
@@ -587,17 +598,30 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun updateSoftkeys() {
         if (selecting) { updateSelectionUi(); return }
         if (composeMode) {
-            val leftLabel = if (clipboardText().isNullOrBlank())
+            val attachLabel = if (clipboardText().isNullOrBlank())
                 getString(R.string.softkey_attach) else getString(R.string.softkey_options)
-            softkeys?.set(
-                leftLabel, null, getString(R.string.softkey_send),
-                onLeft = { AttachOrPaste.open(this, binding.composeInput,
-                    onAttach = { pickAttachment() },
-                    onRecord = { recordAudioAttachment() }) },
-                onCenter = null,
-                onRight = { send() },
-                onMenu = { threadOptions() }
-            )
+            val attachAction: () -> Unit = { AttachOrPaste.open(this, binding.composeInput,
+                onAttach = { pickAttachment() },
+                onRecord = { recordAudioAttachment() }) }
+            // send-on-left: for keyboards that steal the right softkey / treat
+            // right-D-pad as Space, the Send action can live on the LEFT slot
+            if (prefs.sendOnLeft) {
+                softkeys?.set(
+                    getString(R.string.softkey_send), null, attachLabel,
+                    onLeft = { send() },
+                    onCenter = null,
+                    onRight = attachAction,
+                    onMenu = { threadOptions() }
+                )
+            } else {
+                softkeys?.set(
+                    attachLabel, null, getString(R.string.softkey_send),
+                    onLeft = attachAction,
+                    onCenter = null,
+                    onRight = { send() },
+                    onMenu = { threadOptions() }
+                )
+            }
         } else {
             // scroll mode: the center opens the focused message; it is NOT the
             // selection action (that's entered by long-press / hold), so it must
@@ -624,7 +648,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // slot is Send — make D-pad-down from the text box land there first,
         // instead of Android's default nearest pick (the attach slot on the left)
         if (prefs.softkeysFocusable && composeMode && softkeys?.shouldShow() == true) {
-            binding.composeInput.nextFocusDownId = binding.softkeyBar.softRight.id
+            binding.composeInput.nextFocusDownId =
+                if (prefs.sendOnLeft) binding.softkeyBar.softLeft.id
+                else binding.softkeyBar.softRight.id
         } else {
             binding.composeInput.nextFocusDownId = View.NO_ID
         }
@@ -1510,16 +1536,172 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 GroupParticipants.show(this, c)
             }
         }
-        items += getString(R.string.chat_background) to {
-            io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, convoId, this)
-        }
-        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
+        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
+        items += getString(R.string.customize_menu) to { customizeMenu() }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
             .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
+    }
+
+    /** Mute / block / archive / hide, grouped. */
+    private fun blockAndMenu(c: ConversationEntity) {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
+            lifecycleScope.launch { repo.setMuted(c.id, !c.muted); refreshConvoState() }
+        }
+        items += (if (c.notifBlocked) getString(R.string.unblock_notifications)
+        else getString(R.string.block_notifications)) to {
+            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); refreshConvoState() }
+        }
+        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
+            lifecycleScope.launch {
+                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
+            }
+        }
+        items += getString(R.string.hide_conversation) to {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.hide_confirm)
+                .setPositiveButton(R.string.hide) { _, _ ->
+                    lifecycleScope.launch {
+                        repo.db.conversations().setHidden(c.id, true); ChangeBus.ping(); finish()
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+        if (!c.isGroup) {
+            val number = c.addressList().firstOrNull().orEmpty()
+            val blocked = number.isNotBlank() && repo.isNumberBlocked(number)
+            items += (if (blocked) getString(R.string.unblock_number)
+            else getString(R.string.block_number)) to {
+                if (blocked) {
+                    lifecycleScope.launch {
+                        repo.unblockNumber(number)
+                        Toast.makeText(this@ThreadActivity, R.string.number_unblocked,
+                            Toast.LENGTH_SHORT).show()
+                        refreshConvoState()
+                    }
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.block_number)
+                        .setMessage(R.string.block_number_warning)
+                        .setPositiveButton(R.string.block_number) { _, _ ->
+                            lifecycleScope.launch {
+                                val systemOk = repo.blockNumber(number)
+                                Toast.makeText(this@ThreadActivity,
+                                    if (systemOk) R.string.number_blocked
+                                    else R.string.number_blocked_local,
+                                    Toast.LENGTH_SHORT).show()
+                                refreshConvoState()
+                            }
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                }
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.block_and_menu)
+            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
+            .show()
+    }
+
+    /** Sound, background, style and colors for this look. */
+    private fun customizeMenu() {
+        val items = arrayListOf<Pair<String, () -> Unit>>(
+            getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) },
+            getString(R.string.chat_background) to {
+                io.github.theonionsarewatching.nova.ui.ChatBackground
+                    .show(this, prefs, convoId, this)
+            },
+            getString(R.string.pref_message_style) to { pickMessageStyle() },
+            getString(R.string.pref_message_color) to { messageColorDialog() }
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.customize_menu)
+            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
+            .show()
+    }
+
+    private fun pickMessageStyle() {
+        val values = resources.getStringArray(R.array.style_values)
+        val labels = resources.getStringArray(R.array.style_entries)
+        val current = values.indexOf(prefs.messageStyle).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_message_style)
+            .setSingleChoiceItems(labels, current) { d, w ->
+                d.dismiss()
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                    .edit().putString("message_style", values[w]).apply()
+                applyChatBackground()
+                adapter.notifyDataSetChanged()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Sent / incoming coloring toggles; enabling one opens its color chooser. */
+    private fun messageColorDialog() {
+        val sp = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val column = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        fun addSwitch(labelRes: Int, key: String, default: Boolean, chooser: () -> Unit) {
+            val sw = androidx.appcompat.widget.SwitchCompat(this).apply {
+                text = getString(labelRes)
+                textSize = 15f
+                isChecked = sp.getBoolean(key, default)
+                setPadding(dp(8), dp(12), dp(8), dp(12))
+                isFocusable = true
+                setOnCheckedChangeListener { _, on ->
+                    sp.edit().putBoolean(key, on).apply()
+                    adapter.notifyDataSetChanged()
+                    if (on) chooser()
+                }
+            }
+            column.addView(sw)
+        }
+        addSwitch(R.string.pref_sent_colored, "sent_colored", true) {
+            io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                this, topOptionRes = R.string.sent_color_accent,
+                onTop = {
+                    prefs.sentColor = ""
+                    adapter.notifyDataSetChanged()
+                }
+            ) { hex -> prefs.sentColor = hex; adapter.notifyDataSetChanged() }
+        }
+        addSwitch(R.string.pref_color_incoming, "color_incoming", false) {
+            io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                this, topOptionRes = R.string.incoming_color_accent,
+                onTop = {
+                    prefs.incomingColor = "accent"
+                    adapter.notifyDataSetChanged()
+                }
+            ) { hex -> prefs.incomingColor = hex; adapter.notifyDataSetChanged() }
+        }
+        if (convo?.isGroup == true) {
+            addSwitch(R.string.pref_group_colors, "group_member_colors", false) {}
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_message_color)
+            .setView(android.widget.ScrollView(this).apply { addView(column) })
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** Re-read the conversation and refresh the top-bar badges. */
+    private fun refreshConvoState() {
+        lifecycleScope.launch {
+            repo.db.conversations().byId(convoId)?.let {
+                convo = it
+                updateNotifStatusIcon(it)
+            }
+        }
     }
 
     private fun pickGroupMode(c: ConversationEntity) {

@@ -224,7 +224,10 @@ object Sender {
                 )
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-send",
-                    "own builder: msg=$messageId tid=$tid d_rpt=${if (wantReport) "YES" else "no"} parts=${finalAtts.size}"
+                    "own builder: msg=$messageId tid=$tid " +
+                        "d_rpt=${if (wantReport) "YES" else "no"} " +
+                        "r_rpt=${if (Prefs.get(context).requestReadReports) "YES" else "no"} " +
+                        "parts=${finalAtts.size}"
                 )
                 return
             } catch (e: Exception) {

@@ -43,6 +43,10 @@ class Repo private constructor(private val context: Context) {
 
     // transaction ids we've already fired a sync-path fallback download for, so
     // repeated observer passes don't kick off the same download over and over
+    // m_ids whose "no SENT row" miss has been logged once already
+    private val unmatchedIndicationLogged =
+        java.util.Collections.synchronizedSet(HashSet<String>())
+
     private val downloadFallbackAttempts =
         java.util.Collections.synchronizedSet(HashSet<String>())
 
@@ -364,6 +368,8 @@ class Repo private constructor(private val context: Context) {
                     }
                 } catch (_: Exception) {}
                 if (!already132 && !ctLoc.isNullOrBlank() &&
+                    !io.github.theonionsarewatching.nova.sms.MmsPushReceiver
+                        .isDownloadInFlight(trId) &&
                     downloadFallbackAttempts.add(trId ?: mmsId.toString())
                 ) {
                     io.github.theonionsarewatching.nova.util.DiagLog.log(
@@ -1111,15 +1117,23 @@ class Repo private constructor(private val context: Context) {
             // whose provider lacks that column the whole query throws, which
             // took DELIVERY reports down along with read reports. read_status
             // is now read separately below so it can never do that again.
+            var alreadyProcessed = false
             context.contentResolver.query(
-                Uri.parse("content://mms"), arrayOf("m_id", "st"),
+                Uri.parse("content://mms"), arrayOf("m_id", "st", "read"),
                 "_id = ?", arrayOf(indId.toString()), null
             )?.use { c ->
                 if (c.moveToFirst()) {
                     origMessageId = c.getString(0)
                     st = try { c.getInt(1) } catch (_: Exception) { -1 }
+                    alreadyProcessed = try { c.getInt(2) == 1 } catch (_: Exception) { false }
                 }
             }
+            // the sync path revisits every unlinked indication row on every
+            // pass; a row we have applied is marked read=1 and skipped, which
+            // stops the endless reprocessing (and the log flood) seen in the
+            // field. Unmatched rows stay unmarked so a late-stored Message-ID
+            // still gets its retry.
+            if (alreadyProcessed) return
             // X-Mms-Read-Status, best-effort and fully isolated.
             var readStatus = -1
             if (mType == 136) {
@@ -1154,11 +1168,13 @@ class Repo private constructor(private val context: Context) {
                 arrayOf(mid), "date DESC"
             )?.use { c -> if (c.moveToFirst()) sentTelephonyId = c.getLong(0) }
             val tId = sentTelephonyId ?: run {
-                io.github.theonionsarewatching.nova.util.DiagLog.log(
-                    context, "mms-delivery",
-                    "$kind: no SENT row carries m_id=$mid — dropped (was the " +
-                        "Message-ID stored at send time?)"
-                )
+                if (unmatchedIndicationLogged.add(mid)) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-delivery",
+                        "$kind: no SENT row carries m_id=$mid — dropped (was the " +
+                            "Message-ID stored at send time?)"
+                    )
+                }
                 return
             }
             val m = db.messages().byTelephonyMms(tId) ?: run {
@@ -1203,6 +1219,13 @@ class Repo private constructor(private val context: Context) {
                 delivered && m.status in listOf(MsgStatus.SENDING, MsgStatus.SENT) ->
                     setStatusRespectingCancel(m.id, MsgStatus.DELIVERED)
             }
+            // applied: mark the indication row so no future pass re-runs it
+            try {
+                val cv = android.content.ContentValues(1).apply { put("read", 1) }
+                context.contentResolver.update(
+                    Uri.parse("content://mms/$indId"), cv, null, null
+                )
+            } catch (_: Exception) {}
             refreshAndPing(m.convoId)
         } catch (e: Exception) {
             io.github.theonionsarewatching.nova.util.DiagLog.log(

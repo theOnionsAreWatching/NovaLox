@@ -124,6 +124,8 @@ class Prefs(context: Context) {
     // deliver the recipient's read-rec PDU back as an ordinary MMS, i.e.
     // phantom duplicate messages. Opt-in, with that warning in Settings.
     val requestReadReports: Boolean get() = sp.getBoolean("request_read_reports", false)
+    // Send softkey/button on the LEFT (for keyboards that steal the right side)
+    val sendOnLeft: Boolean get() = sp.getBoolean("send_on_left", false)
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"
