@@ -363,6 +363,17 @@ class MmsPushReceiver : BroadcastReceiver() {
                 context, "mms-push",
                 "download finished rc=$resultCode http=$http -> receive pipeline"
             )
+            // the engine's onReceive (final, can't be overridden) does an
+            // unguarded Log.v(filePath); forwarding an intent without the
+            // file-path extra crashes the process ("println needs a message").
+            // A result with no file can't be persisted anyway — stop here.
+            if (intent.getStringExtra(MmsReceivedReceiver.EXTRA_FILE_PATH) == null) {
+                DiagLog.log(
+                    context, "mms-push",
+                    "download result without file path — not forwarded"
+                )
+                return
+            }
             val forwarded = Intent(intent).apply {
                 action = MmsReceivedReceiver.MMS_RECEIVED
                 setClass(context, MmsReceiver::class.java)

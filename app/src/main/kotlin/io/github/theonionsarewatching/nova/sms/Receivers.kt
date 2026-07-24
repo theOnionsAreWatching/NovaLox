@@ -84,21 +84,6 @@ class SmsDeliverReceiver : BroadcastReceiver() {
 // to the sender. We honor the user's choice for the latter.
 class MmsReceiver : MmsReceivedReceiver() {
 
-    override fun onReceive(context: Context, intent: Intent) {
-        // the engine's onReceive does Log.v(filePath) unguarded; a broadcast
-        // without EXTRA_FILE_PATH crashed the whole receiver ("println needs
-        // a message" in the field log). Nothing useful can happen without the
-        // file anyway — log and stop.
-        if (intent.getStringExtra(MmsReceivedReceiver.EXTRA_FILE_PATH) == null) {
-            io.github.theonionsarewatching.nova.util.DiagLog.log(
-                context, "mms-push", "receive broadcast without file path — ignored"
-            )
-            return
-        }
-        super.onReceive(context, intent)
-    }
-
-
     override fun isAddressBlocked(context: Context, address: String): Boolean =
         Repo.get(context).isNumberBlocked(address)
 
