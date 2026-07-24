@@ -437,7 +437,7 @@
     <string name="saved_to">Saved to %1$s</string>
     <string name="chat_background">Chat background…</string>
     <string name="bg_default">App default</string>
-    <string name="bg_color">Color…</string>
+    <string name="bg_color">Color</string>
     <string name="bg_picture">Picture…</string>
     <string name="no_file_picker">This phone has no file picker app</string>
 
@@ -457,6 +457,8 @@
     <!-- v0.9.22 additions -->
     <string name="bg_gallery">Pick from gallery</string>
     <string name="bg_all_title">Background for all chats</string>
+    <string name="bg_choose_picture">Choose picture</string>
+    <string name="bg_dark_theme">Dark theme</string>
     <string name="no_gallery">No gallery app found</string>
     <string name="pref_all_backgrounds">Chat background (all chats)</string>
     <string name="pref_all_backgrounds_summary">Set one background for every conversation</string>

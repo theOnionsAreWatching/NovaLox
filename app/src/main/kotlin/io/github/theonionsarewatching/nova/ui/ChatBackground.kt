@@ -200,6 +200,109 @@ object ChatBackground {
             .show()
     }
 
+    interface Host {
+        fun applyBackgroundForCurrent()
+        fun startPicturePickerForBackground(convoId: Long)
+    }
+
+    /**
+     * The background menu. Consolidated: "App default" is now the first row of
+     * the colour chooser rather than a separate top-level item, and the old
+     * separate "Picture" (document picker) and "Pick from gallery" rows are one
+     * "Choose picture" that offers every capable app.
+     */
+    fun show(activity: Activity, prefs: Prefs, convoId: Long, host: Host) {
+        val items = arrayOf(
+            activity.getString(R.string.bg_color),
+            activity.getString(R.string.bg_choose_picture),
+            activity.getString(R.string.bg_dark_theme)
+        )
+        AlertDialog.Builder(activity)
+            .setTitle(if (convoId == ALL_THREADS) R.string.bg_all_title else R.string.chat_background)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> chooseColor(
+                        activity,
+                        topOptionRes = R.string.bg_default,
+                        onTop = {
+                            prefs.setChatBg(convoId, "")
+                            host.applyBackgroundForCurrent()
+                        }
+                    ) { hex ->
+                        prefs.setChatBg(convoId, hex)
+                        host.applyBackgroundForCurrent()
+                        android.widget.Toast.makeText(
+                            activity, R.string.background_set,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    1 -> pickPicture(activity, convoId)
+                    2 -> darkThemeDialog(activity, prefs, host)
+                }
+            }
+            .show()
+    }
+
+    /** What the background does in dark theme: follow the light-theme choice,
+     *  or use its own colour. */
+    private fun darkThemeDialog(activity: Activity, prefs: Prefs, host: Host) {
+        val same = prefs.darkChatBg == "same"
+        val labels = arrayListOf(
+            (if (same) "\u2713  " else "     ") + activity.getString(R.string.bg_dark_same)
+        )
+        if (!same) labels += activity.getString(R.string.bg_color)
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.bg_dark_theme)
+            .setItems(labels.toTypedArray()) { _, w ->
+                if (w == 0) {
+                    prefs.darkChatBg = if (same) "default" else "same"
+                    host.applyBackgroundForCurrent()
+                } else {
+                    chooseColor(
+                        activity,
+                        topOptionRes = R.string.bg_default,
+                        onTop = {
+                            prefs.darkChatBg = "default"
+                            host.applyBackgroundForCurrent()
+                        }
+                    ) { hex ->
+                        prefs.darkChatBg = hex
+                        host.applyBackgroundForCurrent()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** One picture chooser offering every gallery / photos / files app. */
+    private fun pickPicture(activity: Activity, convoId: Long) {
+        val req = if (convoId == ALL_THREADS) REQ_BG_GALLERY_ALL else REQ_BG_GALLERY
+        try {
+            // GET_CONTENT + a chooser so EVERY gallery/photos/files app is
+            // offered, not just the system default
+            val base = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+            val chooser = Intent.createChooser(base, activity.getString(R.string.bg_pick_app))
+            activity.startActivityForResult(chooser, req)
+        } catch (_: Exception) {
+            try {
+                val i = Intent(Intent.ACTION_PICK).apply {
+                    setDataAndType(
+                        android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*"
+                    )
+                }
+                activity.startActivityForResult(i, req)
+            } catch (_: Exception) {
+                android.widget.Toast.makeText(
+                    activity, R.string.no_gallery, android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     const val REQ_BG_GALLERY = 208
     const val REQ_BG_GALLERY_ALL = 209
     const val REQ_BG_DOC_ALL = 210
