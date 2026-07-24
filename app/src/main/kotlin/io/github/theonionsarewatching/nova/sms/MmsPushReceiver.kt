@@ -173,21 +173,26 @@ class MmsPushReceiver : BroadcastReceiver() {
                     .get(context).autoDownloadMms
                 if (!auto) {
                     // Auto-download off: leave the notification-ind in the
-                    // provider undownloaded. Repo ingests it as a tappable
-                    // "download" stub; MmsFetch.download() runs it on tap.
+                    // provider undownloaded and ingest it directly as a
+                    // tappable "download" stub. (0.9.55 bounced this through
+                    // the engine's MmsReceivedReceiver, whose onReceive
+                    // expects a downloaded file — crashing on the missing
+                    // extras and never showing anything.)
                     DiagLog.log(
                         context, "mms-push",
                         "notification persisted, auto-download OFF -> stub (tr_id=$transactionId)"
                     )
-                    // Repo watches the provider; nudge it to build the stub row.
-                    val nudge = Intent(context, MmsReceiver::class.java).apply {
-                        action = com.klinker.android.send_message
-                            .MmsReceivedReceiver.MMS_RECEIVED
-                        putExtra(NOTIFICATION_ONLY, true)
-                        putExtra(com.klinker.android.send_message
-                            .MmsReceivedReceiver.EXTRA_URI, uri)
+                    val rowId = uri?.lastPathSegment?.toLongOrNull()
+                    if (rowId != null) {
+                        kotlinx.coroutines.runBlocking {
+                            try {
+                                io.github.theonionsarewatching.nova.data.Repo
+                                    .get(context).ingestNotificationStub(rowId)
+                            } catch (e: Exception) {
+                                DiagLog.log(context, "mms-push", "stub ingest failed: $e")
+                            }
+                        }
                     }
-                    context.sendBroadcast(nudge)
                     return
                 }
                 DiagLog.log(
@@ -354,8 +359,6 @@ class MmsPushReceiver : BroadcastReceiver() {
     companion object {
         private const val ACTION_PREFIX =
             "io.github.theonionsarewatching.nova.MMS_DOWNLOADED."
-        const val NOTIFICATION_ONLY =
-            "io.github.theonionsarewatching.nova.NOTIFICATION_ONLY"
         private val downloadedLocations: MutableSet<String> =
             Collections.synchronizedSet(HashSet<String>())
 

@@ -147,7 +147,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 isGroup = c.isGroup,
                 onPress = { pressMessage(it) },
                 onHold = { holdMessage(it) },
-                isSelected = { id -> selecting && id in selectedIds }
+                isSelected = { id -> selecting && id in selectedIds },
+                backdropColor = { currentBackdropColor() }
             )
             binding.msgList.adapter = adapter
             applyChatBackground()
@@ -1306,6 +1307,31 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     // ---------------- chat background ----------------
+
+    /** The chat background as one opaque color, for contrast decisions.
+     *  Mirrors applyChatBackground; photo backgrounds report a mid grey. */
+    private fun currentBackdropColor(): Int {
+        var v = prefs.chatBg(convoId)
+        val night = ThemeUtils.isNight(this)
+        if (night) {
+            v = when (val d = prefs.darkChatBg) {
+                "same" -> v
+                "default" -> ""
+                else -> d
+            }
+        } else if (v.isBlank() &&
+            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
+        ) {
+            v = "#F2F2F3"
+        }
+        return when {
+            v.isBlank() -> if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE
+            v.startsWith("#") ->
+                try { android.graphics.Color.parseColor(v) }
+                catch (_: Exception) { if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE }
+            else -> 0xFF888888.toInt()
+        }
+    }
 
     private fun applyChatBackground() {
         var v = prefs.chatBg(convoId)

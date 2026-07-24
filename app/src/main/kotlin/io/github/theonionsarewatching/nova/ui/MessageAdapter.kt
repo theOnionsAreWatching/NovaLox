@@ -38,7 +38,10 @@ class MessageAdapter(
     private val isGroup: Boolean,
     private val onPress: (MessageRow) -> Unit,
     private val onHold: (MessageRow) -> Unit,
-    private val isSelected: (Long) -> Boolean = { false }
+    private val isSelected: (Long) -> Boolean = { false },
+    /** current chat backdrop as an opaque color (mid grey for photo bgs) —
+     *  the selection ring must contrast with the backdrop AND the bubble */
+    private val backdropColor: () -> Int = { Color.WHITE }
 ) : androidx.recyclerview.widget.RecyclerView.Adapter<MessageAdapter.VH>() {
 
     init {
@@ -313,12 +316,14 @@ class MessageAdapter(
             holder.b.attachLabel.maxLines = 1
             holder.b.attachLabel.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             // the label text (audio filename, contact card lines, file name)
-            // must read on the bubble it sits in — dark text vanished on dark
-            // bubbles before
-            holder.b.attachLabel.setTextColor(onColor(effectiveFill))
+            // follows the body text color for this bubble exactly — deriving
+            // it from raw fill luminance went light-on-light on translucent
+            // accent fills, whose raw color is dark but which render light
+            val bodyColor = holder.b.body.currentTextColor
+            holder.b.attachLabel.setTextColor(bodyColor)
             androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(
                 holder.b.attachLabel,
-                android.content.res.ColorStateList.valueOf(onColor(effectiveFill))
+                android.content.res.ColorStateList.valueOf(bodyColor)
             )
             holder.b.attachLabel.text = when {
                 // several non-visual parts collapse to a count; the tap opens
@@ -393,10 +398,23 @@ class MessageAdapter(
                 "plain", "accentbar" -> dp(6).toFloat()
                 else -> dp(10).toFloat()
             }
-            val fillLum = androidx.core.graphics.ColorUtils.calculateLuminance(effectiveFill)
-            val accLum = androidx.core.graphics.ColorUtils.calculateLuminance(accent)
-            val ringColor = if (kotlin.math.abs(fillLum - accLum) >= 0.25) accent
-            else onColor(effectiveFill)
+            // translucent fills (the accent-tinted sent bubble) must be
+            // composited over the backdrop before judging brightness — raw
+            // luminance of a 22%-alpha color says "dark" for what renders light
+            val backdrop = backdropColor()
+            val fillOnScreen = androidx.core.graphics.ColorUtils
+                .compositeColors(effectiveFill, backdrop)
+            fun lum(c: Int) = androidx.core.graphics.ColorUtils.calculateLuminance(c)
+            val candidates = listOf(accent, Color.WHITE, 0xFF202020.toInt())
+            val ringColor = candidates.firstOrNull { c ->
+                kotlin.math.abs(lum(c) - lum(fillOnScreen)) >= 0.22 &&
+                    kotlin.math.abs(lum(c) - lum(backdrop)) >= 0.22
+            } ?: candidates.maxByOrNull { c ->
+                minOf(
+                    kotlin.math.abs(lum(c) - lum(fillOnScreen)),
+                    kotlin.math.abs(lum(c) - lum(backdrop))
+                )
+            }!!
             val ring = GradientDrawable().apply {
                 cornerRadius = radius
                 setColor(withAlpha(ringColor, 26))

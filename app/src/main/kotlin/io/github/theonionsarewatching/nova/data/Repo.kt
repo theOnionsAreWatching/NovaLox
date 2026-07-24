@@ -871,6 +871,24 @@ class Repo private constructor(private val context: Context) {
 
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
+    /** Auto-download off: ingest a freshly persisted notification-ind as the
+     *  tappable download stub, and notify like any incoming message. */
+    suspend fun ingestNotificationStub(mmsId: Long) {
+        var dateMs = System.currentTimeMillis()
+        try {
+            context.contentResolver.query(
+                Uri.parse("content://mms"), arrayOf("date"),
+                "_id = ?", arrayOf(mmsId.toString()), null
+            )?.use { c -> if (c.moveToFirst()) dateMs = c.getLong(0) * 1000L }
+        } catch (_: Exception) {}
+        val result = ingestMms(mmsId, dateMs, Telephony.Mms.MESSAGE_BOX_INBOX) ?: return
+        val (msg, convo) = result
+        if (!msg.isMine && !msg.blockedByKeyword) {
+            io.github.theonionsarewatching.nova.notify.NotificationHelper
+                .notifyMessage(context, convo, msg)
+        }
+    }
+
     /** Public entry for MmsPushReceiver: apply a persisted read/delivery
      *  indication (matches the 0.9.50 behavior the engine gave us for free). */
     suspend fun applyMmsIndication(indId: Long, mType: Int) = handleMmsIndication(indId, mType)
