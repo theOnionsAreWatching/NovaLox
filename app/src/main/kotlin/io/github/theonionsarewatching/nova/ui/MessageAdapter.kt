@@ -172,10 +172,19 @@ class MessageAdapter(
                 // squeeze it out of the layout; padding keeps a gap to the text
                 holder.b.accentBar.visibility = View.GONE
                 val barColor = if (m.isMine) accent else Color.GRAY
-                holder.b.bubbleBox.background = AccentBarDrawable(
-                    barColor, tailOnRight = m.isMine,
-                    tailPx = dp(6).toFloat(), barPx = dp(4).toFloat(),
-                    gapPx = dp(7).toFloat()
+                val card = GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(cardColor(ctx))
+                }
+                holder.b.bubbleBox.background = android.graphics.drawable.LayerDrawable(
+                    arrayOf(
+                        card,
+                        AccentBarDrawable(
+                            barColor, tailOnRight = m.isMine,
+                            tailPx = dp(6).toFloat(), barPx = dp(4).toFloat(),
+                            gapPx = dp(7).toFloat()
+                        )
+                    )
                 )
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
                 bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
@@ -183,7 +192,10 @@ class MessageAdapter(
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
             "plain" -> {
-                holder.b.bubbleBox.background = null
+                holder.b.bubbleBox.background = GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(cardColor(ctx))
+                }
                 holder.b.accentBar.visibility = View.GONE
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
                 bubbleParams.gravity = if (m.isMine) Gravity.END else Gravity.START
@@ -214,13 +226,21 @@ class MessageAdapter(
             }
         }
         // custom sent-side color: white text when the chosen fill is dark
-        if (m.isMine && customSentColor(ctx) != null &&
+        // (light theme only; night uses fixed dark fills + light text_primary)
+        if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null &&
             prefs.messageStyle != "plain" && prefs.messageStyle != "accentbar"
         ) {
             val fill = customSentColor(ctx)!!
             if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) {
                 holder.b.body.setTextColor(Color.WHITE)
             }
+        }
+        // the effective fill this row sits on — drives adaptive text below
+        val effectiveFill = when (prefs.messageStyle) {
+            "plain", "accentbar" -> cardColor(ctx)
+            else -> if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null)
+                customSentColor(ctx)!!
+            else bubbleFillColor(ctx, m.isMine, accent)
         }
         holder.b.bubbleBox.layoutParams = bubbleParams
         // the background drawables (tails, accent bar) declare content insets;
@@ -292,6 +312,14 @@ class MessageAdapter(
             holder.b.attachLabel.textSize = prefs.msgTextSp - 2f
             holder.b.attachLabel.maxLines = 1
             holder.b.attachLabel.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            // the label text (audio filename, contact card lines, file name)
+            // must read on the bubble it sits in — dark text vanished on dark
+            // bubbles before
+            holder.b.attachLabel.setTextColor(onColor(effectiveFill))
+            androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(
+                holder.b.attachLabel,
+                android.content.res.ColorStateList.valueOf(onColor(effectiveFill))
+            )
             holder.b.attachLabel.text = when {
                 // several non-visual parts collapse to a count; the tap opens
                 // the chooser so each one is still reachable
@@ -351,28 +379,30 @@ class MessageAdapter(
         )
         holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
-        // focus shade stays on the row; SELECTION now outlines the bubble itself
-        // (or the plain/accent content), so the highlight hugs the message shape
-        holder.b.root.background = ThemeUtils.focusFill(ctx)
+        // focus shade stays on the row — a neutral grey, not the accent, so the
+        // bubble's own colors stay legible; SELECTION outlines the bubble itself
+        holder.b.root.background = ThemeUtils.focusFillNeutral(ctx)
         holder.b.root.foreground = null
         if (isSelected(m.id)) {
-            val strokePx = (4 * ctx.resources.displayMetrics.density).toInt()
-            val base = holder.b.bubbleBox.background
-            // dual ring: dark halo under a white stroke — visible on any bubble
-            // color, including the accent itself
-            val halo = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(if (base == null) withAlpha(Color.BLACK, 30) else Color.TRANSPARENT)
-                setStroke(strokePx + (1.5f * ctx.resources.displayMetrics.density).toInt(),
-                    withAlpha(Color.BLACK, 140))
+            // single clean ring that adapts: accent when it reads against the
+            // bubble fill, otherwise the on-fill contrast color; corner radius
+            // follows the bubble shape so the ring hugs the message
+            val density = ctx.resources.displayMetrics.density
+            val radius = when (prefs.messageStyle) {
+                "square" -> dp(4).toFloat()
+                "plain", "accentbar" -> dp(6).toFloat()
+                else -> dp(10).toFloat()
             }
+            val fillLum = androidx.core.graphics.ColorUtils.calculateLuminance(effectiveFill)
+            val accLum = androidx.core.graphics.ColorUtils.calculateLuminance(accent)
+            val ringColor = if (kotlin.math.abs(fillLum - accLum) >= 0.25) accent
+            else onColor(effectiveFill)
             val ring = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.TRANSPARENT)
-                setStroke(strokePx, Color.WHITE)
+                cornerRadius = radius
+                setColor(withAlpha(ringColor, 26))
+                setStroke((2.5f * density).toInt(), ringColor)
             }
-            holder.b.bubbleBox.foreground =
-                android.graphics.drawable.LayerDrawable(arrayOf(halo, ring))
+            holder.b.bubbleBox.foreground = ring
         } else {
             holder.b.bubbleBox.foreground = null
         }
@@ -427,10 +457,25 @@ private fun customSentColor(ctx: android.content.Context): Int? {
 }
 
 private fun bubbleFillColor(ctx: android.content.Context, isMine: Boolean, accent: Int): Int {
+    // dark theme: darker neutral bubbles with light text; colored fills
+    // (accent tint / custom sent color) are a light-theme look only
+    if (ThemeUtils.isNight(ctx)) {
+        return if (isMine) 0xFF37373E.toInt() else 0xFF2A2A2E.toInt()
+    }
     if (isMine) customSentColor(ctx)?.let { return it }
     return if (isMine) withAlpha(accent, 56)
     else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
 }
+
+/** The card behind plain / accent-bar messages: white over the light-grey
+ *  chat background in light theme, dark grey in dark theme. */
+private fun cardColor(ctx: android.content.Context): Int =
+    if (ThemeUtils.isNight(ctx)) 0xFF2A2A2E.toInt() else Color.WHITE
+
+/** Text color that reads on the given fill. */
+private fun onColor(fill: Int): Int =
+    if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) Color.WHITE
+    else 0xDE000000.toInt()
 
 /** name / numbers / emails pulled from a tiny .vcf for the in-bubble card —
  *  lines prefixed with small line icons (no emoji). */

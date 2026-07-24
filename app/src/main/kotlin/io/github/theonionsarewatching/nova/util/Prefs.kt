@@ -78,6 +78,11 @@ class Prefs(context: Context) {
     // ---- appearance ----
     // system / light / dark
     val theme: String get() = sp.getString("theme", "system") ?: "system"
+    // dark-theme chat background: "default" = plain dark, "same" = reuse the
+    // light-theme background, "#RRGGBB" = a color chosen for dark specifically
+    var darkChatBg: String
+        get() = sp.getString("dark_chat_bg", "default") ?: "default"
+        set(v) { sp.edit().putString("dark_chat_bg", v).apply() }
     val accent: String get() = sp.getString("accent", "blue") ?: "blue"
     val msgTextSp: Float get() = (sp.getString("msg_text_size", "16") ?: "16").toFloatOrNull() ?: 16f
     val timeTextSp: Float get() = (sp.getString("time_text_size", "11") ?: "11").toFloatOrNull() ?: 11f

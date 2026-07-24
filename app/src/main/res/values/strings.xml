@@ -320,6 +320,10 @@
     <string name="mms_not_downloaded">[Multimedia message — not downloaded. Auto-download is off in Settings.]</string>
     <string name="mms_tap_to_download">Tap to download</string>
     <string name="snippet_mms_pending">Picture message</string>
+    <string name="sent_color_accent">Match accent color</string>
+    <string name="bg_dark_option">Dark theme background\u2026</string>
+    <string name="bg_dark_default">Default (dark)</string>
+    <string name="bg_dark_same">Same as light theme</string>
     <string name="enter_code_manually">Enter key code…</string>
     <string name="key_code_hint">Key code number</string>
     <string name="last_key_seen">Last key press seen: code %1$d</string>

@@ -40,8 +40,10 @@ class ConversationAdapter(
         val ctx = parent.context
         b.root.isFocusable = true
         b.root.isFocusableInTouchMode = false
-        b.root.background = ThemeUtils.focusFill(ctx)
-        b.root.foreground = ThemeUtils.focusStroke(ctx)
+        // the row is a full-width rectangle; the shade must be one too —
+        // the old rounded inset shade looked like a floating pill
+        b.root.background = ThemeUtils.focusFillNeutral(ctx, radiusDp = 0)
+        b.root.foreground = ThemeUtils.focusStroke(ctx, radiusDp = 0)
         val pad = ThemeUtils.densityPad(ctx)
         b.root.setPadding(b.root.paddingLeft, pad, b.root.paddingRight, pad)
         return VH(b)

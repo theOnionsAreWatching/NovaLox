@@ -79,6 +79,25 @@ object ThemeUtils {
         }
     }
 
+    fun isNight(context: Context): Boolean =
+        (context.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    /** Neutral grey focus shade — for content rows (conversations, messages)
+     *  where an accent-colored wash fought with the content's own colors. */
+    fun focusFillNeutral(context: Context, radiusDp: Int = 8): StateListDrawable {
+        val fill = GradientDrawable().apply {
+            setColor(if (isNight(context)) 0x3DFFFFFF else 0x2E9E9E9E)
+            if (radiusDp > 0) cornerRadius = dp(context, radiusDp).toFloat()
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), fill)
+            addState(intArrayOf(android.R.attr.state_selected), fill)
+            addState(intArrayOf(android.R.attr.state_pressed), fill)
+            addState(intArrayOf(), GradientDrawable().apply { setColor(Color.TRANSPARENT) })
+        }
+    }
+
     /** Fill-only focus shade (used as BACKGROUND so it shows around the content —
      *  message bubbles, photos and avatars sit on top of it, untinted). */
     fun focusFill(context: Context, radiusDp: Int = 8, alpha: Int = 70): StateListDrawable {

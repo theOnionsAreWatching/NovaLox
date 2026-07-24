@@ -79,7 +79,8 @@ class Repo private constructor(private val context: Context) {
     }
 
     private suspend fun snippetFor(m: MessageEntity): String {
-        if (MmsStub.isStub(m.body)) return context.getString(R.string.snippet_mms_pending)
+        if (MmsStub.isStub(m.body)) return context.getString(
+            io.github.theonionsarewatching.nova.R.string.snippet_mms_pending)
         if (m.body.isNotBlank()) return m.body.take(120)
         if (m.isMms) {
             val parts = db.parts().byMessage(m.id)

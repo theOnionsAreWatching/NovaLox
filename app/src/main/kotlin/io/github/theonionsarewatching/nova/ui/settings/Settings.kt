@@ -296,7 +296,15 @@ class SettingsActivity : BaseActivity() {
                 }
             find("sent_color") {
                 val act = requireActivity()
-                io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(act) { hex ->
+                io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
+                    act,
+                    topOptionRes = R.string.sent_color_accent,
+                    onTop = {
+                        // default: follow the accent (clears any custom color)
+                        io.github.theonionsarewatching.nova.util.Prefs.get(act).sentColor = ""
+                        Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
+                    }
+                ) { hex ->
                     io.github.theonionsarewatching.nova.util.Prefs.get(act).sentColor = hex
                     Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
                 }

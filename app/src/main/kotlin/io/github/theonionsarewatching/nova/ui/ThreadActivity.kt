@@ -1308,7 +1308,21 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     // ---------------- chat background ----------------
 
     private fun applyChatBackground() {
-        val v = prefs.chatBg(convoId)
+        var v = prefs.chatBg(convoId)
+        if (ThemeUtils.isNight(this)) {
+            // dark theme: a light custom background would glare — the user
+            // chooses whether it carries over (Settings -> chat background)
+            v = when (val d = prefs.darkChatBg) {
+                "same" -> v
+                "default" -> ""
+                else -> d
+            }
+        } else if (v.isBlank() &&
+            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
+        ) {
+            // card styles read as white squares over a very light grey
+            v = "#F2F2F3"
+        }
         when {
             v.isBlank() -> {
                 binding.chatBackdrop.visibility = View.GONE
