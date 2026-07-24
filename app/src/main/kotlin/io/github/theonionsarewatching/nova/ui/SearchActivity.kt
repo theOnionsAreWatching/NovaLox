@@ -123,8 +123,11 @@ class SearchActivity : BaseActivity() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val r = items[position]
             val title = titles[r.convoId] ?: ""
+            val accent = ThemeUtils.accentColor(holder.itemView.context)
             holder.b.suggestionName.text = android.text.SpannableStringBuilder()
-                .append(boldMatches(title, query))
+                // the title is already bold, so bolding the match there is
+                // invisible — color it with the accent instead
+                .append(boldMatches(title, query, accent))
                 .append("  \u00B7  ")
                 .append(Formatters.listStamp(r.date))
             // show a window of the body around the match so the bolded term is
@@ -145,8 +148,13 @@ class SearchActivity : BaseActivity() {
             return prefix + body.substring(start, end) + suffix
         }
 
-        /** Bold every case-insensitive occurrence of the query in the text. */
-        private fun boldMatches(text: String, q: String): CharSequence {
+        /** Bold every case-insensitive occurrence of the query in the text.
+         *  When matchColor is given the match is also tinted and underlined —
+         *  used for the contact name, whose text is bold already so weight
+         *  alone can't mark the match. */
+        private fun boldMatches(
+            text: String, q: String, matchColor: Int? = null
+        ): CharSequence {
             if (q.isBlank()) return text
             val sp = android.text.SpannableString(text)
             val lower = text.lowercase()
@@ -155,12 +163,18 @@ class SearchActivity : BaseActivity() {
             while (true) {
                 val i = lower.indexOf(needle, from)
                 if (i < 0) break
+                val end = i + needle.length
+                val flag = android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
                 sp.setSpan(
-                    android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
-                    i, i + needle.length,
-                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    android.text.style.StyleSpan(android.graphics.Typeface.BOLD), i, end, flag
                 )
-                from = i + needle.length
+                if (matchColor != null) {
+                    sp.setSpan(
+                        android.text.style.ForegroundColorSpan(matchColor), i, end, flag
+                    )
+                    sp.setSpan(android.text.style.UnderlineSpan(), i, end, flag)
+                }
+                from = end
             }
             return sp
         }

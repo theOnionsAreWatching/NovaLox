@@ -365,7 +365,7 @@
     <string name="incoming_color_set">Incoming color set</string>
     <string name="pref_message_color">Message color</string>
     <string name="pref_message_color_summary">Bubble colors for sent, incoming, and group members</string>
-    <string name="sent_color_accent">Match accent color</string>
+    <string name="sent_color_accent">Accent color</string>
     <string name="bg_dark_option">Dark theme background\u2026</string>
     <string name="bg_dark_default">Default (dark)</string>
     <string name="bg_dark_same">Same as light theme</string>
