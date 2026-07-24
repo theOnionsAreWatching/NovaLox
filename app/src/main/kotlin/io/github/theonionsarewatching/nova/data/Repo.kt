@@ -1171,21 +1171,22 @@ class Repo private constructor(private val context: Context) {
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
 
-            // read-orig-ind (136) carries X-Mms-Read-Status: 0x81/129 means
-            // "deleted without being read". Anything else — INCLUDING an unset
-            // or absent value — means read: carriers commonly omit the field
-            // and signal read purely by sending the notice at all.
-            val isRead = mType == 136 && readStatus != 129
+            // THE 0.9.50 RULE, verbatim, because it is the one that worked in
+            // the field: a read-orig-ind arriving IS the read signal. No
+            // conditions on read_status — that column's real-world contents on
+            // these devices are unknown, and gating on an unknown is how read
+            // reports silently died. Its value is captured in the log above so
+            // the field can tell us what it actually holds; the DECISION does
+            // not depend on it.
+            val isRead = mType == 136
             // A read notice implies delivery a fortiori: nothing can be read
-            // that was never delivered. This is the rule that worked before
-            // 0.9.60 split the two apart.
+            // that was never delivered.
             val delivered = st == 129 || isRead
 
             db.messages().appendDeliveryDebug(
                 m.id,
                 if (mType == 136)
-                    "[$stamp] MMS read report read_status=$readStatus -> " +
-                        "${if (isRead) "read" else "deleted unread"}\n"
+                    "[$stamp] MMS read report (read_status=$readStatus) -> read\n"
                 else
                     "[$stamp] MMS delivery report st=$st -> " +
                         "${if (delivered) "delivered" else "not delivered"}\n"
@@ -1249,7 +1250,16 @@ class Repo private constructor(private val context: Context) {
 
     suspend fun onMmsSent(messageId: Long, ok: Boolean, telephonyId: Long? = null) {
         val before = db.messages().byId(messageId)?.status
-        setStatusRespectingCancel(messageId, if (ok) MsgStatus.SENT else MsgStatus.FAILED)
+        // never move backwards: a delivery/read report can land BEFORE this
+        // send-confirmation finishes (it races through the sync path), and the
+        // unconditional SENT write here was stomping DELIVERED/READ back to
+        // "Sent". A confirmation carries no new information for a message a
+        // report has already advanced.
+        val alreadyPast = ok && (before == MsgStatus.DELIVERED ||
+            before == MsgStatus.READ_BY_RECIPIENT)
+        if (!alreadyPast) {
+            setStatusRespectingCancel(messageId, if (ok) MsgStatus.SENT else MsgStatus.FAILED)
+        }
         val after = db.messages().byId(messageId)?.status
         io.github.theonionsarewatching.nova.util.DiagLog.log(
             context, "mms-status", "msg=$messageId status $before -> $after (row ${if (after == null) "MISSING" else "ok"})"
