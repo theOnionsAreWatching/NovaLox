@@ -112,6 +112,13 @@ class Prefs(context: Context) {
 
     // ---- behavior ----
     val showSearchBar: Boolean get() = sp.getBoolean("show_search_bar", false)
+    // Our own blocked-number list. The system BlockedNumberProvider is the
+    // primary store, but it refuses inserts on some ROMs / secondary users —
+    // this keeps blocking working there.
+    var blockedNumbers: Set<String>
+        get() = sp.getStringSet("blocked_numbers", emptySet()) ?: emptySet()
+        set(v) { sp.edit().putStringSet("blocked_numbers", v).apply() }
+
     val deliveryReports: Boolean get() = sp.getBoolean("delivery_reports", true)
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     /** "single" (one aggregated notification, default) or "per_convo". */

@@ -484,20 +484,39 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked) }
         }
         items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
-        if (Build.VERSION.SDK_INT >= 24 && !c.isGroup) {
-            items += getString(R.string.block_number) to {
+        if (!c.isGroup) {
+            val number = c.addressList().firstOrNull().orEmpty()
+            val alreadyBlocked = number.isNotBlank() && repo.isNumberBlocked(number)
+            val label = if (alreadyBlocked) getString(R.string.unblock_number)
+            else getString(R.string.block_number)
+            items += label to {
                 lifecycleScope.launch {
-                    try {
-                        val values = android.content.ContentValues().apply {
-                            put(android.provider.BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER,
-                                c.addressList().first())
-                        }
-                        contentResolver.insert(
-                            android.provider.BlockedNumberContract.BlockedNumbers.CONTENT_URI, values
-                        )
-                        android.widget.Toast.makeText(this@MainActivity, R.string.number_blocked,
-                            android.widget.Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) {}
+                    if (number.isBlank()) {
+                        android.widget.Toast.makeText(
+                            this@MainActivity, R.string.block_failed,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        return@launch
+                    }
+                    if (alreadyBlocked) {
+                        repo.unblockNumber(number)
+                        android.widget.Toast.makeText(
+                            this@MainActivity, R.string.number_unblocked,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        // the old code inserted straight into the system store
+                        // and swallowed any failure, so a refusal looked like
+                        // "nothing happened"; now we always block locally and
+                        // report what actually happened
+                        val systemOk = repo.blockNumber(number)
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            if (systemOk) R.string.number_blocked
+                            else R.string.number_blocked_local,
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             }
         }

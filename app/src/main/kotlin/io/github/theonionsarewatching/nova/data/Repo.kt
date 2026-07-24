@@ -837,10 +837,68 @@ class Repo private constructor(private val context: Context) {
     }
 
     fun isNumberBlocked(address: String): Boolean {
+        val norm = PhoneUtils.normalize(address)
+        if (Prefs.get(context).blockedNumbers.any { PhoneUtils.normalize(it) == norm }) return true
         if (Build.VERSION.SDK_INT < 24) return false
         return try {
             android.provider.BlockedNumberContract.isBlocked(context, address)
         } catch (_: Exception) { false }
+    }
+
+    /** Block a number. Writes to the system blocked-number store when it will
+     *  accept us, and always records it in our own list so blocking still
+     *  works where the provider refuses (stripped ROMs, secondary users).
+     *  Returns true if the system store took it. */
+    fun blockNumber(address: String): Boolean {
+        val prefs = Prefs.get(context)
+        prefs.blockedNumbers = prefs.blockedNumbers + address
+        var systemOk = false
+        if (Build.VERSION.SDK_INT >= 24) {
+            try {
+                if (android.provider.BlockedNumberContract
+                        .canCurrentUserBlockNumbers(context)
+                ) {
+                    val values = android.content.ContentValues().apply {
+                        put(
+                            android.provider.BlockedNumberContract.BlockedNumbers
+                                .COLUMN_ORIGINAL_NUMBER, address
+                        )
+                    }
+                    context.contentResolver.insert(
+                        android.provider.BlockedNumberContract.BlockedNumbers.CONTENT_URI,
+                        values
+                    )
+                    systemOk = true
+                }
+            } catch (e: Exception) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "block", "system block failed for $address: ${e.message}"
+                )
+            }
+        }
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "block", "blocked $address (system=$systemOk, local=yes)"
+        )
+        ChangeBus.ping()
+        return systemOk
+    }
+
+    fun unblockNumber(address: String) {
+        val prefs = Prefs.get(context)
+        val norm = PhoneUtils.normalize(address)
+        prefs.blockedNumbers = prefs.blockedNumbers
+            .filterNot { PhoneUtils.normalize(it) == norm }.toSet()
+        if (Build.VERSION.SDK_INT >= 24) {
+            try {
+                context.contentResolver.delete(
+                    android.provider.BlockedNumberContract.BlockedNumbers.CONTENT_URI,
+                    android.provider.BlockedNumberContract.BlockedNumbers
+                        .COLUMN_ORIGINAL_NUMBER + " = ?",
+                    arrayOf(address)
+                )
+            } catch (_: Exception) {}
+        }
+        ChangeBus.ping()
     }
 
     // ============================== Elements ==============================

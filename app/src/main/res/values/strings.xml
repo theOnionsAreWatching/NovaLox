@@ -61,6 +61,10 @@
     <string name="mark_unread">Mark unread</string>
     <string name="block_number">Block number</string>
     <string name="number_blocked">Number blocked</string>
+    <string name="unblock_number">Unblock number</string>
+    <string name="number_unblocked">Number unblocked</string>
+    <string name="number_blocked_local">Number blocked in this app (the system block list refused)</string>
+    <string name="block_failed">No number to block</string>
     <string name="delete_thread">Delete conversation</string>
     <string name="delete_thread_confirm">Delete all messages with %1$s? They move to the recycle bin.</string>
     <string name="delete_thread_locked">This conversation has %1$d locked messages. Delete those too?</string>

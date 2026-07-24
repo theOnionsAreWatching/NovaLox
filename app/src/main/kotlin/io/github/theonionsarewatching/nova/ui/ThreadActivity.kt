@@ -201,6 +201,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         super.onResume()
         visibleConvoId = convoId
         NotificationHelper.cancel(this, convoId)
+        // the mute / blocked / vibrate state can be changed from the list or
+        // this thread's own menu — re-read it so the top-bar badge is current
+        lifecycleScope.launch {
+            repo.db.conversations().byId(convoId)?.let {
+                convo = it
+                updateNotifStatusIcon(it)
+            }
+        }
         val barShown = softkeys?.shouldShow() == true
         binding.btnAttach.visibility = if (barShown) View.GONE else View.VISIBLE
         binding.btnSend.visibility = if (barShown) View.GONE else View.VISIBLE
