@@ -9,7 +9,6 @@ import coil.load
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ConversationEntity
-import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.databinding.ItemConversationBinding
 import io.github.theonionsarewatching.nova.util.Formatters
 import io.github.theonionsarewatching.nova.util.Prefs
@@ -140,14 +139,16 @@ class ConversationAdapter(
         holder.b.convoTitle.text = title
         holder.b.iconPin.visibility =
             if (c.pinned) android.view.View.VISIBLE else android.view.View.GONE
-        holder.b.iconBlocked.visibility =
-            if (c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
-        holder.b.iconMuted.visibility =
-            if (c.muted && !c.notifBlocked) android.view.View.VISIBLE else android.view.View.GONE
-        holder.b.iconNumberBlocked.visibility =
-            if (!c.isGroup && c.addressList().firstOrNull()
-                    ?.let { Repo.get(holder.itemView.context).isNumberBlocked(it) } == true
-            ) android.view.View.VISIBLE else android.view.View.GONE
+        // one mutually-exclusive status badge (blocked number / notifications
+        // blocked / muted / vibrate-only), resolved the same way as the
+        // thread's top bar
+        val statusIcon = ConvoStatusIcon.forConversation(holder.itemView.context, c)
+        if (statusIcon == 0) {
+            holder.b.iconStatus.visibility = android.view.View.GONE
+        } else {
+            holder.b.iconStatus.setImageResource(statusIcon)
+            holder.b.iconStatus.visibility = android.view.View.VISIBLE
+        }
         holder.b.iconScheduled.visibility =
             if (hasScheduled(c.id)) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.convoTitle.textSize = prefs.msgTextSp

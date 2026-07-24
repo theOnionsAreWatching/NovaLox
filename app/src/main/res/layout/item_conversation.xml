@@ -60,31 +60,13 @@
                 android:contentDescription="@string/pin" />
 
             <ImageView
-                android:id="@+id/iconMuted"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
+                android:id="@+id/iconStatus"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:layout_marginStart="4dp"
-                android:src="@drawable/ic_muted"
+                android:scaleType="centerInside"
                 android:visibility="gone"
-                android:contentDescription="@string/mute" />
-
-            <ImageView
-                android:id="@+id/iconBlocked"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_marginStart="4dp"
-                android:src="@drawable/ic_notif_blocked"
-                android:visibility="gone"
-                android:contentDescription="@string/block_notifications" />
-
-            <ImageView
-                android:id="@+id/iconNumberBlocked"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_marginStart="4dp"
-                android:src="@drawable/ic_blocked"
-                android:visibility="gone"
-                android:contentDescription="@string/block_number" />
+                android:contentDescription="@string/notif_status" />
 
             <ImageView
                 android:id="@+id/iconScheduled"

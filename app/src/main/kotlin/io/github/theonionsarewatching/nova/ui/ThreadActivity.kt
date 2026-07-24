@@ -183,18 +183,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Bell-off / mute / vibrate-only badge on the thread bar. Priority:
      *  notifications blocked > muted > vibrate-only. */
     private fun updateNotifStatusIcon(c: ConversationEntity) {
-        val numberBlocked = !c.isGroup &&
-            c.addressList().firstOrNull()?.let { repo.isNumberBlocked(it) } == true
-        fun show(v: View, on: Boolean) {
-            v.visibility = if (on) View.VISIBLE else View.GONE
+        binding.iconPinThread.visibility = if (c.pinned) View.VISIBLE else View.GONE
+        // these states are mutually exclusive in practice — a blocked number
+        // has no notification to mute, a muted thread can't vibrate — so show
+        // exactly one, strongest first
+        val icon = ConvoStatusIcon.forConversation(this, c)
+        if (icon == 0) {
+            binding.threadNotifIcon.visibility = View.GONE
+        } else {
+            binding.threadNotifIcon.setImageResource(icon)
+            binding.threadNotifIcon.visibility = View.VISIBLE
         }
-        // every applicable state shows, rather than only the highest-priority
-        // one — the thread bar now mirrors the conversation list's badges
-        show(binding.iconPinThread, c.pinned)
-        show(binding.iconNumberBlockedThread, numberBlocked)
-        show(binding.iconNotifBlockedThread, c.notifBlocked)
-        show(binding.iconMutedThread, c.muted && !c.notifBlocked)
-        show(binding.iconVibrateThread, c.vibrateMode == 1)
     }
 
     override fun onResume() {
