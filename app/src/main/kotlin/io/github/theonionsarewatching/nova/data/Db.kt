@@ -585,7 +585,25 @@ interface ContactNameDao {
 
 val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE messages ADD COLUMN recipientStatuses TEXT NOT NULL DEFAULT ''")
+        // IDEMPOTENT on purpose: a device in the field ended up with this
+        // column already present while the schema version was still 6 (the
+        // process died between the ALTER and Room committing the version),
+        // and the blind ALTER then threw "duplicate column name" on every
+        // open — a permanent startup crash loop. Check first; every future
+        // ADD COLUMN migration must do the same.
+        val exists = db.query("PRAGMA table_info(`messages`)").use { c ->
+            val nameIdx = c.getColumnIndex("name")
+            var found = false
+            while (c.moveToNext()) {
+                if (nameIdx >= 0 && c.getString(nameIdx) == "recipientStatuses") {
+                    found = true; break
+                }
+            }
+            found
+        }
+        if (!exists) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN recipientStatuses TEXT NOT NULL DEFAULT ''")
+        }
     }
 }
 
