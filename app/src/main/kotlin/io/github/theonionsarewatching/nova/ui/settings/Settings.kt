@@ -349,14 +349,16 @@ class SettingsActivity : BaseActivity() {
                 val act = requireActivity()
                 io.github.theonionsarewatching.nova.ui.ChatBackground.chooseColor(
                     act,
-                    topOptionRes = R.string.incoming_color_default,
+                    topOptionRes = R.string.incoming_color_accent,
                     onTop = {
-                        // default: the standard incoming tint (clears any custom)
-                        io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = ""
+                        // accent-colored incoming bubbles (a lighter accent tint)
+                        io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = "accent"
+                        io.github.theonionsarewatching.nova.util.ChangeBus.ping()
                         Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                     }
                 ) { hex ->
                     io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = hex
+                    io.github.theonionsarewatching.nova.util.ChangeBus.ping()
                     Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                 }
             }

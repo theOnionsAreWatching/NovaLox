@@ -41,6 +41,11 @@ class Repo private constructor(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val convoMutex = Mutex()
 
+    // transaction ids we've already fired a sync-path fallback download for, so
+    // repeated observer passes don't kick off the same download over and over
+    private val downloadFallbackAttempts =
+        java.util.Collections.synchronizedSet(HashSet<String>())
+
     // ============================== Conversations ==============================
 
     suspend fun getOrCreateConversation(addresses: List<String>): ConversationEntity = convoMutex.withLock {
@@ -331,7 +336,52 @@ class Repo private constructor(private val context: Context) {
                 context, "mms-ingest",
                 "notification-ind (m_type=130) mmsId=$mmsId tr_id=$trId autoDownload=$auto"
             )
-            if (auto) return null
+            if (auto) {
+                // Auto-download on: normally MmsPushReceiver downloads this and
+                // we never see the bare 130 here. But on some carriers/ROMs
+                // (Visible and other Verizon MVNOs seen in the field) our WAP
+                // push receiver doesn't win the broadcast, so the only thing
+                // that noticed this message is the content-observer sync — and
+                // if we just drop it, the MMS is lost forever. Safety net:
+                // kick off the download ourselves for any 130 that has a
+                // content location and no downloaded (132) twin yet.
+                var already132 = false
+                var ctLoc: String? = null
+                var subId130 = -1
+                try {
+                    if (!trId.isNullOrBlank()) {
+                        resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                            "m_type = 132 AND tr_id = ?", arrayOf(trId), null)
+                            ?.use { c -> already132 = c.count > 0 }
+                    }
+                    resolver.query(Uri.parse("content://mms"),
+                        arrayOf("ct_l", "sub_id"), "_id = ?",
+                        arrayOf(mmsId.toString()), null)?.use { c ->
+                        if (c.moveToFirst()) {
+                            ctLoc = c.getString(0)
+                            subId130 = try { c.getInt(1) } catch (_: Exception) { -1 }
+                        }
+                    }
+                } catch (_: Exception) {}
+                if (!already132 && !ctLoc.isNullOrBlank() &&
+                    downloadFallbackAttempts.add(trId ?: mmsId.toString())
+                ) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-ingest",
+                        "push receiver missed it — downloading from sync (mmsId=$mmsId)"
+                    )
+                    try {
+                        io.github.theonionsarewatching.nova.sms.MmsPushReceiver.fetch(
+                            context, ctLoc!!, trId ?: "", null, subId130
+                        )
+                    } catch (e: Exception) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-ingest", "sync download kickoff failed: $e"
+                        )
+                    }
+                }
+                return null
+            }
         }
         val notDownloaded = mType == 130
         // the mms table also holds protocol rows with no content — delivery reports,

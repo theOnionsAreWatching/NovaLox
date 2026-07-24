@@ -34,9 +34,14 @@ class ComposeActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        repo = Repo.get(this)
+        // Dialer "send message" hand-off: a single-recipient sms:/smsto: with no
+        // body should go straight to that conversation. Decide this BEFORE
+        // inflating the compose layout — inflating first showed the new-message
+        // screen for a split second before the thread opened.
+        if (routeDialerHandoffEarly()) return
         binding = ActivityComposeBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        repo = Repo.get(this)
         groupMode = if (prefs.defaultGroupMode == "group_mms") GroupMode.GROUP_MMS else GroupMode.BROADCAST
 
         suggestionAdapter = SuggestionAdapter { pick(it) }
@@ -88,29 +93,42 @@ class ComposeActivity : BaseActivity() {
         }
 
         handleIncomingIntent()
-        // sms:/smsto: from the dialer with exactly one recipient and no body
-        // to review: jump straight to that number's thread instead of the
-        // compose screen. The thread already handles an unknown number (shows
-        // the number until it's saved) and won't persist an empty conversation.
-        if (maybeRouteSingleRecipientToThread()) return
         updateRecipientLabel()
         binding.recipientInput.requestFocus()
     }
 
     /** Returns true (and finishes) if we handed off to a thread. */
-    private fun maybeRouteSingleRecipientToThread(): Boolean {
+    /** Runs before setContentView. Parses the sms:/smsto: intent directly (no
+     *  UI state yet) and, if it's a single-recipient dialer send with no body
+     *  or attachment, launches that thread and finishes without ever showing
+     *  the compose screen. Returns true if it handed off. */
+    private fun routeDialerHandoffEarly(): Boolean {
         val fromDialer = intent.action == Intent.ACTION_SENDTO ||
             intent.action == Intent.ACTION_VIEW
         if (!fromDialer) return false
-        if (recipients.size != 1) return false
-        if (binding.bodyInput.text?.isNotBlank() == true) return false
-        if (pendingAttachments.isNotEmpty()) return false
-        val number = recipients.first()
+        val data = intent.data ?: return false
+        val scheme = data.scheme?.lowercase()
+        if (scheme != "sms" && scheme != "smsto" && scheme != "mms" && scheme != "mmsto") return false
+        val raw = data.schemeSpecificPart.orEmpty()
+        val numbersPart = raw.substringBefore('?')
+        val nums = numbersPart.split(";", ",").map {
+            try { java.net.URLDecoder.decode(it.trim(), "UTF-8") } catch (_: Exception) { it.trim() }
+        }.filter { it.isNotBlank() }
+        if (nums.size != 1) return false
+        // a body= in the URI or a shared EXTRA_TEXT means the user has content
+        // to review — let the full compose screen handle those
+        val query = raw.substringAfter('?', "")
+        val hasBody = query.split('&').any { it.startsWith("body=") && it.length > 5 }
+        if (hasBody) return false
+        if (intent.getStringExtra(Intent.EXTRA_TEXT) != null) return false
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) return false
+        val number = nums.first()
         lifecycleScope.launch {
             val convo = repo.getOrCreateConversation(listOf(number))
             startActivity(Intent(this@ComposeActivity, ThreadActivity::class.java)
                 .putExtra(ThreadActivity.EXTRA_CONVO_ID, convo.id))
             finish()
+            overridePendingTransition(0, 0)
         }
         return true
     }

@@ -198,6 +198,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.btnSend.visibility = if (barShown) View.GONE else View.VISIBLE
         updateSoftkeys()
         markRead()
+        // color / style / thumbnail settings can change while a settings screen
+        // was on top; rebind so they take effect on return without reopening
+        if (::adapter.isInitialized) {
+            applyChatBackground()
+            adapter.notifyDataSetChanged()
+        }
     }
 
     override fun onPause() {

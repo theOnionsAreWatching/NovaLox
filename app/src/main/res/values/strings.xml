@@ -361,7 +361,7 @@
     <string name="about_details">NovaLox\n\nA privacy-respecting SMS/MMS app.\n\nVersion %1$s\n\nLicensed under the PolyForm Noncommercial License 1.0.0. This app stores your messages only on your device and sends nothing to any server other than your carrier\u2019s messaging service.\n\nProject page: github.com/theOnionsAreWatching/NovaLox</string>
     <string name="pref_incoming_color">Incoming message color</string>
     <string name="pref_incoming_color_summary">Choose the color of received message bubbles (when incoming coloring is on)</string>
-    <string name="incoming_color_default">Default tint</string>
+    <string name="incoming_color_accent">Accent color</string>
     <string name="incoming_color_set">Incoming color set</string>
     <string name="sent_color_accent">Match accent color</string>
     <string name="bg_dark_option">Dark theme background\u2026</string>

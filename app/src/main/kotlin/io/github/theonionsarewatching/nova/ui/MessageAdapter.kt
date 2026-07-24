@@ -503,13 +503,14 @@ private fun customSentColor(ctx: android.content.Context): Int? {
 
 private var incomingColorCache: Pair<String, Int?>? = null
 
-/** The user's custom incoming-bubble color, or null for the default. */
+/** The user's custom incoming-bubble color, or null for the default.
+ *  The sentinel "accent" means "follow the accent tint" and is handled by
+ *  the caller (returns null here so the accent-tint path runs). */
 private fun customIncomingColor(ctx: android.content.Context): Int? {
     val hex = io.github.theonionsarewatching.nova.util.Prefs.get(ctx).incomingColor
+    if (hex.isBlank() || hex == "accent") return null
     incomingColorCache?.let { if (it.first == hex) return it.second }
-    val parsed = hex.takeIf { it.isNotBlank() }?.let {
-        try { Color.parseColor(it) } catch (_: Exception) { null }
-    }
+    val parsed = try { Color.parseColor(hex) } catch (_: Exception) { null }
     incomingColorCache = hex to parsed
     return parsed
 }
