@@ -353,12 +353,12 @@ class SettingsActivity : BaseActivity() {
                     onTop = {
                         // accent-colored incoming bubbles (a lighter accent tint)
                         io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = "accent"
-                        io.github.theonionsarewatching.nova.util.ChangeBus.ping()
+                        ChangeBus.ping()
                         Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                     }
                 ) { hex ->
                     io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = hex
-                    io.github.theonionsarewatching.nova.util.ChangeBus.ping()
+                    ChangeBus.ping()
                     Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                 }
             }

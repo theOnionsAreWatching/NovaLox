@@ -363,6 +363,7 @@
     <string name="pref_incoming_color_summary">Choose the color of received message bubbles (when incoming coloring is on)</string>
     <string name="incoming_color_accent">Accent color</string>
     <string name="incoming_color_set">Incoming color set</string>
+    <string name="send_hint">Press the center key to send</string>
     <string name="sent_color_accent">Match accent color</string>
     <string name="bg_dark_option">Dark theme background\u2026</string>
     <string name="bg_dark_default">Default (dark)</string>

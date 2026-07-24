@@ -272,6 +272,18 @@
             android:text="@string/delete" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/sendHintBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="6dp"
+        android:visibility="gone"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:text="@string/send_hint"
+        android:background="?attr/colorSurfaceContainerHigh" />
+
     <include
         android:id="@+id/softkeyBar"
         layout="@layout/view_softkey_bar" />

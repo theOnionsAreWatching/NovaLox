@@ -134,6 +134,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             binding.btnAttach.visibility = View.GONE
             binding.btnSend.visibility = View.GONE
         }
+        // On phones whose keyboard steals the right D-pad as Space (e.g. Kyocera
+        // E4810) the user can't reach the on-screen Send button, and if the
+        // softkey bar is off there's no softkey Send either. So when softkeys
+        // are off, D-pad center sends while the compose box has focus, and a
+        // small "Send" hint bar appears so it's discoverable — only while the
+        // box is focused.
+        binding.composeInput.setOnFocusChangeListener { _, _ -> updateSendHint() }
+        updateSendHint()
         updateSoftkeys()
 
         lifecycleScope.launch {
@@ -584,14 +592,27 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 onMenu = { threadOptions() }
             )
         } else {
+            // scroll mode: the center opens the focused message; it is NOT the
+            // selection action (that's entered by long-press / hold), so it must
+            // not read "Select" — only real selection mode shows that
             softkeys?.set(
-                getString(R.string.softkey_options), getString(R.string.softkey_select), getString(R.string.softkey_compose),
+                getString(R.string.softkey_options), null, getString(R.string.softkey_compose),
                 onLeft = { threadOptions() },
                 onCenter = { binding.msgList.focusedChild?.performClick() },
                 onRight = { enterComposeMode() },
                 onMenu = { threadOptions() }
             )
         }
+    }
+
+    /** The "Send" hint bar + D-pad-center-sends behavior exist only when the
+     *  softkey bar is off (otherwise the softkey Send covers it) and the
+     *  compose box is focused. */
+    private fun sendHintActive(): Boolean =
+        softkeys?.shouldShow() != true && binding.composeInput.hasFocus()
+
+    private fun updateSendHint() {
+        binding.sendHintBar.visibility = if (sendHintActive()) View.VISIBLE else View.GONE
     }
 
     private fun enterComposeMode() {
@@ -601,6 +622,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.composeInput.requestFocus()
         binding.composeInput.setSelection(binding.composeInput.text?.length ?: 0)
         updateSoftkeys()
+        updateSendHint()
     }
 
     private fun enterScrollMode(focusPos: Int = rows.size - 1) {
@@ -614,6 +636,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val target = focusPos.coerceIn(0, rows.size - 1)
         if (target == rows.size - 1) focusBottomPinned() else scroller?.focusPosition(target)
         updateSoftkeys()
+        updateSendHint()
     }
 
     /** Focus the newest message but keep the list scrolled to the very bottom —
@@ -651,6 +674,24 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             return true
         }
         if (softkeys?.handleKey(event) == true) return true
+
+        // D-pad center = Send when the compose box is focused and the softkey
+        // bar is off. This is the escape hatch for keyboards that repurpose the
+        // right D-pad as Space (Kyocera E4810), leaving the on-screen Send
+        // button unreachable by D-pad. ENTER is left alone so it still inserts
+        // newlines in the multi-line input.
+        if (event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
+            event.repeatCount == 0 && sendHintActive()
+        ) {
+            send()
+            return true
+        }
+        if (event.action == KeyEvent.ACTION_UP &&
+            event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER && sendHintActive()
+        ) {
+            return true
+        }
 
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
             binding.composeInput.hasFocus()

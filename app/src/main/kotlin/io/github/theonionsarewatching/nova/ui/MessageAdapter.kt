@@ -215,7 +215,7 @@ class MessageAdapter(
             }
             "square" -> { // square corners with a small side tail
                 holder.b.accentBar.visibility = View.GONE
-                val fill = bubbleFillColor(ctx, m.isMine, accent, m.address)
+                val fill = bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null)
                 holder.b.bubbleBox.background = TailBubbleDrawable(
                     fill, dp(4).toFloat(), tailOnRight = m.isMine, tailPx = dp(7).toFloat()
                 )
@@ -227,7 +227,7 @@ class MessageAdapter(
             else -> { // bubble: rounded body, the original bottom-corner tail
                 holder.b.accentBar.visibility = View.GONE
                 holder.b.bubbleBox.background = BottomTailBubbleDrawable(
-                    bubbleFillColor(ctx, m.isMine, accent, m.address), dp(10).toFloat(),
+                    bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null), dp(10).toFloat(),
                     tailOnRight = m.isMine, tailPx = dp(7).toFloat()
                 )
                 bubbleParams.width = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -251,7 +251,7 @@ class MessageAdapter(
             "plain", "accentbar" -> cardColor(ctx)
             else -> if (!ThemeUtils.isNight(ctx) && m.isMine && customSentColor(ctx) != null)
                 customSentColor(ctx)!!
-            else bubbleFillColor(ctx, m.isMine, accent, m.address)
+            else bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null)
         }
         holder.b.bubbleBox.layoutParams = bubbleParams
         // the background drawables (tails, accent bar) declare content insets;
