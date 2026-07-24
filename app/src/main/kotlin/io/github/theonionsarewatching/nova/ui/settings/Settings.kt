@@ -66,6 +66,29 @@ class SettingsActivity : BaseActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // dark-theme background picture: stored against its own pref so the
+        // light-theme background is left alone
+        if (requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DARK
+            && resultCode == RESULT_OK
+        ) {
+            val uri = data?.data
+            if (uri != null) {
+                lifecycleScope.launch {
+                    try {
+                        val dir = java.io.File(filesDir, "backgrounds").apply { mkdirs() }
+                        val dest = java.io.File(dir, "bg_dark")
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            dest.outputStream().use { input.copyTo(it) }
+                        }
+                        if (dest.exists() && dest.length() > 0) {
+                            io.github.theonionsarewatching.nova.util.Prefs
+                                .get(this@SettingsActivity).darkChatBg = dest.absolutePath
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+            return
+        }
         if ((requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL ||
              requestCode == io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_GALLERY_ALL)
             && resultCode == RESULT_OK

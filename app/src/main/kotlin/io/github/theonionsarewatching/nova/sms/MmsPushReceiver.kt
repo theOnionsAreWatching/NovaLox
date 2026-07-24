@@ -86,26 +86,30 @@ class MmsPushReceiver : BroadcastReceiver() {
         when (pdu.messageType) {
             PduHeaders.MESSAGE_TYPE_DELIVERY_IND,
             PduHeaders.MESSAGE_TYPE_READ_ORIG_IND -> {
-                // ENGINE PARITY: match to the sent message FIRST; a notice we
-                // cannot match is dropped (persisting it blind created orphan
-                // rows the engine never made)
+                // Match to the sent message for thread assignment. A miss is NO
+                // LONGER fatal: Repo.handleMmsIndication matches independently
+                // on "m_id AND msg_box = SENT", which succeeds in cases this
+                // "m_id AND m_type = SEND_REQ" lookup misses. Dropping here
+                // threw away reports that the second matcher could have used.
                 val threadId = findThreadId(context, pdu, pdu.messageType)
-                if (threadId == -1L) {
-                    DiagLog.log(
-                        context, "mms-push",
-                        "indication type=${pdu.messageType} matches no sent message — dropped"
-                    )
-                    return
-                }
                 val uri = persister.persist(
                     pdu, Telephony.Mms.Inbox.CONTENT_URI, true, true, null, subId
                 )
-                try {
-                    val values = ContentValues(1)
-                    values.put(Telephony.Mms.THREAD_ID, threadId)
-                    context.contentResolver.update(uri, values, null, null)
-                } catch (e: Exception) {
-                    DiagLog.log(context, "mms-push", "indication thread update failed: $e")
+                if (threadId == -1L) {
+                    DiagLog.log(
+                        context, "mms-push",
+                        "indication type=${pdu.messageType} matched no sent thread — " +
+                            "persisted anyway for the m_id matcher"
+                    )
+                }
+                if (threadId != -1L) {
+                    try {
+                        val values = ContentValues(1)
+                        values.put(Telephony.Mms.THREAD_ID, threadId)
+                        context.contentResolver.update(uri, values, null, null)
+                    } catch (e: Exception) {
+                        DiagLog.log(context, "mms-push", "indication thread update failed: $e")
+                    }
                 }
                 DiagLog.log(
                     context, "mms-push",
@@ -257,18 +261,28 @@ class MmsPushReceiver : BroadcastReceiver() {
                 String((pdu as ReadOrigInd).messageId)
             }
         } catch (_: Exception) { return -1L }
-        val selection = "(" + Telephony.Mms.MESSAGE_ID + "=" +
+        // NOTE: this string had a stray unbalanced "(" from 0.9.51 until 0.9.69.
+        // SQLite threw a syntax error on every call, the exception was swallowed
+        // below, -1 came back, and EVERY delivery/read report was dropped as
+        // "matches no sent message". That is the whole reason reports worked in
+        // 0.9.50 and not after. Keep the parentheses balanced.
+        val selection = Telephony.Mms.MESSAGE_ID + "=" +
             DatabaseUtils.sqlEscapeString(messageId) + " AND " +
             Telephony.Mms.MESSAGE_TYPE + "=" +
             PduHeaders.MESSAGE_TYPE_SEND_REQ
         return try {
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms.THREAD_ID),
-                selection, null, null
+                selection, null, "date DESC"
             )?.use { c ->
-                if (c.count == 1 && c.moveToFirst()) c.getLong(0) else -1L
+                // the engine insisted on exactly one match; take the newest
+                // instead so a resent message can't wedge reports shut
+                if (c.moveToFirst()) c.getLong(0) else -1L
             } ?: -1L
-        } catch (_: Exception) { -1L }
+        } catch (e: Exception) {
+            DiagLog.log(context, "mms-push", "findThreadId failed: ${e.message}")
+            -1L
+        }
     }
 
     /**

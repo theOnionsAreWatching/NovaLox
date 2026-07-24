@@ -74,13 +74,15 @@ object ChatBackground {
      *  topOptionRes pins a special first row (e.g. "Match accent color"). */
     fun chooseColor(
         activity: Activity, topOptionRes: Int? = null,
+        topShowsAccent: Boolean = true,
         onTop: (() -> Unit)? = null, onPicked: (String) -> Unit
     ) {
-        colorGrid(activity, topOptionRes, onTop, onPicked)
+        colorGrid(activity, topOptionRes, topShowsAccent, onTop, onPicked)
     }
 
     private fun colorGrid(
         activity: Activity, topOptionRes: Int? = null,
+        topShowsAccent: Boolean = true,
         onTop: (() -> Unit)? = null, onPicked: (String) -> Unit
     ) {
         val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
@@ -97,13 +99,17 @@ object ChatBackground {
                 isFocusableInTouchMode = false
                 setPadding(dp(10), dp(8), dp(10), dp(8))
             }
+            // the accent swatch belongs to "match accent colour" options only.
+            // A background's "App default" is not the accent, so it gets a
+            // neutral placeholder instead of a misleading coloured dot.
             top.addView(View(activity).apply {
                 layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
                     marginEnd = dp(12)
                 }
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(accentOf(activity))
+                    if (topShowsAccent) setColor(accentOf(activity))
+                    else setColor(0x00000000)
                     setStroke(dp(1), 0x66000000)
                 }
             })
@@ -224,6 +230,7 @@ object ChatBackground {
                     0 -> chooseColor(
                         activity,
                         topOptionRes = R.string.bg_default,
+                        topShowsAccent = false,
                         onTop = {
                             prefs.setChatBg(convoId, "")
                             host.applyBackgroundForCurrent()
@@ -243,41 +250,83 @@ object ChatBackground {
             .show()
     }
 
-    /** What the background does in dark theme: follow the light-theme choice,
-     *  or use its own colour. */
+    /** What the background does in dark theme. The switch stays live inside
+     *  the dialog: toggling it reveals or hides the colour/picture rows rather
+     *  than closing everything. */
     private fun darkThemeDialog(activity: Activity, prefs: Prefs, host: Host) {
-        val same = prefs.darkChatBg == "same"
-        val labels = arrayListOf(
-            (if (same) "\u2713  " else "     ") + activity.getString(R.string.bg_dark_same)
-        )
-        if (!same) labels += activity.getString(R.string.bg_color)
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.bg_dark_theme)
-            .setItems(labels.toTypedArray()) { _, w ->
-                if (w == 0) {
-                    prefs.darkChatBg = if (same) "default" else "same"
-                    host.applyBackgroundForCurrent()
-                } else {
-                    chooseColor(
-                        activity,
-                        topOptionRes = R.string.bg_default,
-                        onTop = {
-                            prefs.darkChatBg = "default"
-                            host.applyBackgroundForCurrent()
-                        }
-                    ) { hex ->
-                        prefs.darkChatBg = hex
+        val dp = { v: Int -> (v * activity.resources.displayMetrics.density).toInt() }
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        val sw = androidx.appcompat.widget.SwitchCompat(activity).apply {
+            text = activity.getString(R.string.bg_dark_same)
+            textSize = 15f
+            isChecked = prefs.darkChatBg == "same"
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            isFocusable = true
+        }
+        column.addView(sw)
+        val options = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        column.addView(options)
+
+        var dialog: AlertDialog? = null
+        fun row(labelRes: Int, onClick: () -> Unit): View =
+            TextView(activity).apply {
+                text = activity.getString(labelRes)
+                textSize = 15f
+                isFocusable = true
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                io.github.theonionsarewatching.nova.ui.ThemeUtils
+                    .applyContrastFocusHighlight(this)
+                setOnClickListener { onClick() }
+            }
+
+        fun rebuild() {
+            options.removeAllViews()
+            if (sw.isChecked) return
+            options.addView(row(R.string.bg_color) {
+                dialog?.dismiss()
+                chooseColor(
+                    activity, topOptionRes = R.string.bg_default,
+                    topShowsAccent = false,
+                    onTop = {
+                        prefs.darkChatBg = "default"
                         host.applyBackgroundForCurrent()
                     }
+                ) { hex ->
+                    prefs.darkChatBg = hex
+                    host.applyBackgroundForCurrent()
                 }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
+            })
+            options.addView(row(R.string.bg_choose_picture) {
+                dialog?.dismiss()
+                pickPicture(activity, DARK_THEME)
+            })
+        }
+
+        sw.setOnCheckedChangeListener { _, checked ->
+            prefs.darkChatBg = if (checked) "same" else "default"
+            host.applyBackgroundForCurrent()
+            rebuild()
+        }
+        rebuild()
+
+        val scroll = ScrollView(activity).apply { addView(column) }
+        dialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.bg_dark_theme)
+            .setView(scroll)
+            .setNegativeButton(android.R.string.ok, null)
             .show()
     }
 
     /** One picture chooser offering every gallery / photos / files app. */
     private fun pickPicture(activity: Activity, convoId: Long) {
-        val req = if (convoId == ALL_THREADS) REQ_BG_GALLERY_ALL else REQ_BG_GALLERY
+        val req = when (convoId) {
+            DARK_THEME -> REQ_BG_DARK
+            ALL_THREADS -> REQ_BG_GALLERY_ALL
+            else -> REQ_BG_GALLERY
+        }
         try {
             // GET_CONTENT + a chooser so EVERY gallery/photos/files app is
             // offered, not just the system default
@@ -303,6 +352,10 @@ object ChatBackground {
         }
     }
 
+    /** sentinel target: the picture is for the dark-theme background */
+    const val DARK_THEME = -2L
+
+    const val REQ_BG_DARK = 211
     const val REQ_BG_GALLERY = 208
     const val REQ_BG_GALLERY_ALL = 209
     const val REQ_BG_DOC_ALL = 210

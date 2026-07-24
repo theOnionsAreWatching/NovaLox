@@ -83,7 +83,7 @@
     <string name="mode_group_mms">Group MMS (shared thread, replies to all)</string>
     <string name="switched_broadcast">Switched to broadcast for future messages</string>
     <string name="switched_group_mms">Switched to group MMS for future messages</string>
-    <string name="schedule_send">Schedule…</string>
+    <string name="schedule_send">Schedule</string>
     <string name="schedule_needs_text">Type the message first, then choose Schedule</string>
     <string name="schedule_in_past">That time is in the past</string>
     <string name="scheduled_for">Scheduled for %1$s</string>
@@ -92,7 +92,7 @@
     <string name="view_media">View media</string>
 
     <!-- message actions -->
-    <string name="message_options">Message options…</string>
+    <string name="message_options">Message options</string>
     <string name="retry">Retry</string>
     <string name="resend">Resend</string>
     <string name="cancel_sending">Cancel sending</string>
@@ -258,13 +258,13 @@
     <string name="attached_n">Attached: %1$d files</string>
     <string name="remove_all">Remove all</string>
     <string name="remove_one_confirm">Remove \"%1$s\"?</string>
-    <string name="select_messages">Select messages…</string>
+    <string name="select_messages">Select messages</string>
     <string name="n_selected">%1$d selected</string>
     <string name="softkey_cancel">Cancel</string>
     <string name="delete_selected_confirm">Delete %1$d selected messages? They move to the recycle bin.</string>
     <string name="delete_selected_locked">%1$d selected, including %2$d locked. Delete the locked ones too?</string>
-    <string name="pref_backup">Back up messages…</string>
-    <string name="pref_restore">Restore from backup…</string>
+    <string name="pref_backup">Back up messages</string>
+    <string name="pref_restore">Restore from backup</string>
     <string name="restore_title">Restore backup</string>
     <string name="restore_warning">Restoring writes the backup\'s messages into this phone\'s message storage (so they\'re real messages, visible to re-import), then rebuilds the app from it. Anything currently in the app is replaced. Messages already on this phone are kept and not duplicated. Recycle-bin contents from the backup are not restored. Continue?</string>
     <string name="backing_up">Backing up…</string>
@@ -304,7 +304,7 @@
     <string name="pref_default_tone">Notification tone</string>
     <string name="pref_vibrate">Vibrate</string>
     <string name="pref_vibrate_summary">Vibrate for incoming messages</string>
-    <string name="sound_and_vibration">Sound &amp; vibration…</string>
+    <string name="sound_and_vibration">Sound &amp; vibration</string>
     <string name="sound_and_vibration_title">Sound &amp; vibration</string>
     <string name="tone_title">Notification tone</string>
     <string name="tone_row">Tone: %1$s</string>
@@ -373,12 +373,12 @@
     <string name="bg_dark_option">Dark theme background\u2026</string>
     <string name="bg_dark_default">Default (dark)</string>
     <string name="bg_dark_same">Same as light theme</string>
-    <string name="enter_code_manually">Enter key code…</string>
+    <string name="enter_code_manually">Enter key code</string>
     <string name="key_code_hint">Key code number</string>
     <string name="last_key_seen">Last key press seen: code %1$d</string>
     <string name="pref_resize">Resize</string>
     <string name="pref_resize_summary">Make everything in the app bigger or smaller</string>
-    <string name="pref_advanced_resize">Advanced resize…</string>
+    <string name="pref_advanced_resize">Advanced resize</string>
     <string name="pref_auto_mms">Auto-download multimedia messages</string>
     <string name="pref_auto_mms_summary">Download picture/video messages as they arrive. Turn off to save data.</string>
     <string name="pref_reimport">Re-import all messages</string>
@@ -425,7 +425,7 @@
     <string name="pause">Pause</string>
 
     <!-- v0.9.10 additions -->
-    <string name="select_conversations">Select conversations…</string>
+    <string name="select_conversations">Select conversations</string>
     <string name="select">Select</string>
     <string name="delete_n">Delete (%1$d)</string>
     <string name="delete_convos_confirm">Delete the selected conversations? All their messages are deleted, including locked ones.</string>
@@ -435,7 +435,7 @@
 
     <!-- v0.9.12 additions -->
     <string name="saved_to">Saved to %1$s</string>
-    <string name="chat_background">Chat background…</string>
+    <string name="chat_background">Chat background</string>
     <string name="bg_default">App default</string>
     <string name="bg_color">Color</string>
     <string name="bg_picture">Picture…</string>
@@ -561,8 +561,8 @@
     <string name="view_contact">View contact</string>
     <string name="add_to_contacts">Add to contacts</string>
     <string name="notifications_submenu">Notifications</string>
-    <string name="name_group">Name group\u2026</string>
-    <string name="rename_group">Rename group\u2026</string>
+    <string name="name_group">Name group</string>
+    <string name="rename_group">Rename group</string>
     <string name="name_group_hint">Group name (leave empty to remove)</string>
     <string name="group_name_set">Group name set</string>
     <string name="group_name_removed">Group name removed</string>
