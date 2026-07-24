@@ -111,6 +111,22 @@ class MmsPushReceiver : BroadcastReceiver() {
                     context, "mms-push",
                     "indication persisted (type=${pdu.messageType}, thread=$threadId)"
                 )
+                // 0.9.52 REGRESSION FIX: in 0.9.50 the engine's PushReceiver
+                // persisted the read/delivery indication AND the downstream
+                // chain ran Repo.handleMmsIndication, which applied the status.
+                // Our receiver persisted it but never applied it, so read
+                // reports stopped updating. Apply it here, matching 0.9.50.
+                val indId = uri?.lastPathSegment?.toLongOrNull()
+                if (indId != null) {
+                    kotlinx.coroutines.runBlocking {
+                        try {
+                            io.github.theonionsarewatching.nova.data.Repo
+                                .get(context).applyMmsIndication(indId, pdu.messageType)
+                        } catch (e: Exception) {
+                            DiagLog.log(context, "mms-push", "indication apply failed: $e")
+                        }
+                    }
+                }
             }
             PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND -> {
                 val nInd = pdu as NotificationInd
@@ -153,6 +169,27 @@ class MmsPushReceiver : BroadcastReceiver() {
                 val uri = persister.persist(
                     pdu, Telephony.Mms.Inbox.CONTENT_URI, true, true, null, subId
                 )
+                val auto = io.github.theonionsarewatching.nova.util.Prefs
+                    .get(context).autoDownloadMms
+                if (!auto) {
+                    // Auto-download off: leave the notification-ind in the
+                    // provider undownloaded. Repo ingests it as a tappable
+                    // "download" stub; MmsFetch.download() runs it on tap.
+                    DiagLog.log(
+                        context, "mms-push",
+                        "notification persisted, auto-download OFF -> stub (tr_id=$transactionId)"
+                    )
+                    // Repo watches the provider; nudge it to build the stub row.
+                    val nudge = Intent(context, MmsReceiver::class.java).apply {
+                        action = com.klinker.android.send_message
+                            .MmsReceivedReceiver.MMS_RECEIVED
+                        putExtra(NOTIFICATION_ONLY, true)
+                        putExtra(com.klinker.android.send_message
+                            .MmsReceivedReceiver.EXTRA_URI, uri)
+                    }
+                    context.sendBroadcast(nudge)
+                    return
+                }
                 DiagLog.log(
                     context, "mms-push",
                     "notification persisted -> downloading (tr_id=$transactionId)"
@@ -317,7 +354,21 @@ class MmsPushReceiver : BroadcastReceiver() {
     companion object {
         private const val ACTION_PREFIX =
             "io.github.theonionsarewatching.nova.MMS_DOWNLOADED."
+        const val NOTIFICATION_ONLY =
+            "io.github.theonionsarewatching.nova.NOTIFICATION_ONLY"
         private val downloadedLocations: MutableSet<String> =
             Collections.synchronizedSet(HashSet<String>())
+
+        /** Tap-to-download entry point for a stub the user chose to fetch. */
+        fun fetch(
+            context: Context, location: String, transactionId: String,
+            uri: Uri?, subId: Int
+        ) {
+            val self = MmsPushReceiver()
+            self.download(
+                context.applicationContext,
+                self.smsManagerFor(subId), location, transactionId, uri, subId
+            )
+        }
     }
 }

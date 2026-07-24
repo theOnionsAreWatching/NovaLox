@@ -236,11 +236,26 @@ class MessageAdapter(
 
         // ---- body ----
         holder.b.body.textSize = prefs.msgTextSp
-        if (m.body.isNotBlank()) {
+        val stub = io.github.theonionsarewatching.nova.data.MmsStub.decode(m.body)
+        if (stub != null) {
+            // not-yet-downloaded MMS (auto-download off): a tap-to-download line
+            holder.b.body.visibility = View.VISIBLE
+            val label = ctx.getString(R.string.mms_tap_to_download)
+            val sp = android.text.SpannableString(label)
+            sp.setSpan(android.text.style.UnderlineSpan(), 0, label.length, 0)
+            holder.b.body.text = sp
+            holder.b.body.setCompoundDrawablesWithIntrinsicBounds(
+                R.drawable.ic_download_small, 0, 0, 0
+            )
+            holder.b.body.compoundDrawablePadding = dp(6)
+        } else if (m.body.isNotBlank()) {
             holder.b.body.visibility = View.VISIBLE
             holder.b.body.text = m.body
+            holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+            holder.b.body.compoundDrawablePadding = 0
         } else {
             holder.b.body.visibility = View.GONE
+            holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
         }
 
         // ---- attachment preview ----
@@ -270,16 +285,23 @@ class MessageAdapter(
             holder.b.thumb.visibility = View.GONE
             holder.b.thumb.setImageDrawable(null)
         }
+        val nonVisual = row.parts.filter { !it.isImage() && !it.isVideo() }
+        val multiNonVisual = nonVisual.size > 1
         if (other != null || (visual != null && row.parts.size > 1)) {
             holder.b.attachLabel.visibility = View.VISIBLE
             holder.b.attachLabel.textSize = prefs.msgTextSp - 2f
+            holder.b.attachLabel.maxLines = 1
+            holder.b.attachLabel.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             holder.b.attachLabel.text = when {
+                // several non-visual parts collapse to a count; the tap opens
+                // the chooser so each one is still reachable
+                multiNonVisual -> ctx.getString(R.string.more_attachments, nonVisual.size)
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
                 other.isAudio() -> other.fileName
                 other.isVCard() -> vcardSummary(ctx, other)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
             }
-            if (other != null && other.isAudio()) {
+            if (!multiNonVisual && other != null && other.isAudio()) {
                 // headphones marker so an audio message is recognizable at a glance
                 holder.b.attachLabel.background = null
                 holder.b.attachLabel.setCompoundDrawablesWithIntrinsicBounds(
@@ -287,7 +309,7 @@ class MessageAdapter(
                 )
                 holder.b.attachLabel.compoundDrawablePadding = dp(6)
                 holder.b.attachLabel.setPadding(0, dp(2), 0, dp(2))
-            } else if (other != null && other.isVCard()) {
+            } else if (!multiNonVisual && other != null && other.isVCard()) {
                 // rounded contact card: icon + name / number / email
                 holder.b.attachLabel.background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()

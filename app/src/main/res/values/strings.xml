@@ -122,7 +122,16 @@
     <string name="attach_audio">[Audio message] press OK to open</string>
     <string name="attach_vcard">Contact card</string>
     <string name="attach_file">[File: %1$s]</string>
-    <string name="more_attachments">%1$d attachments, press OK to view</string>
+    <string name="more_attachments">%1$d attachments</string>
+    <string name="attachments_title">Attachments</string>
+    <string name="attach_kind_image">Picture %1$d</string>
+    <string name="attach_kind_video">Video %1$d</string>
+    <string name="attach_kind_audio">Audio %1$d</string>
+    <string name="attach_kind_file">File %1$d</string>
+    <string name="attach_contact">Contact</string>
+    <string name="attach_contact_named">Contact: %1$s</string>
+    <string name="mms_downloading">Downloading\u2026</string>
+    <string name="mms_download_unavailable">Download link unavailable</string>
     <string name="open_in_contacts">Open in Contacts</string>
     <string name="save">Save</string>
     <string name="play">Play</string>
@@ -309,6 +318,8 @@
 
     <!-- v0.9 additions -->
     <string name="mms_not_downloaded">[Multimedia message — not downloaded. Auto-download is off in Settings.]</string>
+    <string name="mms_tap_to_download">Tap to download</string>
+    <string name="snippet_mms_pending">Picture message</string>
     <string name="enter_code_manually">Enter key code…</string>
     <string name="key_code_hint">Key code number</string>
     <string name="last_key_seen">Last key press seen: code %1$d</string>

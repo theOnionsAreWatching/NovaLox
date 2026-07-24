@@ -126,8 +126,12 @@ object NotificationHelper {
         if (convo.hidden || convo.notifBlocked) return
 
         val title = convo.displayTitle()
-        val text = if (msg.body.isNotBlank()) msg.body
-        else context.getString(if (msg.isMms) R.string.snippet_attachment else R.string.app_name)
+        val text = when {
+            io.github.theonionsarewatching.nova.data.MmsStub.isStub(msg.body) ->
+                context.getString(R.string.snippet_mms_pending)
+            msg.body.isNotBlank() -> msg.body
+            else -> context.getString(if (msg.isMms) R.string.snippet_attachment else R.string.app_name)
+        }
 
         val open = Intent(context, ThreadActivity::class.java).apply {
             putExtra(ThreadActivity.EXTRA_CONVO_ID, convo.id)

@@ -79,6 +79,7 @@ class Repo private constructor(private val context: Context) {
     }
 
     private suspend fun snippetFor(m: MessageEntity): String {
+        if (MmsStub.isStub(m.body)) return context.getString(R.string.snippet_mms_pending)
         if (m.body.isNotBlank()) return m.body.take(120)
         if (m.isMms) {
             val parts = db.parts().byMessage(m.id)
@@ -468,7 +469,25 @@ class Repo private constructor(private val context: Context) {
                 )
                 return null
             }
-            bodyText = context.getString(io.github.theonionsarewatching.nova.R.string.mms_not_downloaded)
+            // Build a tappable download stub. The location + tr_id + subId are
+            // stashed in the body behind a marker the adapter recognizes and
+            // renders as a "Download" button; on tap we fetch, and the arriving
+            // m_type=132 copy replaces this row (matched by tr_id, above).
+            var loc: String? = null
+            try {
+                context.contentResolver.query(
+                    Uri.parse("content://mms"), arrayOf("ct_l"),
+                    "_id = ?", arrayOf(mmsId.toString()), null
+                )?.use { c -> if (c.moveToFirst()) loc = c.getString(0) }
+            } catch (_: Exception) {}
+            var stubSub = -1
+            try {
+                context.contentResolver.query(
+                    Uri.parse("content://mms"), arrayOf("sub_id"),
+                    "_id = ?", arrayOf(mmsId.toString()), null
+                )?.use { c -> if (c.moveToFirst()) stubSub = c.getInt(0) }
+            } catch (_: Exception) {}
+            bodyText = MmsStub.encode(loc ?: "", trId ?: "", stubSub)
         }
 
         val convo = getOrCreateConversation(participants)
@@ -851,6 +870,10 @@ class Repo private constructor(private val context: Context) {
 
     /** MMS delivery-ind: look up the original sent message by MMS Message-ID
      *  and mark it delivered. */
+    /** Public entry for MmsPushReceiver: apply a persisted read/delivery
+     *  indication (matches the 0.9.50 behavior the engine gave us for free). */
+    suspend fun applyMmsIndication(indId: Long, mType: Int) = handleMmsIndication(indId, mType)
+
     private suspend fun handleMmsIndication(indId: Long, mType: Int) {
         try {
             var origMessageId: String? = null
@@ -1110,9 +1133,24 @@ class Repo private constructor(private val context: Context) {
 
     // ============================== Recycle bin ==============================
 
+    /** Remove a message's backing row from the OS telephony provider. Without
+     *  this a soft-deleted message is re-imported the next time the content
+     *  observer fires or the user runs re-sync / reimport — the "deleted
+     *  messages came back" bug. Locked messages are exempt (a lock means keep). */
+    private fun deleteFromTelephony(m: MessageEntity) {
+        val tId = m.telephonyId ?: return
+        try {
+            val uri = if (m.telephonyIsMms)
+                android.net.Uri.parse("content://mms/$tId")
+            else android.net.Uri.parse("content://sms/$tId")
+            context.contentResolver.delete(uri, null, null)
+        } catch (_: Exception) {}
+    }
+
     suspend fun deleteMessage(messageId: Long) {
         val m = db.messages().byId(messageId) ?: return
         db.messages().softDelete(messageId, System.currentTimeMillis())
+        if (!m.locked) deleteFromTelephony(m)
         refreshAndPing(m.convoId)
     }
 
@@ -1152,13 +1190,17 @@ class Repo private constructor(private val context: Context) {
             val m = db.messages().byId(id) ?: continue
             if (m.locked && !includeLocked) continue
             db.messages().softDelete(id, now)
+            deleteFromTelephony(m)
             convoId = m.convoId
         }
         if (convoId > 0) refreshAndPing(convoId)
     }
 
     suspend fun deleteThread(convoId: Long, includeLocked: Boolean) {
+        // capture backing rows BEFORE the soft delete so we can purge telephony
+        val victims = db.messages().threadMessagesForDelete(convoId, if (includeLocked) 1 else 0)
         db.messages().softDeleteThread(convoId, System.currentTimeMillis(), if (includeLocked) 1 else 0)
+        for (m in victims) deleteFromTelephony(m)
         db.conversations().setDraft(convoId, "")
         refreshAndPing(convoId)
     }

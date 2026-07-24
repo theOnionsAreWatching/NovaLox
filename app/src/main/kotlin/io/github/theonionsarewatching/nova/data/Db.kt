@@ -360,6 +360,11 @@ interface MessageDao {
     @Query("UPDATE messages SET deletedAt = :now, locked = 0 WHERE convoId = :convoId AND deletedAt IS NULL AND (:includeLocked = 1 OR locked = 0)")
     suspend fun softDeleteThread(convoId: Long, now: Long, includeLocked: Int)
 
+    // the rows softDeleteThread will hit — read first so their telephony
+    // backing rows can be purged too (stops re-import resurrection)
+    @Query("SELECT * FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND (:includeLocked = 1 OR locked = 0)")
+    suspend fun threadMessagesForDelete(convoId: Long, includeLocked: Int): List<MessageEntity>
+
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0")
     suspend fun countInConvo(convoId: Long): Int
 

@@ -1001,7 +1001,24 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 return
             }
         }
+        val stub = io.github.theonionsarewatching.nova.data.MmsStub.decode(m.body)
         when {
+            stub != null -> {
+                if (stub.location.isBlank()) {
+                    android.widget.Toast.makeText(
+                        this, R.string.mms_download_unavailable,
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    android.widget.Toast.makeText(
+                        this, R.string.mms_downloading, android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    io.github.theonionsarewatching.nova.sms.MmsPushReceiver.fetch(
+                        this, stub.location, stub.transactionId, null, stub.subId
+                    )
+                }
+            }
+            row.parts.size > 1 -> chooseAttachment(row)
             row.parts.isNotEmpty() -> openAttachment(row, 0)
             row.elements.isNotEmpty() -> ElementActions.showForMessage(this, row.elements) { num -> messageNumber(num) }
             else -> { /* plain text, no elements: press does nothing (by design) */ }
@@ -1038,6 +1055,34 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+
+    /** A message carrying more than one attachment: list them so every part is
+     *  reachable, instead of silently opening only the first. */
+    private fun chooseAttachment(row: MessageRow) {
+        val labels = row.parts.mapIndexed { i, part ->
+            when {
+                part.isImage() -> getString(R.string.attach_kind_image, i + 1)
+                part.isVideo() -> getString(R.string.attach_kind_video, i + 1)
+                part.isAudio() -> part.fileName.ifBlank { getString(R.string.attach_kind_audio, i + 1) }
+                part.isVCard() -> vcardTitle(part)
+                else -> part.fileName.ifBlank { getString(R.string.attach_kind_file, i + 1) }
+            }
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.attachments_title)
+            .setItems(labels) { _, which -> openAttachment(row, which) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun vcardTitle(part: io.github.theonionsarewatching.nova.data.PartEntity): String =
+        try {
+            val name = File(part.filePath).readText().take(2000).lineSequence()
+                .firstOrNull { it.startsWith("FN", ignoreCase = true) }
+                ?.substringAfter(':')?.trim()
+            if (name.isNullOrBlank()) getString(R.string.attach_contact)
+            else getString(R.string.attach_contact_named, name)
+        } catch (_: Exception) { getString(R.string.attach_contact) }
 
     private fun openAttachment(row: MessageRow, index: Int) {
         val part = row.parts.getOrNull(index) ?: return
