@@ -128,6 +128,12 @@ class Prefs(context: Context) {
     val respondReadReports: Boolean get() = sp.getBoolean("respond_read_reports", true)
     // Send softkey/button on the LEFT (for keyboards that steal the right side)
     val sendOnLeft: Boolean get() = sp.getBoolean("send_on_left", false)
+
+    // "tid:messageId" pairs for telephony rows that are broadcast copies —
+    // machinery of the broadcast illusion, not real 1:1 messages
+    var broadcastCopyMap: String
+        get() = sp.getString("broadcast_copy_map", "") ?: ""
+        set(v) { sp.edit().putString("broadcast_copy_map", v).apply() }
     val respondToDeliveryRequests: Boolean get() = sp.getBoolean("respond_delivery", true)
     /** "single" (one aggregated notification, default) or "per_convo". */
     val notifMode: String get() = sp.getString("notif_mode", "single") ?: "single"

@@ -1234,13 +1234,20 @@ class Repo private constructor(private val context: Context) {
                 }
                 return
             }
-            val m = db.messages().byTelephonyMms(tId) ?: run {
-                io.github.theonionsarewatching.nova.util.DiagLog.log(
-                    context, "mms-delivery",
-                    "$kind: telephony row $tId has no linked message — dropped"
-                )
-                return
-            }
+            // broadcast copies: only the first copy is linked directly, so
+            // reports for the other copies resolve through the registry to the
+            // ONE broadcast message — that's what feeds the per-recipient
+            // "Delivered to N · Read by N" counts
+            val m = db.messages().byTelephonyMms(tId)
+                ?: io.github.theonionsarewatching.nova.util.BroadcastCopies
+                    .messageIdFor(context, tId)?.let { db.messages().byId(it) }
+                ?: run {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-delivery",
+                        "$kind: telephony row $tId has no linked message — dropped"
+                    )
+                    return
+                }
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
 
@@ -1787,6 +1794,9 @@ class Repo private constructor(private val context: Context) {
                     if (done % 20 == 0) onProgress(done * 100 / total)
                     val id = c.getLong(0)
                     if (db.messages().existsByTelephonyId(id, true)) continue
+                    // broadcast copies are machinery, not 1:1 messages
+                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                            .isCopy(context, id)) continue
                     ingestMms(id, c.getLong(1) * 1000L, c.getInt(2))
                 }
             }
@@ -1873,6 +1883,9 @@ class Repo private constructor(private val context: Context) {
                             }
                             continue
                         }
+                        // broadcast copies are machinery, not 1:1 messages
+                        if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                .isCopy(context, id)) continue
                         // a bare notification row (130) whose real message has
                         // already been downloaded and ingested under a different
                         // _id: skip it, or the "Tap to download" stub reappears

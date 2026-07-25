@@ -236,6 +236,10 @@ object Sender {
                                 }
                             }
                         )
+                        if (t != null && t > 0) {
+                            io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                .record(context, t, messageId)
+                        }
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-send", "broadcast copy -> $addr tid=$t"
                         )

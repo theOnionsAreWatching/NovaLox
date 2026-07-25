@@ -432,11 +432,24 @@ class ComposeActivity : BaseActivity() {
                 val next = if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) pos + 1 else pos - 1
                 if (pos >= 0 && next in 0..last) {
                     binding.suggestionList.scrollToPosition(next)
-                    binding.suggestionList.post {
-                        binding.suggestionList
-                            .findViewHolderForAdapterPosition(next)
-                            ?.itemView?.requestFocus()
+                    // requestFocus races the layout pass after the scroll: if
+                    // the row isn't laid out yet the request silently no-ops
+                    // and the viewport never follows — retry a frame later,
+                    // and explicitly pull the row's rectangle on screen so any
+                    // ancestor scroll container moves too
+                    fun focusRow(attempt: Int) {
+                        val v = binding.suggestionList
+                            .findViewHolderForAdapterPosition(next)?.itemView
+                        if (v != null) {
+                            v.requestFocus()
+                            v.requestRectangleOnScreen(
+                                android.graphics.Rect(0, 0, v.width, v.height), false
+                            )
+                        } else if (attempt < 3) {
+                            binding.suggestionList.post { focusRow(attempt + 1) }
+                        }
                     }
+                    binding.suggestionList.post { focusRow(0) }
                     return true
                 }
             }
