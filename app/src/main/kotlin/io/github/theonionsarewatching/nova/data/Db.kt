@@ -199,9 +199,6 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE isGroup = 1")
     suspend fun allGroups(): List<ConversationEntity>
 
-    @Query("UPDATE conversations SET convoKey = :key WHERE id = :id")
-    suspend fun setConvoKey(id: Long, key: String)
-
     // Visible = not hidden/archived and has at least one live message or a draft
     @Query(
         """SELECT c.* FROM conversations c WHERE c.hidden = 0 AND c.archived = 0 AND

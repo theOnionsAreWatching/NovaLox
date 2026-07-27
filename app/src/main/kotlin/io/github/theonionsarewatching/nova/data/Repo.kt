@@ -58,25 +58,26 @@ class Repo private constructor(private val context: Context) {
         val key = PhoneUtils.convoKey(clean)
         db.conversations().byKey(key)?.let { return it }
         if (clean.size > 1) {
-            // multiple group chats with the SAME members can exist when their
-            // stored keys were written by older normalize rules: an incoming
-            // reply computes the MODERN key, misses, and lands in a different
-            // (or brand-new) conversation — "responding to one group shows in
-            // another." Match by member SET, heal the stored key to the modern
-            // form, and everything routes to the one conversation from then on.
+            // MULTIPLE group chats with the same members are allowed — never
+            // merge them. But the transport can only hand us the member set,
+            // so when the exact key misses, an incoming group message must
+            // still land in the RIGHT one of them: route it to the
+            // most-recently-active conversation with exactly these members
+            // (snippetDate = last message activity), leaving every
+            // conversation and its key untouched.
             val want = clean.map { PhoneUtils.normalize(it) }.toSet()
             val match = db.conversations().allGroups()
                 .filter { g ->
                     g.addressList().map { PhoneUtils.normalize(it) }.toSet() == want
                 }
-                .maxByOrNull { it.updatedAt }
+                .maxByOrNull { it.snippetDate }
             if (match != null) {
-                db.conversations().setConvoKey(match.id, key)
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "convo",
-                    "healed group key convo=${match.id} '${match.convoKey}' -> '$key'"
+                    "same-member group routed to most recent convo=${match.id} " +
+                        "(of key '$key' miss)"
                 )
-                return match.copy(convoKey = key)
+                return match
             }
         }
         val isGroup = clean.size > 1
