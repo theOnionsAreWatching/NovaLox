@@ -524,6 +524,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 // current anchor, insert above, then restore the anchor shifted by
                 // the insert count — the focused view instance survives untouched,
                 // so focus can never blip up to the header during the re-layout
+                val hadFocus = binding.msgList.focusedChild != null
                 val anchorView = binding.msgList.focusedChild ?: binding.msgList.getChildAt(0)
                 val anchorPos = anchorView?.let { binding.msgList.getChildAdapterPosition(it) } ?: -1
                 val anchorOffset = anchorView?.top ?: 0
@@ -535,6 +536,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 if (anchorPos >= 0) {
                     (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
                         ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
+                }
+                if (hadFocus) binding.msgList.post {
+                    // the insert can momentarily recycle the focused row; if
+                    // focus escaped the list (it lands on the top bar), bring
+                    // it back to the same message instead
+                    if (binding.msgList.focusedChild == null) {
+                        scroller?.focusPosition(anchorPos + newRows.size, false)
+                    }
                 }
                 Perf.log(
                     this@ThreadActivity, "loadOlder",

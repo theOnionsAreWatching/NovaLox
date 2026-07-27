@@ -146,11 +146,21 @@ class DpadScroller(
             (if (down) pos + 1 else pos - 1).coerceIn(0, count - 1)
         } else target
 
-        if (finalTarget == pos) {
+        // inert rows (system lines) at the very end of travel: if nothing
+        // focusable remains in this direction, that IS the boundary — the
+        // compose box (down) or header (up) must still be reachable past a
+        // trailing "— switched to … —" line
+        var adjusted = finalTarget
+        while (adjusted in 0 until count) {
+            val v = rv.findViewHolderForAdapterPosition(adjusted)?.itemView
+            if (v == null || v.isFocusable) break
+            adjusted += if (down) 1 else -1
+        }
+        if (adjusted !in 0 until count || adjusted == pos) {
             // at the boundary
             return onEdge?.invoke(down) == true
         }
-        focusPosition(finalTarget, down)
+        focusPosition(adjusted, down)
         return true
     }
 
