@@ -57,7 +57,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     // picture-heavy threads: only the newest slice binds at open; scrolling
     // toward the top widens the window ("Loading…" banner in between)
     private var allRows: List<MessageRow> = emptyList()
-    private var loadedWindow = 60
+    private var loadedWindow = 15
     private var moreAbove = false
     private var expandingWindow = false
     private var selecting = false
@@ -675,7 +675,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         expandingWindow = true
         binding.loadingBanner.visibility = View.VISIBLE
         binding.msgList.post {
-            loadedWindow += 80
+            loadedWindow += 30
             val windowed =
                 if (allRows.size > loadedWindow) allRows.takeLast(loadedWindow) else allRows
             moreAbove = allRows.size > windowed.size
@@ -735,7 +735,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val multiline = (binding.composeInput.layout?.lineCount ?: 1) > 1 ||
             binding.composeInput.text?.contains('\n') == true
         binding.moreIndicator.visibility = if (multiline) View.VISIBLE else View.GONE
-        binding.msgList.requestFocus()
+        // do NOT focus the list itself first: RecyclerView hands focus to its
+        // topmost child, which flashed before the real target took over
         val target = focusPos.coerceIn(0, rows.size - 1)
         if (target == rows.size - 1) focusBottomPinned() else scroller?.focusPosition(target)
         updateSoftkeys()
@@ -1554,6 +1555,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // card styles read as white squares over a very light grey
             v = "#F2F2F3"
         }
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            this, "bg",
+            "convo=$convoId own=${prefs.chatBgOwn(convoId) ?: "<none>"} " +
+                "global='${prefs.chatBg(-1L).take(24)}' dark='${prefs.darkChatBg.take(24)}' " +
+                "night=${ThemeUtils.isNight(this)} -> '${v.take(24)}'"
+        )
         return v
     }
 

@@ -1762,6 +1762,8 @@ class Repo private constructor(private val context: Context) {
                     if (done % 50 == 0) onProgress(done * 100 / total)
                     val tId = c.getLong(0)
                     if (db.messages().existsByTelephonyId(tId, false)) continue
+                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                            .isSmsCopy(context, tId)) continue
                     val address = c.getString(1) ?: continue
                     val body = c.getString(2) ?: ""
                     val date = c.getLong(3)
@@ -1842,6 +1844,10 @@ class Repo private constructor(private val context: Context) {
                     while (c.moveToNext()) {
                         val tId = c.getLong(0)
                         if (db.messages().existsByTelephonyId(tId, false)) continue
+                        if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                .isSmsCopy(context, tId)) continue
+                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                            .isSmsCopy(context, tId)) continue
                         val address = c.getString(1) ?: continue
                         val body = c.getString(2) ?: ""
                         val date = c.getLong(3)

@@ -31,6 +31,9 @@ class Prefs(context: Context) {
         if (own != null) return own
         return sp.getString("chat_bg_all", "") ?: ""
     }
+    /** This conversation's OWN background value, or null if it inherits. */
+    fun chatBgOwn(convoId: Long): String? = sp.getString("chat_bg_$convoId", null)
+
     fun setChatBg(convoId: Long, v: String) {
         val key = if (convoId == -1L) "chat_bg_all" else "chat_bg_$convoId"
         sp.edit().putString(key, v).apply()

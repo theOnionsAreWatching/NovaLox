@@ -161,15 +161,36 @@ class DpadScroller(
      *  so the focus stays on the leading edge of the movement. */
     fun focusPosition(position: Int, towardBottom: Boolean?) {
         val lm = rv.layoutManager as? LinearLayoutManager ?: return
-        val existing = rv.findViewHolderForAdapterPosition(position)
-        if (existing != null) {
+        // inert rows (system lines like "— switched to Broadcast —") are not
+        // focusable: skip over them in the direction of travel, never park on
+        // them. Falling off either end reverses the search.
+        val count = rv.adapter?.itemCount ?: 0
+        val dir = if (towardBottom == true) 1 else -1
+        var target = position
+        var guard = 0
+        while (guard++ < 8 && target in 0 until count &&
+            rv.findViewHolderForAdapterPosition(target)?.itemView?.isFocusable == false
+        ) target += dir
+        if (target !in 0 until count) {
+            target = position
+            guard = 0
+            while (guard++ < 8 && target in 0 until count &&
+                rv.findViewHolderForAdapterPosition(target)?.itemView?.isFocusable == false
+            ) target -= dir
+        }
+        if (target !in 0 until count) return
+        val existing = rv.findViewHolderForAdapterPosition(target)
+        if (existing != null && existing.itemView.isFocusable) {
             // the (bounded) layout manager handles keeping it in view
             existing.itemView.requestFocus()
         } else {
             val offset = if (towardBottom == true) (rv.height * 2 / 3).coerceAtLeast(0) else 0
-        lm.scrollToPositionWithOffset(position, offset)
+            lm.scrollToPositionWithOffset(target, offset)
             rv.post {
-                rv.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
+                val v = rv.findViewHolderForAdapterPosition(target)?.itemView
+                if (v?.isFocusable == true) v.requestFocus()
+                else rv.findViewHolderForAdapterPosition(target - dir)
+                    ?.itemView?.takeIf { it.isFocusable }?.requestFocus()
             }
         }
     }

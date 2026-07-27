@@ -413,10 +413,11 @@ class MessageAdapter(
             val bd = backdropColor()
             val lightBd = androidx.core.graphics.ColorUtils.calculateLuminance(bd) > 0.5
             val c = if (lightBd) 0xFF2E2E36.toInt() else Color.WHITE
+            // focused rows get SHADING only — outlines are reserved for
+            // selection, so the two states read differently at a glance
             val focused = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
-                setStroke((2f * ctx.resources.displayMetrics.density).toInt(), withAlpha(c, 200))
-                setColor(withAlpha(c, 26))
+                setColor(withAlpha(c, 40))
             }
             holder.b.root.background = android.graphics.drawable.StateListDrawable().apply {
                 addState(intArrayOf(android.R.attr.state_focused), focused)
@@ -472,8 +473,9 @@ class MessageAdapter(
             }!!
             val ring = GradientDrawable().apply {
                 cornerRadius = radius
-                setColor(withAlpha(ringColor, 56))
-                setStroke((3.5f * density).toInt(), ringColor)
+                // selection = bright royal blue, always
+                setColor(withAlpha(0xFF3D74FF.toInt(), 44))
+                setStroke((3.5f * density).toInt(), 0xFF3D74FF.toInt())
             }
             holder.b.bubbleBox.foreground = ring
         } else {

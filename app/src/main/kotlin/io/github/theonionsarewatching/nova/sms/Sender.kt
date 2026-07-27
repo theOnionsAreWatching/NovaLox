@@ -69,6 +69,11 @@ object Sender {
                         val existing = repo0.db.messages().byId(messageId)
                         if (existing != null && existing.telephonyId == null) {
                             repo0.db.messages().setTelephonyId(messageId, tid, false)
+                        } else if (existing != null) {
+                            // a fan-out copy (broadcast / group SMS): register it
+                            // so no ingest route duplicates it into a 1:1 thread
+                            io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                .recordSms(context, tid, messageId)
                         }
                     }
                 }

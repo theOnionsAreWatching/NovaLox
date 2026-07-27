@@ -54,8 +54,8 @@
     <string name="subtitle_group">Group message</string>
     <string name="loading_more">Loading\u2026</string>
     <string name="zoom">Zoom</string>
-    <string name="zoom_out_label">* \u2212</string>
-    <string name="zoom_in_label"># +</string>
+    <string name="zoom_out_label">*</string>
+    <string name="zoom_in_label">#</string>
     <string name="pref_dpad_center_send">D-pad center sends</string>
     <string name="pref_dpad_center_send_summary">When the cursor is in the message box, pressing the center D-pad key sends the message</string>
     <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>

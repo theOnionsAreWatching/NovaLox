@@ -210,20 +210,32 @@ class ComposeActivity : BaseActivity() {
         val qDigits = q.filter { it.isDigit() }
         // T9: digits match the letters on the keypad keys, so "323" finds
         // "Dad" — alongside plain name and number-substring matching. ALL
-        // matches show; the list scrolls.
-        fun t9(t: String): String = t.lowercase().map { ch ->
-            when (ch) {
-                in 'a'..'c' -> '2'; in 'd'..'f' -> '3'; in 'g'..'i' -> '4'
-                in 'j'..'l' -> '5'; in 'm'..'o' -> '6'; in 'p'..'s' -> '7'
-                in 't'..'v' -> '8'; in 'w'..'z' -> '9'; else -> ch
+        // matches show; the list scrolls. Ordering: whole-name prefix first,
+        // then any WORD prefix ("ma" ranks "Sir Manfield Barker" up), then
+        // plain contains.
+        val qd = qDigits.length >= 2
+        fun rank(c: ContactsHelper.Contact): Int {
+            val n = c.name.lowercase()
+            val t = t9Of(c.name)
+            val num = c.number.filter { it.isDigit() }
+            val words = n.split(wordSplit).filter { it.isNotBlank() }
+            val tWords = t.split(wordSplit).filter { it.isNotBlank() }
+            return when {
+                n.startsWith(lower) ||
+                    (qd && (t.startsWith(qDigits) || num.startsWith(qDigits))) -> 0
+                words.any { it.startsWith(lower) } ||
+                    (qd && tWords.any { it.startsWith(qDigits) }) -> 1
+                else -> 2
             }
-        }.joinToString("")
+        }
         val base = contacts.filter { c ->
             c.name.lowercase().contains(lower) ||
-                (qDigits.length >= 2 && (
+                (qd && (
                     c.number.filter { it.isDigit() }.contains(qDigits) ||
-                        t9(c.name).contains(qDigits)))
-        }
+                        t9Of(c.name).contains(qDigits)))
+        }.sortedBy { rank(it) }
+        suggestionAdapter.hlQuery = lower
+        suggestionAdapter.hlDigits = qDigits
         // the typed value itself is offered as a row even when it matches no
         // contact — so raw numbers can be added and the field freed for the next
         val typed = q.trim()
@@ -434,15 +446,35 @@ class ComposeActivity : BaseActivity() {
     private var suggestionsSuppressed = false
     private var suppressedQuery = ""
 
-    /** The suggestion list takes the whole lower screen: message box, action
-     *  row, and softkey bar step aside while it's up. */
+    private var savedGroupModeVis = View.VISIBLE
+    private var savedAttachChipVis = View.GONE
+
+    /** The suggestion list takes the screen down to the BOTTOM edge: message
+     *  box, action row, group-mode button, attachment chip, and softkey bar
+     *  all step aside while it's up, and return to their prior state after. */
     private fun setSuggestionsShown(shown: Boolean) {
+        val wasShown = binding.suggestionList.visibility == View.VISIBLE
         binding.suggestionList.visibility = if (shown) View.VISIBLE else View.GONE
-        val bottomVis = if (shown) View.GONE else View.VISIBLE
-        binding.bodyInputFrame.visibility = bottomVis
-        binding.sendRow.visibility = bottomVis
-        binding.softkeyBar.root.visibility =
-            if (shown || softkeys?.shouldShow() != true) View.GONE else View.VISIBLE
+        if (shown && !wasShown) {
+            savedGroupModeVis = binding.btnGroupMode.visibility
+            savedAttachChipVis = binding.attachChip.visibility
+            // a fresh entry starts from the TOP of the results
+            binding.suggestionList.post { binding.suggestionList.scrollToPosition(0) }
+        }
+        if (shown) {
+            binding.bodyInputFrame.visibility = View.GONE
+            binding.sendRow.visibility = View.GONE
+            binding.btnGroupMode.visibility = View.GONE
+            binding.attachChip.visibility = View.GONE
+            binding.softkeyBar.root.visibility = View.GONE
+        } else {
+            binding.bodyInputFrame.visibility = View.VISIBLE
+            binding.sendRow.visibility = View.VISIBLE
+            binding.btnGroupMode.visibility = savedGroupModeVis
+            binding.attachChip.visibility = savedAttachChipVis
+            binding.softkeyBar.root.visibility =
+                if (softkeys?.shouldShow() == true) View.VISIBLE else View.GONE
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -761,11 +793,66 @@ class ComposeActivity : BaseActivity() {
 
         override fun getItemCount(): Int = items.size
 
+        var hlQuery = ""
+        var hlDigits = ""
+
         override fun onBindViewHolder(holder: VH, position: Int) {
             val c = items[position]
-            holder.b.suggestionName.text = c.name
-            holder.b.suggestionNumber.text = c.number
+            holder.b.suggestionName.text = highlightName(c.name, hlQuery, hlDigits)
+            holder.b.suggestionNumber.text = highlightNumber(c.number, hlDigits)
             holder.itemView.setOnClickListener { onPick(c) }
         }
+    }
+}
+
+// ---------- suggestion matching helpers ----------
+
+private val wordSplit = Regex("[\\s,.\\-]+")
+
+/** Keypad T9 digits for a name, char-aligned with the input string. */
+private fun t9Of(t: String): String = t.lowercase().map { ch ->
+    when (ch) {
+        in 'a'..'c' -> '2'; in 'd'..'f' -> '3'; in 'g'..'i' -> '4'
+        in 'j'..'l' -> '5'; in 'm'..'o' -> '6'; in 'p'..'s' -> '7'
+        in 't'..'v' -> '8'; in 'w'..'z' -> '9'; else -> ch
+    }
+}.joinToString("")
+
+private const val HL_COLOR = 0xFF3D74FF.toInt()
+
+/** Bold + color the matched stretch (letters or T9 digits) inside a name. */
+private fun highlightName(name: String, q: String, digits: String): CharSequence {
+    var start = -1
+    var len = 0
+    if (q.isNotBlank()) {
+        val i = name.lowercase().indexOf(q)
+        if (i >= 0) { start = i; len = q.length }
+    }
+    if (start < 0 && digits.length >= 2) {
+        // t9Of is char-aligned, so an index there is an index in the name
+        val i = t9Of(name).indexOf(digits)
+        if (i >= 0) { start = i; len = digits.length }
+    }
+    if (start < 0) return name
+    return android.text.SpannableString(name).apply {
+        setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+            start, start + len, 0)
+        setSpan(android.text.style.ForegroundColorSpan(HL_COLOR), start, start + len, 0)
+    }
+}
+
+/** Highlight the typed digits inside a possibly formatted number. */
+private fun highlightNumber(number: String, digits: String): CharSequence {
+    if (digits.length < 2) return number
+    val raw = StringBuilder()
+    val idx = ArrayList<Int>()
+    number.forEachIndexed { i, ch -> if (ch.isDigit()) { raw.append(ch); idx.add(i) } }
+    val pos = raw.indexOf(digits)
+    if (pos < 0 || pos + digits.length > idx.size) return number
+    val s2 = idx[pos]
+    val e2 = idx[pos + digits.length - 1] + 1
+    return android.text.SpannableString(number).apply {
+        setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), s2, e2, 0)
+        setSpan(android.text.style.ForegroundColorSpan(HL_COLOR), s2, e2, 0)
     }
 }

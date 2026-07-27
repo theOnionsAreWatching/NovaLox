@@ -149,6 +149,9 @@ class MediaViewerActivity : BaseActivity() {
             onCenter = { if (currentPart()?.isImage() == true) enterZoom() else playCurrent() },
             onRight = { saveCurrent() }
         )
+        // leaving zoom mode: clear the magnifier icons
+        binding.softkeyBar.softLeft.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+        binding.softkeyBar.softRight.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
         // the viewer's bar shows even with softkeys off: pictures always
         // offer Zoom in the center, videos Play
         binding.softkeyBar.root.visibility = View.VISIBLE
@@ -220,6 +223,16 @@ class MediaViewerActivity : BaseActivity() {
             onCenter = null,
             onRight = { zoomStep(true) }
         )
+        // magnifier −/+ icons next to the * and # key labels
+        binding.softkeyBar.softLeft.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            0, 0, if (zoomScale > 1f) R.drawable.ic_zoom_out else 0, 0
+        )
+        binding.softkeyBar.softRight.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            if (zoomScale < 4f) R.drawable.ic_zoom_in else 0, 0, 0, 0
+        )
+        val pad = (4 * resources.displayMetrics.density).toInt()
+        binding.softkeyBar.softLeft.compoundDrawablePadding = pad
+        binding.softkeyBar.softRight.compoundDrawablePadding = pad
         binding.softkeyBar.root.visibility = View.VISIBLE
     }
 

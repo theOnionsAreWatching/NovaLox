@@ -43,4 +43,31 @@ object BroadcastCopies {
     }
 
     fun isCopy(context: Context, tid: Long): Boolean = messageIdFor(context, tid) != null
+
+    // ---- SMS fan-out copies (text-only broadcast / group SMS) ----
+    // The SMS path writes one telephony row PER RECIPIENT (Sender writes them
+    // itself as the default SMS app); only the first row links to the app
+    // message. The rest are registered here so no ingest route can turn them
+    // into duplicate one-to-one messages. Keys are "s<id>" so the SMS and MMS
+    // id spaces can't collide.
+
+    @Synchronized
+    fun recordSms(context: Context, rowId: Long, messageId: Long) {
+        if (rowId <= 0) return
+        val prefs = Prefs.get(context)
+        val key = "s$rowId"
+        val entries = prefs.broadcastCopyMap.split(",")
+            .filter { it.isNotBlank() && !it.startsWith("$key:") }
+            .toMutableList()
+        entries += "$key:$messageId"
+        while (entries.size > MAX_ENTRIES) entries.removeAt(0)
+        prefs.broadcastCopyMap = entries.joinToString(",")
+    }
+
+    fun isSmsCopy(context: Context, rowId: Long): Boolean {
+        if (rowId <= 0) return false
+        val prefix = "s$rowId:"
+        return Prefs.get(context).broadcastCopyMap.split(",")
+            .any { it.startsWith(prefix) }
+    }
 }
