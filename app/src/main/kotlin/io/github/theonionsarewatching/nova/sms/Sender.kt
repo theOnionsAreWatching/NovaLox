@@ -274,6 +274,12 @@ object Sender {
                         "r_rpt=${if (Prefs.get(context).requestReadReports) "YES" else "no"} " +
                         "parts=${finalAtts.size}"
                 )
+                    if (addresses.any { it.contains("@") }) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-email",
+                            "send to email recipient(s): ${addresses.joinToString()}"
+                        )
+                    }
                 return
             } catch (e: Exception) {
                 io.github.theonionsarewatching.nova.util.DiagLog.log(

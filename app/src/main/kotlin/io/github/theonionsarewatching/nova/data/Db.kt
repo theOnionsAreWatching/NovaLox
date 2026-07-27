@@ -519,6 +519,9 @@ interface PartDao {
     @Query("UPDATE parts SET width = :w, height = :h WHERE id = :id")
     suspend fun setDims(id: Long, w: Int, h: Int)
 
+    @Query("SELECT * FROM parts WHERE width = 0 AND mimeType LIKE 'image/%'")
+    suspend fun needingDims(): List<PartEntity>
+
     // visual media only, newest first (viewer: right = older, left = newer)
     @Query(
         """SELECT p.* FROM parts p JOIN messages m ON p.messageId = m.id

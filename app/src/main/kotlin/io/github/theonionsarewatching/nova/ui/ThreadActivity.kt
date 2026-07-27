@@ -60,8 +60,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** staged attachments: (path, mime, displayName) — sent together with the next Send */
     private val pendingAttachments = ArrayList<Triple<String, String, String>>()
 
-    private var lastListFocusPos = -1
-    private var headerEntryLegit = false
     private var selecting = false
     private val selectedIds = HashSet<Long>()
 
@@ -116,30 +114,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // decode resizes its row) that recycles the focused row lets the
         // system fall back onto these buttons uninvited
         setHeaderFocusable(false)
-        binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, new ->
-            when {
-                new != null && new.parent === binding.msgList -> {
-                    lastListFocusPos = binding.msgList.getChildAdapterPosition(new)
-                    headerEntryLegit = false
-                }
-                new === binding.composeInput -> headerEntryLegit = false
-                new != null && !composeMode && !selecting && !headerEntryLegit &&
-                    lastListFocusPos >= 0 && rows.isNotEmpty() &&
-                    new.parent !== binding.msgList &&
-                    new !== binding.composeInput &&
-                    !binding.threadSelectionBar.isShown &&
-                    generateSequence(new as android.view.View?) { it.parent as? android.view.View }
-                        .none { it === binding.composeBar } -> {
-                    // focus fell onto the top bar without enterHeader(): an
-                    // async relayout stole it — reclaim the message row
-                    val p = lastListFocusPos.coerceAtMost(rows.size - 1)
-                    io.github.theonionsarewatching.nova.util.DiagLog.log(
-                        this, "focus", "GUARDIAN reclaiming -> pos $p"
-                    )
-                    binding.msgList.post { scroller?.focusPosition(p, null) }
-                }
-            }
-        }
         binding.btnBack.setOnClickListener { goBack() }
         binding.unreadChip.setOnClickListener {
             binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
@@ -681,7 +655,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun enterHeader() {
-        headerEntryLegit = true
         setHeaderFocusable(true)
         if (!binding.btnOverflow.requestFocus() && !binding.btnBack.requestFocus()) {
             setHeaderFocusable(false)

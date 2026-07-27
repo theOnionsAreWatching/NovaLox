@@ -292,6 +292,30 @@ class Repo private constructor(private val context: Context) {
         val resolver = context.contentResolver
         val isMine = msgBox != Telephony.Mms.MESSAGE_BOX_INBOX
 
+        // phantom-MMS-via-email diagnostics: every ingest of a row involving
+        // an email address gets a line, so a ghost message can be traced to
+        // the exact telephony row and box that produced it
+        run {
+            try {
+                context.contentResolver.query(
+                    android.net.Uri.parse("content://mms/$mmsId/addr"),
+                    arrayOf("address", "type"), null, null, null
+                )?.use { c ->
+                    val sb = StringBuilder()
+                    while (c.moveToNext()) {
+                        val a = c.getString(0) ?: continue
+                        if (a.contains("@")) sb.append("[t=${c.getInt(1)}]$a ")
+                    }
+                    if (sb.isNotEmpty()) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-email",
+                            "ingest tid=$mmsId box=$msgBox addrs: $sb"
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         // the content observer and the MMS receiver can both try to ingest the same
         // message; the loser of that race used to create a blank duplicate. Ingest
         // each telephony row exactly once — and if the first pass caught it before
@@ -1065,6 +1089,29 @@ class Repo private constructor(private val context: Context) {
      *  whose sender asked for a read report (rr=128 on the telephony row),
      *  send an M-Read-Rec.ind now that the user has read them. The provider
      *  row's rr is set to 129 afterwards so each is answered exactly once. */
+    /** One-shot: learn dimensions for parts from before the dims schema, so
+     *  nothing is left to settle-and-shift on screen. Runs on IO at startup. */
+    fun backfillPartDims() {
+        scope.launch {
+            try {
+                val legacy = db.parts().needingDims()
+                var done = 0
+                legacy.forEach { part ->
+                    val d = imageDims(part.mimeType, part.filePath)
+                    if (d.first > 0) {
+                        db.parts().setDims(part.id, d.first, d.second)
+                        done++
+                    }
+                }
+                if (legacy.isNotEmpty()) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "thumb", "backfilled dims for $done/${legacy.size} legacy parts"
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     /** Intrinsic pixel size of an image file via bounds-only decode (cheap,
      *  no bitmap allocated). (0,0) for non-images or unreadable files. */
     fun imageDims(mime: String, path: String): Pair<Int, Int> {
