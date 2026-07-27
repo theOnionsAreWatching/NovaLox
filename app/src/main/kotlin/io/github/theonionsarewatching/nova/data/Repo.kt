@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -1058,8 +1059,13 @@ class Repo private constructor(private val context: Context) {
      *  whose sender asked for a read report (rr=128 on the telephony row),
      *  send an M-Read-Rec.ind now that the user has read them. The provider
      *  row's rr is set to 129 afterwards so each is answered exactly once. */
-    suspend fun sendPendingReadRecs(convoId: Long) {
-        if (!Prefs.get(context).respondReadReports) return
+    suspend fun sendPendingReadRecs(convoId: Long) = withContext(Dispatchers.IO) {
+        // ContentResolver.query is a plain blocking binder call — unlike Room
+        // suspend functions it does NOT hop threads by itself. Called from a
+        // Main-dispatched coroutine it froze the UI for the whole per-message
+        // scan (watchdog-proven: 4.7s / 18.9s / 7.8s). Everything below runs
+        // on IO, whoever calls it.
+        if (!Prefs.get(context).respondReadReports) return@withContext
         try {
             val since = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
             val msgs = db.messages().threadMessagesForDelete(convoId, 1)
