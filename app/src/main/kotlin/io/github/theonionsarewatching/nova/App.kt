@@ -23,7 +23,9 @@ class App : Application(), ImageLoaderFactory {
         // catches the freeze in the act: logs whenever the main thread stops
         // responding, with the duration
         io.github.theonionsarewatching.nova.util.Perf.startWatchdog(this)
-        if (io.github.theonionsarewatching.nova.BuildConfig.DEBUG) {
+        val debuggable =
+            (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable) {
             // main-thread disk/DB work is the usual cause of a UI stall — have
             // the platform name the offender instead of us guessing
             android.os.StrictMode.setThreadPolicy(

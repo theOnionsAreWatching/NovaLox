@@ -25,6 +25,7 @@ import io.github.theonionsarewatching.nova.databinding.ActivityThreadBinding
 import io.github.theonionsarewatching.nova.notify.NotificationHelper
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.Formatters
+import io.github.theonionsarewatching.nova.util.Perf
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import kotlinx.coroutines.launch
 import java.io.File
