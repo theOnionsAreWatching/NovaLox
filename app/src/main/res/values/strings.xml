@@ -91,6 +91,7 @@
     <string name="mode_broadcast">Broadcast (separate SMS, replies come one-to-one)</string>
     <string name="mode_group_mms">Group MMS (shared thread, replies to all)</string>
     <string name="switched_broadcast">Switched to broadcast for future messages</string>
+    <string name="carrier_rejected_note">\u2014 carrier rejected this message (spam policy) \u2014</string>
     <string name="switched_group_mms">Switched to group MMS for future messages</string>
     <string name="schedule_send">Schedule</string>
     <string name="schedule_needs_text">Type the message first, then choose Schedule</string>

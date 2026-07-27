@@ -315,10 +315,12 @@ class Repo private constructor(private val context: Context) {
                     if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX &&
                         sb.contains("MAILER-DAEMON", ignoreCase = true)
                     ) {
-                        // the carrier bounced an email-MMS (spam rejection):
-                        // mark the most recent pending own message to an email
-                        // address FAILED, so the outcome is visible where the
-                        // user sent it — the bounce itself stays as evidence
+                        // the carrier bounced an email-MMS (spam rejection).
+                        // The bounce PDU has no displayable text — ingesting it
+                        // produced a BLANK message "from unknown". Instead:
+                        // mark the pending original FAILED, drop a system line
+                        // into ITS conversation saying why, and suppress the
+                        // bounce entirely.
                         val cutoff = System.currentTimeMillis() - 2L * 3600 * 1000
                         db.messages().ownEmailSince(cutoff)
                             .firstOrNull {
@@ -326,13 +328,33 @@ class Repo private constructor(private val context: Context) {
                                     it.status != MsgStatus.CANCELED
                             }?.let { orig ->
                                 db.messages().setStatus(orig.id, MsgStatus.FAILED)
+                                db.messages().insert(
+                                    MessageEntity(
+                                        convoId = orig.convoId,
+                                        address = io.github.theonionsarewatching.nova
+                                            .ui.MessageRow.SYSTEM_ADDRESS,
+                                        body = context.getString(
+                                            io.github.theonionsarewatching.nova
+                                                .R.string.carrier_rejected_note
+                                        ),
+                                        date = System.currentTimeMillis(),
+                                        isMine = false,
+                                        status = MsgStatus.RECEIVED,
+                                        read = true, elementsExtracted = true
+                                    )
+                                )
                                 refreshConversation(orig.convoId)
                                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                                     context, "mms-email",
                                     "carrier bounce: marked msg=${orig.id} " +
-                                        "(${orig.address}) FAILED"
+                                        "(${orig.address}) FAILED + note added"
                                 )
                             }
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-email",
+                            "carrier bounce tid=$mmsId suppressed (blank phantom)"
+                        )
+                        return@withContext null
                     }
                 }
             } catch (_: Exception) {}
