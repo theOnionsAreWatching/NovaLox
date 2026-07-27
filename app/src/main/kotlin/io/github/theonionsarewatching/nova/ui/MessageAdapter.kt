@@ -470,7 +470,9 @@ class MessageAdapter(
                 else -> Color.GRAY
             }
         )
-        holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
+        // outgoing details sit with the outgoing side — the accent-bar
+        // exception was a leftover from when both directions were left-aligned
+        holder.b.metaRow.gravity = if (m.isMine) Gravity.END else Gravity.START
 
         // focus shade stays on the row; built from the BACKDROP's brightness,
         // not the theme — dark mode over a white custom background needs dark
@@ -501,7 +503,9 @@ class MessageAdapter(
             val density = ctx.resources.displayMetrics.density
             val radius = when (prefs.messageStyle) {
                 "square" -> dp(4).toFloat()
-                "plain", "accentbar" -> dp(6).toFloat()
+                "plain" -> dp(6).toFloat()
+                // accent-bar cards are squares — square corners, no rounding
+                "accentbar" -> 0f
                 else -> dp(10).toFloat()
             }
             // translucent fills (the accent-tinted sent bubble) must be

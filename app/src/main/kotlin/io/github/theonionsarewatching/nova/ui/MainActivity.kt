@@ -693,7 +693,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun convoOptions(c: ConversationEntity) {
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (!c.isGroup) {
-            items += getString(R.string.call_contact, c.displayTitle()) to {
+            if (!c.addressList().first().contains("@"))
+                items += getString(R.string.call_contact, c.displayTitle()) to {
                 try {
                     startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
                 } catch (_: Exception) {}

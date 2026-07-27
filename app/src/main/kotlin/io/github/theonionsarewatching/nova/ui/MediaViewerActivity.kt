@@ -217,23 +217,29 @@ class MediaViewerActivity : BaseActivity() {
     }
 
     private fun updateZoomSoftkeys() {
+        val canOut = zoomScale > 1f
+        val canIn = zoomScale < 4f
+        val barOn = softkeys?.shouldShow() == true
         softkeys?.set(
-            if (zoomScale > 1f) getString(R.string.zoom_out_label) else null,
+            if (canOut) getString(R.string.zoom_out_label) else null,
             null,
-            if (zoomScale < 4f) getString(R.string.zoom_in_label) else null,
+            if (canIn) getString(R.string.zoom_in_label) else null,
             onLeft = { zoomStep(false) },
             onCenter = null,
             onRight = { zoomStep(true) }
         )
-        // magnifier −/+ drawn INLINE right beside the key labels (compound
-        // drawables anchor to the slot edges, which spread them way apart)
-        if (zoomScale > 1f) {
-            binding.softkeyBar.softLeft.text =
-                iconLabel("* ", R.drawable.ic_zoom_out, binding.softkeyBar.softLeft)
+        // softkey bar ON: the softkeys themselves zoom — each shows just its
+        // magnifier. Bar OFF (forced-visible viewer bar): * and # zoom, with
+        // the magnifiers sitting right beside those key labels.
+        if (canOut) {
+            binding.softkeyBar.softLeft.text = iconLabel(
+                if (barOn) "" else "* ", R.drawable.ic_zoom_out, binding.softkeyBar.softLeft
+            )
         }
-        if (zoomScale < 4f) {
-            binding.softkeyBar.softRight.text =
-                iconLabel("# ", R.drawable.ic_zoom_in, binding.softkeyBar.softRight)
+        if (canIn) {
+            binding.softkeyBar.softRight.text = iconLabel(
+                if (barOn) "" else "# ", R.drawable.ic_zoom_in, binding.softkeyBar.softRight
+            )
         }
         binding.softkeyBar.root.visibility = View.VISIBLE
     }

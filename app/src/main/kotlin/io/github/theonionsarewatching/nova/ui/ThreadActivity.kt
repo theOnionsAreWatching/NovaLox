@@ -1250,6 +1250,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     android.widget.Toast.makeText(
                         this, R.string.mms_downloading, android.widget.Toast.LENGTH_SHORT
                     ).show()
+                    io.github.theonionsarewatching.nova.util.ManualDownloads.mark(convoId)
                     io.github.theonionsarewatching.nova.sms.MmsPushReceiver.fetch(
                         this, stub.location, stub.transactionId, null, stub.subId
                     )
@@ -1658,7 +1659,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val c = convo ?: return
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (!c.isGroup) {
-            items += getString(R.string.call_contact, c.displayTitle()) to {
+            if (!c.addressList().first().contains("@"))
+                items += getString(R.string.call_contact, c.displayTitle()) to {
                 try {
                     startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
                 } catch (_: Exception) {}

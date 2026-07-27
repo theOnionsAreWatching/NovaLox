@@ -57,6 +57,28 @@ class Repo private constructor(private val context: Context) {
         val clean = addresses.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { PhoneUtils.normalize(it) }
         val key = PhoneUtils.convoKey(clean)
         db.conversations().byKey(key)?.let { return it }
+        if (clean.size > 1) {
+            // multiple group chats with the SAME members can exist when their
+            // stored keys were written by older normalize rules: an incoming
+            // reply computes the MODERN key, misses, and lands in a different
+            // (or brand-new) conversation — "responding to one group shows in
+            // another." Match by member SET, heal the stored key to the modern
+            // form, and everything routes to the one conversation from then on.
+            val want = clean.map { PhoneUtils.normalize(it) }.toSet()
+            val match = db.conversations().allGroups()
+                .filter { g ->
+                    g.addressList().map { PhoneUtils.normalize(it) }.toSet() == want
+                }
+                .maxByOrNull { it.updatedAt }
+            if (match != null) {
+                db.conversations().setConvoKey(match.id, key)
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "convo",
+                    "healed group key convo=${match.id} '${match.convoKey}' -> '$key'"
+                )
+                return match.copy(convoKey = key)
+            }
+        }
         val isGroup = clean.size > 1
         val defaultMode =
             if (Prefs.get(context).defaultGroupMode == "group_mms") GroupMode.GROUP_MMS else GroupMode.BROADCAST

@@ -92,7 +92,10 @@ class MmsReceiver : MmsReceivedReceiver() {
         repo.scope.launch {
             val result = repo.ingestLatestMmsFromTelephony() ?: return@launch
             val (msg, convo) = result
-            if (!msg.isMine && !msg.blockedByKeyword) {
+            if (!msg.isMine && !msg.blockedByKeyword &&
+                !io.github.theonionsarewatching.nova.util.ManualDownloads
+                    .shouldSilence(convo.id)
+            ) {
                 NotificationHelper.notifyMessage(context, convo, msg)
             }
         }
