@@ -19,8 +19,6 @@
     <string name="softkey_attach">Attach</string>
     <string name="softkey_send">Send</string>
     <string name="softkey_select">Select</string>
-    <string name="softkey_add">Add</string>
-    <string name="softkey_start">Start</string>
 
     <!-- main -->
     <string name="no_conversations">No conversations yet</string>
@@ -75,7 +73,6 @@
     <string name="unblock_number">Unblock number</string>
     <string name="number_unblocked">Number unblocked</string>
     <string name="number_blocked_local">Number blocked in this app (the system block list refused)</string>
-    <string name="block_failed">No number to block</string>
     <string name="delete_thread">Delete conversation</string>
     <string name="delete_thread_confirm">Delete all messages with %1$s? They move to the recycle bin.</string>
     <string name="delete_thread_locked">This conversation has %1$d locked messages. Delete those too?</string>
@@ -86,7 +83,6 @@
     <string name="no_messages">No messages</string>
     <string name="compose_hint">Message</string>
     <string name="draft_continues">… draft continues below</string>
-    <string name="n_recipients">%1$d recipients</string>
     <string name="back">Back</string>
     <string name="overflow_glyph" translatable="false">\u22EE</string>
     <string name="group_send_mode">Group send mode</string>
@@ -134,7 +130,6 @@
 
     <!-- attachments -->
     <string name="snippet_attachment">Attachment</string>
-    <string name="attach_audio">[Audio message] press OK to open</string>
     <string name="attach_vcard">Contact card</string>
     <string name="attach_file">[File: %1$s]</string>
     <string name="more_attachments">%1$d attachments</string>
@@ -185,10 +180,6 @@
 
     <!-- settings -->
     <string name="settings_appearance">Appearance</string>
-    <string name="settings_behavior">Behavior</string>
-    <string name="settings_blocking">Blocking</string>
-    <string name="settings_data">Messages and data</string>
-    <string name="settings_device">Device</string>
     <string name="pref_theme">Theme</string>
     <string name="pref_accent">Accent color</string>
     <string name="pref_message_style">Message style</string>
@@ -198,15 +189,11 @@
     <string name="pref_ui_scale">Overall text scale</string>
     <string name="pref_focus_stroke">Focus outline thickness</string>
     <string name="pref_layout_direction">Layout direction</string>
-    <string name="pref_show_search">Show search bar on main screen</string>
-    <string name="pref_delivery_reports">Request delivery reports</string>
     <string name="pref_default_group_mode">Default for new groups</string>
-    <string name="pref_link_opening">Opening links</string>
     <string name="pref_compose_max_lines">Compose box max lines</string>
     <string name="pref_bin_retention">Recycle bin auto-empty</string>
     <string name="pref_softkey_mode">Softkey bar</string>
     <string name="open_softkey_config">Softkey key capture</string>
-    <string name="open_search_pref">Search messages</string>
     <string name="open_keywords_pref">Blocked keywords</string>
     <string name="open_blocked_pref">Blocked messages</string>
     <string name="open_bin_pref">Recycle bin</string>
@@ -219,7 +206,6 @@
     <!-- keywords -->
     <string name="keywords_title">Blocked keywords</string>
     <string name="add_keyword">Add keyword</string>
-    <string name="keyword_hint_row">Messages containing this are stored silently</string>
     <string name="remove_keyword_confirm">Remove keyword \"%1$s\"?</string>
     <string name="remove">Remove</string>
 
@@ -239,12 +225,8 @@
 
     <!-- softkey config -->
     <string name="softkey_config_title">Softkey capture</string>
-    <string name="capture_left">Capture left softkey</string>
-    <string name="capture_right">Capture right softkey</string>
     <string name="press_left_softkey">Press your phone\'s LEFT softkey now (Back cancels)</string>
     <string name="press_right_softkey">Press your phone\'s RIGHT softkey now (Back cancels)</string>
-    <string name="captured_code">Captured key code %1$d</string>
-    <string name="softkey_current">Current codes — left: %1$d, right: %2$d</string>
 
     <string name="nothing_here">Nothing here</string>
 
@@ -260,7 +242,6 @@
 
     <!-- v0.3 additions -->
     <string name="attached_label">Attached: %1$s</string>
-    <string name="remove_attachment_confirm">Remove this attachment? It won\'t be sent.</string>
     <string name="clear_glyph" translatable="false">\u2715</string>
     <string name="softkey_new_message">New msg</string>
     <string name="pref_show_search_short">Search bar on main screen</string>
@@ -285,15 +266,12 @@
     <string name="restore_done">Restore complete</string>
     <string name="restore_failed">Restore failed — is that a Nova backup zip?</string>
 
-    <string name="backup_saved_to">Backup saved to Downloads/D-SMS/%1$s</string>
     <string name="no_backups_found">No Nova backups found in Downloads/D-SMS</string>
     <string name="group_mode_line">Group mode: %1$s — press to change</string>
     <string name="mode_broadcast_short">Broadcast</string>
     <string name="mode_group_mms_short">Group MMS</string>
 
     <!-- v0.6 additions -->
-    <string name="pref_sizes">Text and size options</string>
-    <string name="pref_sizes_summary">Message size, timestamps, density, overall scale, focus outline</string>
     <string name="desc_msg_text_size">Size of the message text in conversations and the thread list</string>
     <string name="desc_time_text_size">Size of timestamps, statuses and other small labels</string>
     <string name="desc_list_density">Vertical spacing between rows — compact fits more on screen</string>
@@ -314,7 +292,6 @@
     <string name="settings_sound">Sound</string>
     <string name="pref_default_tone">Notification tone</string>
     <string name="pref_vibrate">Vibrate</string>
-    <string name="pref_vibrate_summary">Vibrate for incoming messages</string>
     <string name="sound_and_vibration">Sound &amp; vibration</string>
     <string name="sound_and_vibration_title">Sound &amp; vibration</string>
     <string name="tone_title">Notification tone</string>
@@ -379,7 +356,6 @@
     <string name="auto_delete_apply_warning">Apply now? Conversations longer than %1$d messages will have their oldest messages permanently deleted.</string>
     <string name="clear_cache_warning">Remove all downloaded MMS media files from the cache? Your messages stay; media will re-download when you open those messages. Continue?</string>
     <string name="clear_cache_done">MMS cache cleared</string>
-    <string name="about_more">Details</string>
     <string name="notif_status">Notification status</string>
     <string name="about_open_repo">Project page</string>
     <string name="about_details">NovaLox\n\nA privacy-respecting SMS/MMS app.\n\nVersion %1$s\n\nLicensed under the PolyForm Noncommercial License 1.0.0. This app stores your messages only on your device and sends nothing to any server other than your carrier\u2019s messaging service.\n\nProject page: github.com/theOnionsAreWatching/NovaLox</string>
@@ -390,15 +366,12 @@
     <string name="pref_message_color">Message color</string>
     <string name="pref_message_color_summary">Bubble colors for sent, incoming, and group members</string>
     <string name="sent_color_accent">Accent color</string>
-    <string name="bg_dark_option">Dark theme background\u2026</string>
-    <string name="bg_dark_default">Default (dark)</string>
     <string name="bg_dark_same">Same as light theme</string>
     <string name="enter_code_manually">Enter key code</string>
     <string name="key_code_hint">Key code number</string>
     <string name="last_key_seen">Last key press seen: code %1$d</string>
     <string name="pref_resize">Resize</string>
     <string name="pref_resize_summary">Make everything in the app bigger or smaller</string>
-    <string name="pref_advanced_resize">Advanced resize</string>
     <string name="pref_auto_mms">Auto-download multimedia messages</string>
     <string name="pref_auto_mms_summary">Download picture/video messages as they arrive. Turn off to save data.</string>
     <string name="pref_reimport">Re-import all messages</string>
@@ -408,7 +381,6 @@
     <string name="reimport_done">Re-import complete</string>
     <string name="pref_check_updates">Check for updates</string>
     <string name="checking_updates">Checking…</string>
-    <string name="up_to_date">You\'re up to date (v%1$s)</string>
     <string name="update_available">Update available: v%1$s</string>
     <string name="update_prompt">A newer version is on the releases page. Download it now? You\'ll be asked to confirm the install when it finishes.</string>
     <string name="download">Download</string>
@@ -458,12 +430,10 @@
     <string name="chat_background">Chat background</string>
     <string name="bg_default">App default</string>
     <string name="bg_color">Color</string>
-    <string name="bg_picture">Picture…</string>
     <string name="no_file_picker">This phone has no file picker app</string>
 
     <!-- v0.9.14 additions -->
     <string name="detail_delivery_header">Delivery reports received:</string>
-    <string name="detail_no_reports">(none arrived — the carrier did not send a report)</string>
 
     <!-- v0.9.15 additions -->
     <string name="pref_save_log">Save diagnostic log</string>
@@ -475,7 +445,6 @@
     <string name="attachment_too_large">Attachment is too large to send by MMS (limit is about 800 KB). Videos usually need to be shared another way.</string>
 
     <!-- v0.9.22 additions -->
-    <string name="bg_gallery">Pick from gallery</string>
     <string name="bg_all_title">Background for all chats</string>
     <string name="bg_choose_picture">Choose picture</string>
     <string name="bg_dark_theme">Dark theme</string>
@@ -484,7 +453,6 @@
     <string name="pref_all_backgrounds_summary">Set one background for every conversation</string>
     <string name="respond_delivery">Respond to delivery requests</string>
     <string name="respond_delivery_summary">Send a delivery confirmation when others request one</string>
-    <string name="compressing_video">Compressing video…</string>
 
     <!-- v0.9.23 additions -->
     <string name="bg_pick_app">Choose an app</string>
@@ -497,9 +465,6 @@
     <!-- v0.9.24 additions -->
     <string name="schedule_summary_fmt">%1$s at %2$s</string>
     <string name="schedule_confirm">Schedule</string>
-    <string name="sched_1h">+1 hour</string>
-    <string name="sched_3h">+3 hours</string>
-    <string name="sched_tomorrow9">Tomorrow 9am</string>
     <string name="sched_day">Day</string>
     <string name="sched_hour">Hour</string>
     <string name="sched_min">Minute</string>
@@ -552,7 +517,6 @@
     <string name="kw_mode_only">Block specific numbers…</string>
     <string name="kw_case_on">Case sensitive: on (tap to turn off)</string>
     <string name="kw_case_off">Case sensitive: off (tap to turn on)</string>
-    <string name="kw_numbers_hint">Numbers or emails, comma separated</string>
     <string name="kw_sub_everyone">Blocks everyone</string>
     <string name="kw_sub_non_contacts">Only non-contacts</string>
     <string name="kw_sub_allows">allows %1$d</string>
@@ -561,7 +525,6 @@
     <!-- v0.9.30 additions -->
     <string name="np_hint">Enter a number or name</string>
     <string name="np_chosen">Selected:</string>
-    <string name="np_add_typed">Add Number</string>
 
     <!-- v0.9.31 additions -->
     <string name="delivery_delivered_at">Delivered \u2713  (%1$s)</string>
@@ -572,7 +535,6 @@
 
     <!-- v0.9.40 additions -->
     <string name="paste">Paste</string>
-    <string name="press_ok_paste">Press OK to paste</string>
     <string name="status_read">Read</string>
     <string name="delivery_read_at">Read \u2713  (%1$s)</string>
 
@@ -580,15 +542,12 @@
     <string name="add_number_row">Add number</string>
     <string name="view_contact">View contact</string>
     <string name="add_to_contacts">Add to contacts</string>
-    <string name="notifications_submenu">Notifications</string>
     <string name="name_group">Name group</string>
     <string name="rename_group">Rename group</string>
     <string name="name_group_hint">Group name (leave empty to remove)</string>
     <string name="group_name_set">Group name set</string>
     <string name="group_name_removed">Group name removed</string>
     <string name="view_message">View message</string>
-    <string name="attach_file_option">Attach a file</string>
-    <string name="attach_contact_option">Attach a contact</string>
     <string name="pref_sent_color">Sent message color</string>
     <string name="pref_sent_color_summary">Pick a color for your own bubbles</string>
     <string name="sent_color_set">Sent message color set</string>
@@ -611,7 +570,6 @@
 
     <!-- v0.9.43 additions -->
     <string name="attach_menu_record">Record audio</string>
-    <string name="no_recorder_app">No recorder app supports attaching on this phone</string>
     <string name="exporting_contacts">Exporting contacts\u2026</string>
 
     <!-- v0.9.44 additions -->
@@ -635,8 +593,6 @@
     <string name="pref_notif_clear">Clear notification upon:</string>
     <string name="contact_create_new">Create new contact</string>
     <string name="contact_add_existing">Add to existing contact</string>
-    <string name="pref_mms_profile">MMS client identity</string>
-    <string name="pref_mms_profile_summary">How the app identifies itself to the carrier\u2019s picture-message server. If audio or pictures arrive degraded, try another identity.</string>
     <string name="pref_mms_custom_ua">Custom identity \u2014 User-Agent</string>
     <string name="pref_mms_custom_ua_summary">Used when the identity above is Custom. Example: vzmmms1.0</string>
     <string name="pref_mms_custom_uaprof">Custom identity \u2014 profile URL</string>

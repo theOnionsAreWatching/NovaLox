@@ -475,63 +475,6 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     /** Mute / notification block / sound & vibration / number block, out of
      *  the main long-press list into one place. */
-    private fun notificationOptions(c: ConversationEntity) {
-        val items = ArrayList<Pair<String, () -> Unit>>()
-        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
-            lifecycleScope.launch { repo.setMuted(c.id, !c.muted) }
-        }
-        items += (if (c.notifBlocked) getString(R.string.unblock_notifications) else getString(R.string.block_notifications)) to {
-            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked) }
-        }
-        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
-        if (!c.isGroup) {
-            val number = c.addressList().firstOrNull().orEmpty()
-            val alreadyBlocked = number.isNotBlank() && repo.isNumberBlocked(number)
-            val label = if (alreadyBlocked) getString(R.string.unblock_number)
-            else getString(R.string.block_number)
-            items += label to {
-                lifecycleScope.launch {
-                    if (number.isBlank()) {
-                        android.widget.Toast.makeText(
-                            this@MainActivity, R.string.block_failed,
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                        return@launch
-                    }
-                    if (alreadyBlocked) {
-                        repo.unblockNumber(number)
-                        android.widget.Toast.makeText(
-                            this@MainActivity, R.string.number_unblocked,
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle(R.string.block_number)
-                            .setMessage(R.string.block_number_warning)
-                            .setPositiveButton(R.string.block_number) { _, _ ->
-                                lifecycleScope.launch {
-                                    val systemOk = repo.blockNumber(number)
-                                    android.widget.Toast.makeText(
-                                        this@MainActivity,
-                                        if (systemOk) R.string.number_blocked
-                                        else R.string.number_blocked_local,
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                            .setNegativeButton(android.R.string.cancel, null)
-                            .show()
-                    }
-                }
-            }
-        }
-
-        AlertDialog.Builder(this)
-            .setCustomTitle(twoLineTitle(c.displayTitle()))
-            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
-            .show()
-    }
-
     /** Mirrors the thread's group-mode picker, incl. the system line rules. */
     private fun pickGroupModeMain(c: ConversationEntity) {
         val gm = io.github.theonionsarewatching.nova.data.GroupMode

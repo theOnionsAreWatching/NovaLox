@@ -14,8 +14,21 @@ object DiagLog {
 
     fun file(context: Context): File = File(context.filesDir, "novalox-log.txt")
 
-    @Synchronized
+    // writes happen off the calling thread — the diagnostics must not add
+    // the very main-thread I/O jank they exist to find. Crashes still write
+    // synchronously (the process is about to die; a posted write would be
+    // lost).
+    private val writer = android.os.HandlerThread("nova-diaglog")
+        .apply { isDaemon = true; start() }
+    private val writeHandler = android.os.Handler(writer.looper)
+
     fun log(context: Context, tag: String, message: String) {
+        val app = context.applicationContext
+        writeHandler.post { logSync(app, tag, message) }
+    }
+
+    @Synchronized
+    fun logSync(context: Context, tag: String, message: String) {
         try {
             val f = file(context)
             val stamp = android.text.format.DateFormat.format(
@@ -37,7 +50,7 @@ object DiagLog {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                log(appContext, "CRASH", "${thread.name}: " +
+                logSync(appContext, "CRASH", "${thread.name}: " +
                     android.util.Log.getStackTraceString(throwable).take(4000))
             } catch (_: Exception) {
             }

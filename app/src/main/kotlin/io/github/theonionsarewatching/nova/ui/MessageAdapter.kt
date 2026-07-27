@@ -86,7 +86,6 @@ class MessageAdapter(
         val b = ItemMessageBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         b.root.isFocusable = true
         b.root.isFocusableInTouchMode = false
-        b.root.foreground = ThemeUtils.focusStroke(parent.context)
         return VH(b)
     }
 
@@ -444,33 +443,6 @@ class MessageAdapter(
             val backdrop = backdropColor()
             val fillOnScreen = androidx.core.graphics.ColorUtils
                 .compositeColors(effectiveFill, backdrop)
-            fun lum(c: Int) = androidx.core.graphics.ColorUtils.calculateLuminance(c)
-            // a brighter accent for use on dark bubbles, where the base accent
-            // can be too dim to read
-            val brightAccent = run {
-                val hsv = FloatArray(3)
-                Color.colorToHSV(accent, hsv)
-                hsv[1] = (hsv[1] * 0.9f)           // keep the color rich
-                hsv[2] = kotlin.math.max(hsv[2], 0.92f)
-                Color.HSVToColor(hsv)
-            }
-            // on a dark bubble prefer bright ring colors; on a light bubble
-            // prefer dark ones — ordered so the FIRST that clears both surfaces
-            // is also the most visible
-            val fillDark = lum(fillOnScreen) < 0.4
-            val candidates = if (fillDark)
-                listOf(brightAccent, Color.WHITE, accent, 0xFF202020.toInt())
-            else
-                listOf(accent, 0xFF202020.toInt(), Color.WHITE, brightAccent)
-            val ringColor = candidates.firstOrNull { c ->
-                kotlin.math.abs(lum(c) - lum(fillOnScreen)) >= 0.22 &&
-                    kotlin.math.abs(lum(c) - lum(backdrop)) >= 0.22
-            } ?: candidates.maxByOrNull { c ->
-                minOf(
-                    kotlin.math.abs(lum(c) - lum(fillOnScreen)),
-                    kotlin.math.abs(lum(c) - lum(backdrop))
-                )
-            }!!
             // selection = the INVERSE of the bubble's on-screen color, so it
             // reads against any colored message — wrapped in black hairlines
             // on both edges so it stays visible even where the background

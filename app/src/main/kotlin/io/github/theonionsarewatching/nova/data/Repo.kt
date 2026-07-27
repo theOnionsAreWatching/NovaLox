@@ -129,8 +129,8 @@ class Repo private constructor(private val context: Context) {
 
     /** Store an incoming SMS. Also writes it to the system provider (default-app duty).
      *  Returns the stored message + its conversation, or null when the sender is number-blocked. */
-    suspend fun receiveSms(address: String, body: String, date: Long, subId: Int): Pair<MessageEntity, ConversationEntity>? {
-        if (isNumberBlocked(address)) return null
+    suspend fun receiveSms(address: String, body: String, date: Long, subId: Int): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
+        if (isNumberBlocked(address)) return@withContext null
 
         // 1) system provider (OS compatibility)
         val telephonyId = try {
@@ -158,12 +158,12 @@ class Repo private constructor(private val context: Context) {
         extractElements(id, body)
         refreshConversation(convo.id)
         ChangeBus.ping()
-        return Pair(msg.copy(id = id), convo)
+        return@withContext Pair(msg.copy(id = id), convo)
     }
 
     /** Ingest the newest MMS that the engine persisted into the telephony provider. */
     @SuppressLint("Range")
-    suspend fun ingestLatestMmsFromTelephony(): Pair<MessageEntity, ConversationEntity>? {
+    suspend fun ingestLatestMmsFromTelephony(): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         var mmsId = -1L
         var date = 0L
@@ -179,13 +179,13 @@ class Repo private constructor(private val context: Context) {
                 msgBox = c.getInt(2)
             }
         }
-        if (mmsId < 0) return null
+        if (mmsId < 0) return@withContext null
         // a row already linked to a real message is a duplicate — skip it.
         // EXCEPTION: a download stub is linked to this same row (tap-to-download
         // updates 130 -> 132 in place); it must pass so ingestMms can replace it.
         val linked = db.messages().byTelephonyMms(mmsId)
-        if (linked != null && !MmsStub.isStub(linked.body)) return null
-        return ingestMms(mmsId, date, msgBox)
+        if (linked != null && !MmsStub.isStub(linked.body)) return@withContext null
+        return@withContext ingestMms(mmsId, date, msgBox)
     }
 
     /** Record a number as belonging to THIS phone (learned from sent messages). */
@@ -202,10 +202,10 @@ class Repo private constructor(private val context: Context) {
         get() = simOwnNumbers + Prefs.get(context).learnedOwnNumbers
 
     /** Restore needs the combined own-number set to write correct system rows. */
-    fun ownNumbersForRestore(): Set<String> = ownNumbers
+    suspend fun ownNumbersForRestore(): Set<String> = ownNumbers
 
     /** This phone's own numbers per the SIM — best effort, empty on many SIMs. */
-    private val simOwnNumbers: Set<String> by lazy {
+    private val simOwnNumbers: Set<String> by lazy = withContext(Dispatchers.IO) {
         val out = HashSet<String>()
         try {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
@@ -281,13 +281,13 @@ class Repo private constructor(private val context: Context) {
     }
 
     @SuppressLint("Range")
-    suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? {
+    suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
         // broadcast copies are machinery of the broadcast illusion — the one
         // real message already lives in the broadcast conversation. EVERY
         // ingest route (sync loops, sent-confirmation, push) funnels through
         // here, so this is the single authoritative guard against the copy
         // reappearing as a "new" message in the one-to-one thread.
-        if (io.github.theonionsarewatching.nova.util.BroadcastCopies.isCopy(context, mmsId)) return null
+        if (io.github.theonionsarewatching.nova.util.BroadcastCopies.isCopy(context, mmsId)) return@withContext null
         val resolver = context.contentResolver
         val isMine = msgBox != Telephony.Mms.MESSAGE_BOX_INBOX
 
@@ -326,7 +326,7 @@ class Repo private constructor(private val context: Context) {
                     ChangeBus.ping()
                 }
             }
-            return null
+            return@withContext null
         }
 
         // not downloaded yet (notification-ind): show a placeholder, not a blank row
@@ -393,7 +393,7 @@ class Repo private constructor(private val context: Context) {
                         )
                     }
                 }
-                return null
+                return@withContext null
             }
         }
         val notDownloaded = mType == 130
@@ -403,13 +403,13 @@ class Repo private constructor(private val context: Context) {
         // that message delivered, then skip ingesting the notice itself.
         if (mType == 134 || mType == 136) {
             handleMmsIndication(mmsId, mType)
-            return null
+            return@withContext null
         }
 
         // read reports, acknowledgements (m_type 129/131/133/135/136...). These
         // imported as BLANK messages next to the real MMS. Only actual messages pass:
         // 128 = outgoing send-request, 132 = downloaded incoming, 130 = placeholder.
-        if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return null
+        if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return@withContext null
 
         // a downloaded copy replaces its own notification placeholder (matched by
         // transaction id) — covers users who toggled auto-download mid-stream
@@ -450,7 +450,7 @@ class Repo private constructor(private val context: Context) {
                             "duplicate incoming copy tr_id=$trId tid=$mmsId — deleted (carrier push retry)"
                         )
                         try { resolver.delete(Uri.parse("content://mms/$mmsId"), null, null) } catch (_: Exception) {}
-                        return null
+                        return@withContext null
                     }
                 }
             } catch (_: Exception) {}
@@ -542,7 +542,7 @@ class Repo private constructor(private val context: Context) {
             }
         }.ifEmpty { listOf("Unknown") }
 
-        if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) return null
+        if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) return@withContext null
 
         // parts
         var bodyText = ""
@@ -594,7 +594,7 @@ class Repo private constructor(private val context: Context) {
                     "STUB SUPPRESSED: m_type=130 reached ingest with auto-download ON " +
                         "(mmsId=$mmsId tr_id=$trId) — not creating placeholder"
                 )
-                return null
+                return@withContext null
             }
             // Build a tappable download stub. The location + tr_id + subId are
             // stashed in the body behind a marker the adapter recognizes and
@@ -622,7 +622,7 @@ class Repo private constructor(private val context: Context) {
         val senderAddress = if (isMine) participants.joinToString("|") else (from.firstOrNull() ?: "Unknown")
         // honest status from the actual message box — outgoing rows were all
         // labeled "sent" before, even ones sitting in outbox or marked failed
-        if (msgBox == Telephony.Mms.MESSAGE_BOX_DRAFTS) return null
+        if (msgBox == Telephony.Mms.MESSAGE_BOX_DRAFTS) return@withContext null
         val status = when {
             !isMine -> MsgStatus.RECEIVED
             msgBox == 5 /* MESSAGE_BOX_FAILED */ -> MsgStatus.FAILED
@@ -661,7 +661,7 @@ class Repo private constructor(private val context: Context) {
                 }
                 refreshConversation(match.convoId)
                 ChangeBus.ping()
-                return null
+                return@withContext null
             }
         }
         // received MMS start unread; our own sent MMS are read
@@ -727,7 +727,7 @@ class Repo private constructor(private val context: Context) {
         extractElements(id, bodyText)
         refreshConversation(convo.id)
         ChangeBus.ping()
-        return Pair(fixed.copy(id = id), convo)
+        return@withContext Pair(fixed.copy(id = id), convo)
     }
 
     private fun extensionFor(mime: String, name: String): String {
@@ -862,7 +862,7 @@ class Repo private constructor(private val context: Context) {
      *  accept us, and always records it in our own list so blocking still
      *  works where the provider refuses (stripped ROMs, secondary users).
      *  Returns true if the system store took it. */
-    fun blockNumber(address: String): Boolean {
+    suspend fun blockNumber(address: String): Boolean = withContext(Dispatchers.IO) {
         val prefs = Prefs.get(context)
         prefs.blockedNumbers = prefs.blockedNumbers + address
         var systemOk = false
@@ -893,10 +893,10 @@ class Repo private constructor(private val context: Context) {
             context, "block", "blocked $address (system=$systemOk, local=yes)"
         )
         ChangeBus.ping()
-        return systemOk
+        return@withContext systemOk
     }
 
-    fun unblockNumber(address: String) {
+    suspend fun unblockNumber(address: String) = withContext(Dispatchers.IO) {
         val prefs = Prefs.get(context)
         val norm = PhoneUtils.normalize(address)
         prefs.blockedNumbers = prefs.blockedNumbers
@@ -1157,7 +1157,7 @@ class Repo private constructor(private val context: Context) {
 
     /** Auto-download off: ingest a freshly persisted notification-ind as the
      *  tappable download stub, and notify like any incoming message. */
-    suspend fun ingestNotificationStub(mmsId: Long) {
+    suspend fun ingestNotificationStub(mmsId: Long) = withContext(Dispatchers.IO) {
         var dateMs = System.currentTimeMillis()
         try {
             context.contentResolver.query(
@@ -1165,7 +1165,7 @@ class Repo private constructor(private val context: Context) {
                 "_id = ?", arrayOf(mmsId.toString()), null
             )?.use { c -> if (c.moveToFirst()) dateMs = c.getLong(0) * 1000L }
         } catch (_: Exception) {}
-        val result = ingestMms(mmsId, dateMs, Telephony.Mms.MESSAGE_BOX_INBOX) ?: return
+        val result = ingestMms(mmsId, dateMs, Telephony.Mms.MESSAGE_BOX_INBOX) ?: return@withContext
         val (msg, convo) = result
         if (!msg.isMine && !msg.blockedByKeyword) {
             io.github.theonionsarewatching.nova.notify.NotificationHelper
@@ -1177,7 +1177,7 @@ class Repo private constructor(private val context: Context) {
      *  indication (matches the 0.9.50 behavior the engine gave us for free). */
     suspend fun applyMmsIndication(indId: Long, mType: Int) = handleMmsIndication(indId, mType)
 
-    private suspend fun handleMmsIndication(indId: Long, mType: Int) {
+    private suspend fun handleMmsIndication(indId: Long, mType: Int) = withContext(Dispatchers.IO) {
         try {
             var origMessageId: String? = null
             var st = -1
@@ -1202,7 +1202,7 @@ class Repo private constructor(private val context: Context) {
             // stops the endless reprocessing (and the log flood) seen in the
             // field. Unmatched rows stay unmarked so a late-stored Message-ID
             // still gets its retry.
-            if (alreadyProcessed) return
+            if (alreadyProcessed) return@withContext
             // X-Mms-Read-Status, best-effort and fully isolated.
             var readStatus = -1
             if (mType == 136) {
@@ -1224,7 +1224,7 @@ class Repo private constructor(private val context: Context) {
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-delivery", "$kind has no m_id — dropped"
                 )
-                return
+                return@withContext
             }
             // find the SENT telephony row carrying that Message-ID. This only
             // works if the M-Send.conf gave us a Message-ID at send time and we
@@ -1244,7 +1244,7 @@ class Repo private constructor(private val context: Context) {
                             "Message-ID stored at send time?)"
                     )
                 }
-                return
+                return@withContext
             }
             // broadcast copies: only the first copy is linked directly, so
             // reports for the other copies resolve through the registry to the
@@ -1259,7 +1259,7 @@ class Repo private constructor(private val context: Context) {
                         context, "mms-delivery",
                         "$kind: telephony row $tId has no linked message — dropped"
                     )
-                    return
+                    return@withContext
                 }
             val stamp = android.text.format.DateFormat.format(
                 "MM-dd HH:mm", System.currentTimeMillis())
@@ -1447,9 +1447,9 @@ class Repo private constructor(private val context: Context) {
         }
     }
 
-    suspend fun retry(messageId: Long) {
-        val m = db.messages().byId(messageId) ?: return
-        val convo = db.conversations().byId(m.convoId) ?: return
+    suspend fun retry(messageId: Long) = withContext(Dispatchers.IO) {
+        val m = db.messages().byId(messageId) ?: return@withContext
+        val convo = db.conversations().byId(m.convoId) ?: return@withContext
         val addresses = convo.addressList()
         db.messages().setStatus(messageId, MsgStatus.SENDING)
         // A retry is a NEW send: sever the link to the failed store copy (and
