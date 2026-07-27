@@ -46,6 +46,20 @@ class App : Application(), ImageLoaderFactory {
         // pre-0.9.41 conversations stored "[Photo]"-style snippets; recompute
         // them once so the new italic words show everywhere
         val prefs0 = io.github.theonionsarewatching.nova.util.Prefs.get(this)
+        // an older version stored the LIGHT app-default background as a
+        // literal near-white hex; with dark="same as light" that near-white
+        // then carried into dark theme forever. Normalize the legacy
+        // constants back to true app default, once.
+        if (!prefs0.sp.getBoolean("bg_legacy_normalized", false)) {
+            val g = prefs0.chatBg(-1L).trim().uppercase()
+            if (g == "#F7F7F7" || g == "#F2F2F3") {
+                prefs0.setChatBg(-1L, "")
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    this, "theme", "migrated legacy global light bg '$g' -> app default"
+                )
+            }
+            prefs0.sp.edit().putBoolean("bg_legacy_normalized", true).apply()
+        }
         if (!prefs0.phantomsPurged) {
             val repoP = io.github.theonionsarewatching.nova.data.Repo.get(this)
             repoP.scope.launch {

@@ -36,12 +36,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         const val EXTRA_CONVO_ID = "convo_id"
         private const val REQ_CHAT_BG = 207
         const val EXTRA_TARGET_MESSAGE_ID = "target_message_id"
-        // picture-heavy threads: a small first page, small steps after.
-        // There is exactly ONE pager (rows + hasMoreOlder + loadOlder);
-        // a second windowing layer on top of it desynchronised the adapter
-        // indices from this list and wedged the UI.
-        const val PAGE = 8
-        const val PAGE_MORE = 10
+        // ONE pager (rows + hasMoreOlder + loadOlder). The 8-at-a-time
+        // experiment is undone: measurement showed the initial load was
+        // already fast (82–204ms) — the freeze lives elsewhere — and small
+        // pages only cost scrolling interruptions.
+        const val PAGE = 60
+        const val PAGE_MORE = 60
         var visibleConvoId: Long = -1L
     }
 

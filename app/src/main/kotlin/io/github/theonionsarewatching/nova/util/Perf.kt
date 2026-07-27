@@ -75,30 +75,49 @@ object Perf {
     }
 
     /**
-     * Main-thread stall watchdog. A heartbeat is posted every 250ms; if it
-     * comes back late, the main thread was blocked for that long — which is
-     * exactly what "the app freezes" means. Logs at 500ms and above so normal
-     * jitter stays out of the file.
+     * Main-thread stall watchdog. The main thread updates a heartbeat stamp
+     * every 100ms; a background thread checks it every 500ms. If the stamp is
+     * stale the main thread is blocked RIGHT NOW — so its stack trace is
+     * captured mid-stall and written to the log. That stack names the exact
+     * blocking call; no interpretation needed. Recovery logs the total time.
      */
+    @Volatile private var lastBeat = 0L
     private var watchdogStarted = false
 
     fun startWatchdog(context: Context) {
         if (watchdogStarted) return
         watchdogStarted = true
         val app = context.applicationContext
-        val handler = Handler(Looper.getMainLooper())
-        val interval = 250L
-        var expected = SystemClock.uptimeMillis() + interval
+        val main = Handler(Looper.getMainLooper())
+        lastBeat = SystemClock.uptimeMillis()
         lateinit var beat: Runnable
         beat = Runnable {
-            val now = SystemClock.uptimeMillis()
-            val late = now - expected
-            if (late >= 500) {
-                log(app, "STALL", "main thread blocked ${late + interval}ms")
-            }
-            expected = now + interval
-            handler.postDelayed(beat, interval)
+            lastBeat = SystemClock.uptimeMillis()
+            main.postDelayed(beat, 100L)
         }
-        handler.postDelayed(beat, interval)
+        main.postDelayed(beat, 100L)
+
+        Thread {
+            var inStall = false
+            var stallStart = 0L
+            while (true) {
+                try { Thread.sleep(500L) } catch (_: InterruptedException) { return@Thread }
+                val stale = SystemClock.uptimeMillis() - lastBeat
+                if (stale >= 1000L && !inStall) {
+                    inStall = true
+                    stallStart = lastBeat
+                    val stack = Looper.getMainLooper().thread.stackTrace
+                        .take(16)
+                        .joinToString("\n") { "      at $it" }
+                    log(app, "STALL", "main blocked ${stale}ms so far — stack:\n$stack")
+                } else if (stale < 300L && inStall) {
+                    inStall = false
+                    log(
+                        app, "STALL",
+                        "recovered — total ${SystemClock.uptimeMillis() - stallStart}ms"
+                    )
+                }
+            }
+        }.apply { name = "nova-watchdog"; isDaemon = true }.start()
     }
 }

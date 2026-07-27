@@ -29,6 +29,8 @@ import androidx.appcompat.app.AppCompatDelegate
  */
 object ThemeDebug {
 
+    @Volatile private var lastLine: String? = null
+
     private fun nightOf(context: Context): Boolean =
         (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -51,7 +53,12 @@ object ThemeDebug {
             sb.append(" globalBg='").append(prefs.chatBg(-1L).take(28)).append('\'')
             sb.append(" darkBg='").append(prefs.darkChatBg.take(28)).append('\'')
             if (resolved != null) sb.append(" -> '").append(resolved.take(28)).append('\'')
-            DiagLog.log(context, "theme", sb.toString())
+            val line = sb.toString()
+            // the resolver runs on every row bind: log only when something
+            // actually changed, not one identical line per bubble
+            if (line == lastLine) return
+            lastLine = line
+            DiagLog.log(context, "theme", line)
         } catch (_: Exception) {
         }
     }
