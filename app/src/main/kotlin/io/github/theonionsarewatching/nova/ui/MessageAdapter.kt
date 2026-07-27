@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import coil.load
 import coil.request.videoFrameMillis
+import kotlinx.coroutines.launch
 import io.github.theonionsarewatching.nova.R
 import io.github.theonionsarewatching.nova.data.ElementEntity
 import io.github.theonionsarewatching.nova.data.MessageEntity
@@ -321,7 +322,11 @@ class MessageAdapter(
             // holder was recycled to a different row, and resizing that row
             // (then its own bind correcting it) was a visible jump loop.
             holder.b.thumb.tag = visual.id
-            val dims0 = thumbSizeCache[visual.id]
+            // dims persisted at ingest beat the session cache: known before
+            // the FIRST decode, so even a fresh install pre-sizes exactly
+            val dims0 = if (visual.width > 0 && visual.height > 0)
+                visual.width to visual.height
+            else thumbSizeCache[visual.id]
             val tw = thumbWidthFor(dims0, tmax)
             val th0 = thumbHeightFor(dims0, tmax)
             if (holder.b.thumb.layoutParams.height != th0 ||
@@ -342,8 +347,19 @@ class MessageAdapter(
                 listener(onSuccess = { _, res ->
                     val d = res.drawable
                     val dims = d.intrinsicWidth to d.intrinsicHeight
-                    val first = thumbSizeCache.put(visual.id, dims) == null
+                    val first = thumbSizeCache.put(visual.id, dims) == null &&
+                        (visual.width <= 0 || visual.height <= 0)
                     val stale = holder.b.thumb.tag != visual.id
+                    if (first) {
+                        // legacy part (pre-dims schema): backfill the DB so
+                        // every future session knows the size up front
+                        io.github.theonionsarewatching.nova.data.Repo
+                            .get(holder.itemView.context).scope.launch {
+                                io.github.theonionsarewatching.nova.data.Repo
+                                    .get(holder.itemView.context).db.parts()
+                                    .setDims(visual.id, dims.first, dims.second)
+                            }
+                    }
                     if (first && !stale) {
                         val w2 = thumbWidthFor(dims, tmax)
                         val h2 = thumbHeightFor(dims, tmax)
@@ -356,7 +372,15 @@ class MessageAdapter(
                                     "pos=${holder.bindingAdapterPosition} -> ${w2}x$h2"
                             )
                             holder.b.thumb.post {
-                                if (holder.b.thumb.tag == visual.id) {
+                                val rv = holder.itemView.parent
+                                    as? androidx.recyclerview.widget.RecyclerView
+                                // never resize mid-scroll: the cache (and now
+                                // the DB) has the size — the next bind applies
+                                // it without shifting anything under the user
+                                if (holder.b.thumb.tag == visual.id &&
+                                    rv?.scrollState ==
+                                    androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE
+                                ) {
                                     holder.b.thumb.layoutParams = holder.b.thumb
                                         .layoutParams.apply { width = w2; height = h2 }
                                 }

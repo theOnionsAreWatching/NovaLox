@@ -715,10 +715,13 @@ class Repo private constructor(private val context: Context) {
                             finalMime = sMime
                         }
                     }
+                    val dims = imageDims(finalMime, finalFile.absolutePath)
                     db.parts().insert(
                         PartEntity(
                             messageId = id, mimeType = finalMime,
-                            filePath = finalFile.absolutePath, fileName = p.name, size = finalFile.length()
+                            filePath = finalFile.absolutePath, fileName = p.name,
+                            size = finalFile.length(),
+                            width = dims.first, height = dims.second
                         )
                     )
                 }
@@ -1003,9 +1006,11 @@ class Repo private constructor(private val context: Context) {
         )
         val id = db.messages().insert(msg)
         for ((path, mime, name) in attachments) {
+            val dims = imageDims(mime, path)
             db.parts().insert(
                 PartEntity(messageId = id, mimeType = mime, filePath = path,
-                    fileName = name, size = File(path).length())
+                    fileName = name, size = File(path).length(),
+                    width = dims.first, height = dims.second)
             )
         }
         if (text.isNotBlank()) extractElements(id, text)
@@ -1060,6 +1065,19 @@ class Repo private constructor(private val context: Context) {
      *  whose sender asked for a read report (rr=128 on the telephony row),
      *  send an M-Read-Rec.ind now that the user has read them. The provider
      *  row's rr is set to 129 afterwards so each is answered exactly once. */
+    /** Intrinsic pixel size of an image file via bounds-only decode (cheap,
+     *  no bitmap allocated). (0,0) for non-images or unreadable files. */
+    fun imageDims(mime: String, path: String): Pair<Int, Int> {
+        if (!mime.startsWith("image/")) return 0 to 0
+        return try {
+            val o = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            android.graphics.BitmapFactory.decodeFile(path, o)
+            if (o.outWidth > 0 && o.outHeight > 0) o.outWidth to o.outHeight else 0 to 0
+        } catch (_: Exception) { 0 to 0 }
+    }
+
     suspend fun sendPendingReadRecs(convoId: Long) = withContext(Dispatchers.IO) {
         // ContentResolver.query is a plain blocking binder call — unlike Room
         // suspend functions it does NOT hop threads by itself. Called from a

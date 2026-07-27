@@ -124,7 +124,12 @@ data class PartEntity(
     val mimeType: String,
     val filePath: String,
     val fileName: String,
-    val size: Long = 0
+    val size: Long = 0,
+    // intrinsic pixel dimensions, learned at ingest (or backfilled at first
+    // decode). Rows pre-size EXACTLY from these — a picture whose size is
+    // known can never shift the layout when its decode completes.
+    val width: Int = 0,
+    val height: Int = 0
 ) {
     fun isImage() = mimeType.startsWith("image/")
     fun isVideo() = mimeType.startsWith("video/")
@@ -511,6 +516,9 @@ interface PartDao {
     @Query("SELECT * FROM parts WHERE messageId IN (:ids)")
     suspend fun byMessages(ids: List<Long>): List<PartEntity>
 
+    @Query("UPDATE parts SET width = :w, height = :h WHERE id = :id")
+    suspend fun setDims(id: Long, w: Int, h: Int)
+
     // visual media only, newest first (viewer: right = older, left = newer)
     @Query(
         """SELECT p.* FROM parts p JOIN messages m ON p.messageId = m.id
@@ -583,6 +591,23 @@ interface ContactNameDao {
 
 // ============================== Database ==============================
 
+val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        // idempotent per the MIGRATION_6_7 lesson below
+        val have = HashSet<String>()
+        db.query("PRAGMA table_info(`parts`)").use { c ->
+            val nameIdx = c.getColumnIndex("name")
+            while (c.moveToNext()) if (nameIdx >= 0) have.add(c.getString(nameIdx))
+        }
+        if ("width" !in have) {
+            db.execSQL("ALTER TABLE parts ADD COLUMN width INTEGER NOT NULL DEFAULT 0")
+        }
+        if ("height" !in have) {
+            db.execSQL("ALTER TABLE parts ADD COLUMN height INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+}
+
 val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         // IDEMPOTENT on purpose: a device in the field ended up with this
@@ -639,7 +664,7 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
         ConversationEntity::class, MessageEntity::class, PartEntity::class,
         ElementEntity::class, KeywordEntity::class, ContactNameEntity::class, MessageFts::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -654,7 +679,7 @@ abstract class AppDb : RoomDatabase() {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "dsms.db")
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .build().also { instance = it }
         }
