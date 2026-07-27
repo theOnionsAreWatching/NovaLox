@@ -314,10 +314,28 @@ class MessageAdapter(
             // edge honest: a still-loading top image can't collapse and let
             // the header arrive early). The blanket fixed-height + placeholder
             // approach caused jump/flash under fast scroll and is gone.
-            val targetH = thumbHeightFor(thumbSizeCache[visual.id], tmax)
-            if (holder.b.thumb.layoutParams.height != targetH) {
+            // BOTH dimensions pre-size from the cache — height alone left the
+            // width to adjustViewBounds, which snapped it when each drawable
+            // landed. And the settle callback verifies the holder still shows
+            // THIS part: during fast scroll the decode can complete after the
+            // holder was recycled to a different row, and resizing that row
+            // (then its own bind correcting it) was a visible jump loop.
+            holder.b.thumb.tag = visual.id
+            val dims0 = thumbSizeCache[visual.id]
+            val tw = thumbWidthFor(dims0, tmax)
+            val th0 = thumbHeightFor(dims0, tmax)
+            if (holder.b.thumb.layoutParams.height != th0 ||
+                holder.b.thumb.layoutParams.width != tw
+            ) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    holder.itemView.context, "thumb",
+                    "bind part=${visual.id} pos=${holder.bindingAdapterPosition} " +
+                        "${holder.b.thumb.layoutParams.width}x" +
+                        "${holder.b.thumb.layoutParams.height} -> ${tw}x$th0 " +
+                        "cached=${dims0 != null}"
+                )
                 holder.b.thumb.layoutParams =
-                    holder.b.thumb.layoutParams.apply { height = targetH }
+                    holder.b.thumb.layoutParams.apply { width = tw; height = th0 }
             }
             holder.b.thumb.load(File(visual.filePath)) {
                 size(tmax, tmax)
@@ -325,13 +343,31 @@ class MessageAdapter(
                     val d = res.drawable
                     val dims = d.intrinsicWidth to d.intrinsicHeight
                     val first = thumbSizeCache.put(visual.id, dims) == null
-                    if (first) {
-                        // settle to the real aspect exactly once
-                        val th = thumbHeightFor(dims, tmax)
-                        if (holder.b.thumb.layoutParams.height != th) {
-                            holder.b.thumb.layoutParams =
-                                holder.b.thumb.layoutParams.apply { height = th }
+                    val stale = holder.b.thumb.tag != visual.id
+                    if (first && !stale) {
+                        val w2 = thumbWidthFor(dims, tmax)
+                        val h2 = thumbHeightFor(dims, tmax)
+                        if (holder.b.thumb.layoutParams.height != h2 ||
+                            holder.b.thumb.layoutParams.width != w2
+                        ) {
+                            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                holder.itemView.context, "thumb",
+                                "settle part=${visual.id} " +
+                                    "pos=${holder.bindingAdapterPosition} -> ${w2}x$h2"
+                            )
+                            holder.b.thumb.post {
+                                if (holder.b.thumb.tag == visual.id) {
+                                    holder.b.thumb.layoutParams = holder.b.thumb
+                                        .layoutParams.apply { width = w2; height = h2 }
+                                }
+                            }
                         }
+                    } else if (first && stale) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            holder.itemView.context, "thumb",
+                            "STALE settle suppressed part=${visual.id} " +
+                                "(holder recycled to ${holder.b.thumb.tag})"
+                        )
                     }
                 })
                 size(tmax, tmax)
@@ -865,5 +901,12 @@ private fun thumbHeightFor(dims: Pair<Int, Int>?, tmax: Int): Int {
     if (w <= 0 || h <= 0) return tmax
     // the decode fits within a tmax box; height follows the same rule
     return if (w >= h) (tmax.toLong() * h / w).toInt().coerceAtLeast(tmax / 4)
+    else tmax
+}
+
+private fun thumbWidthFor(dims: Pair<Int, Int>?, tmax: Int): Int {
+    val (w, h) = dims ?: return tmax
+    if (w <= 0 || h <= 0) return tmax
+    return if (h >= w) (tmax.toLong() * w / h).toInt().coerceAtLeast(tmax / 4)
     else tmax
 }

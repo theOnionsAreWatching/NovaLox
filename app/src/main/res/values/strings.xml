@@ -57,7 +57,7 @@
     <string name="pref_dpad_center_send">D-pad center sends</string>
     <string name="pref_dpad_center_send_summary">When the cursor is in the message box, pressing the center D-pad key sends the message</string>
     <string name="pref_t9_match">Number keys find names</string>
-    <string name="pref_t9_match_summary">When adding recipients, typed digits also match names by their keypad letters — 323 finds Dad</string>
+    <string name="pref_t9_match_summary">When adding recipients, typed digits also match names by their keypad letters — 2 finds A, B, or C; 3 finds D, E, or F, and so on</string>
     <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>
     <string name="unarchive">Unarchive</string>
     <string name="mute">Mute (silent notifications)</string>
