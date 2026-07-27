@@ -25,17 +25,18 @@ object FocusTrace {
         if (own != null) return "$own($cls)"
         // no id of its own: name the nearest identified ancestor so the view
         // is still locatable in the layout
-        var p = v.parent
+        var p: android.view.ViewParent? = v.parent
         var depth = 0
         while (p is View && depth++ < 4) {
-            val pid = p.id
+            val pv: View = p
+            val pid = pv.id
             if (pid != View.NO_ID) {
                 val pn = try {
                     context.resources.getResourceEntryName(pid)
                 } catch (_: Exception) { "id$pid" }
                 return "$cls under $pn"
             }
-            p = p.parent
+            p = pv.parent
         }
         return cls
     }
