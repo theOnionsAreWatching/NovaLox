@@ -404,6 +404,9 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun hardDelete(id: Long)
 
+    @Query("SELECT * FROM messages WHERE isMine = 1 AND address LIKE '%@%' AND date >= :cutoff ORDER BY date DESC")
+    suspend fun ownEmailSince(cutoff: Long): List<MessageEntity>
+
     @Query("SELECT id FROM messages WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
     suspend fun expiredBinIds(cutoff: Long): List<Long>
 

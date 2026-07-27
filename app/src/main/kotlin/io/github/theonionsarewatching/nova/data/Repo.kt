@@ -312,6 +312,28 @@ class Repo private constructor(private val context: Context) {
                             "ingest tid=$mmsId box=$msgBox addrs: $sb"
                         )
                     }
+                    if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX &&
+                        sb.contains("MAILER-DAEMON", ignoreCase = true)
+                    ) {
+                        // the carrier bounced an email-MMS (spam rejection):
+                        // mark the most recent pending own message to an email
+                        // address FAILED, so the outcome is visible where the
+                        // user sent it — the bounce itself stays as evidence
+                        val cutoff = System.currentTimeMillis() - 2L * 3600 * 1000
+                        db.messages().ownEmailSince(cutoff)
+                            .firstOrNull {
+                                it.status != MsgStatus.FAILED &&
+                                    it.status != MsgStatus.CANCELED
+                            }?.let { orig ->
+                                db.messages().setStatus(orig.id, MsgStatus.FAILED)
+                                refreshConversation(orig.convoId)
+                                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                    context, "mms-email",
+                                    "carrier bounce: marked msg=${orig.id} " +
+                                        "(${orig.address}) FAILED"
+                                )
+                            }
+                    }
                 }
             } catch (_: Exception) {}
         }
@@ -1131,7 +1153,12 @@ class Repo private constructor(private val context: Context) {
         // Main-dispatched coroutine it froze the UI for the whole per-message
         // scan (watchdog-proven: 4.7s / 18.9s / 7.8s). Everything below runs
         // on IO, whoever calls it.
-        if (!Prefs.get(context).respondReadReports) return@withContext
+        if (!Prefs.get(context).respondReadReports) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-delivery", "read-rec responder OFF by pref"
+            )
+            return@withContext
+        }
         try {
             val since = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
             val msgs = db.messages().threadMessagesForDelete(convoId, 1)
@@ -1149,7 +1176,15 @@ class Repo private constructor(private val context: Context) {
                         rr = try { c.getInt(1) } catch (_: Exception) { -1 }
                     }
                 }
-                if (rr != 128 || mid.isNullOrBlank()) continue
+                if (rr != 128 || mid.isNullOrBlank()) {
+                    if (rr != -1) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-delivery",
+                            "read-rec scan: tid=$tid rr=$rr mid=${mid ?: "<none>"} — no response due"
+                        )
+                    }
+                    continue
+                }
                 try {
                     val from = com.google.android.mms.pdu_alt.EncodedStringValue("insert-address-token")
                     val ind = com.google.android.mms.pdu_alt.ReadRecInd(

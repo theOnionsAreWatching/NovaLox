@@ -332,13 +332,6 @@ class MessageAdapter(
             if (holder.b.thumb.layoutParams.height != th0 ||
                 holder.b.thumb.layoutParams.width != tw
             ) {
-                io.github.theonionsarewatching.nova.util.DiagLog.log(
-                    holder.itemView.context, "thumb",
-                    "bind part=${visual.id} pos=${holder.bindingAdapterPosition} " +
-                        "${holder.b.thumb.layoutParams.width}x" +
-                        "${holder.b.thumb.layoutParams.height} -> ${tw}x$th0 " +
-                        "cached=${dims0 != null}"
-                )
                 holder.b.thumb.layoutParams =
                     holder.b.thumb.layoutParams.apply { width = tw; height = th0 }
             }
@@ -366,11 +359,6 @@ class MessageAdapter(
                         if (holder.b.thumb.layoutParams.height != h2 ||
                             holder.b.thumb.layoutParams.width != w2
                         ) {
-                            io.github.theonionsarewatching.nova.util.DiagLog.log(
-                                holder.itemView.context, "thumb",
-                                "settle part=${visual.id} " +
-                                    "pos=${holder.bindingAdapterPosition} -> ${w2}x$h2"
-                            )
                             holder.b.thumb.post {
                                 val rv = holder.itemView.parent
                                     as? androidx.recyclerview.widget.RecyclerView
@@ -385,14 +373,7 @@ class MessageAdapter(
                                         .layoutParams.apply { width = w2; height = h2 }
                                 }
                             }
-                        }
-                    } else if (first && stale) {
-                        io.github.theonionsarewatching.nova.util.DiagLog.log(
-                            holder.itemView.context, "thumb",
-                            "STALE settle suppressed part=${visual.id} " +
-                                "(holder recycled to ${holder.b.thumb.tag})"
-                        )
-                    }
+                        } }
                 })
                 size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black

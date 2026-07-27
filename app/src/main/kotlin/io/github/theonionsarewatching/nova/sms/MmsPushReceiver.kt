@@ -320,6 +320,7 @@ class MmsPushReceiver : BroadcastReceiver() {
             putExtra(MmsReceivedReceiver.EXTRA_TRIGGER_PUSH, true)
             putExtra(MmsReceivedReceiver.EXTRA_URI, uri)
             putExtra(MmsReceivedReceiver.SUBSCRIPTION_ID, subId)
+            putExtra("nova_tr_id", transactionId)
         }
         var flags = PendingIntent.FLAG_CANCEL_CURRENT
         if (Build.VERSION.SDK_INT >= 31) flags = flags or PendingIntent.FLAG_IMMUTABLE
@@ -379,6 +380,44 @@ class MmsPushReceiver : BroadcastReceiver() {
                 setClass(context, MmsReceiver::class.java)
             }
             context.sendBroadcast(forwarded)
+            // confirm retrieval to the MMSC (M-NotifyResp.ind, STATUS_RETRIEVED).
+            // Without this the sender's carrier may never generate their
+            // delivery report — "your app doesn't answer delivery requests"
+            intent.getStringExtra("nova_tr_id")?.let { tr ->
+                sendRetrievedNotifyResp(context, tr)
+            }
+        }
+
+        private fun sendRetrievedNotifyResp(context: Context, trId: String) {
+            try {
+                val ind = com.google.android.mms.pdu_alt.NotifyRespInd(
+                    18, /* MMS 1.2 */
+                    trId.toByteArray(),
+                    com.google.android.mms.pdu_alt.PduHeaders.STATUS_RETRIEVED
+                )
+                val bytes = com.google.android.mms.pdu_alt.PduComposer(context, ind).make()
+                if (bytes == null) {
+                    DiagLog.log(context, "mms-delivery", "notify-resp compose failed tr_id=$trId")
+                    return
+                }
+                val f = java.io.File(context.cacheDir, "notify_resp_${System.currentTimeMillis()}")
+                f.writeBytes(bytes)
+                val uri = android.net.Uri.Builder()
+                    .authority(context.packageName + ".MmsFileProvider")
+                    .path(f.name)
+                    .scheme(android.content.ContentResolver.SCHEME_CONTENT)
+                    .build()
+                SmsManager.getDefault().sendMultimediaMessage(context, uri, null, null, null)
+                DiagLog.log(
+                    context, "mms-delivery",
+                    "notify-resp (retrieved) sent tr_id=$trId"
+                )
+            } catch (e: Exception) {
+                DiagLog.log(
+                    context, "mms-delivery",
+                    "notify-resp failed tr_id=$trId: ${e.message}"
+                )
+            }
         }
     }
 
