@@ -83,6 +83,33 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.msgList.layoutManager =
             BoundedLinearLayoutManager(this, maxStepPx = lineStep).apply { stackFromEnd = true }
         binding.msgList.isFocusable = true
+        binding.msgList.addOnChildAttachStateChangeListener(
+            object : androidx.recyclerview.widget.RecyclerView.OnChildAttachStateChangeListener {
+                override fun onChildViewAttachedToWindow(view: View) {}
+                override fun onChildViewDetachedFromWindow(view: View) {
+                    if (view.hasFocus() || view.isFocused) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            this@ThreadActivity, "focus",
+                            "FOCUSED ROW DETACHED pos=" +
+                                binding.msgList.getChildAdapterPosition(view) +
+                                " — focus is about to escape the list"
+                        )
+                    }
+                }
+            }
+        )
+        // layout churn correlates with focus loss: note a layout pass that
+        // leaves the list with no focused child while we believe we're in it
+        binding.msgList.viewTreeObserver.addOnGlobalLayoutListener {
+            if (binding.msgList.focusedChild == null && lastListFocusPos >= 0 &&
+                !composeMode && !selecting
+            ) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    this, "focus",
+                    "layout pass with NO focused child (lastPos=$lastListFocusPos)"
+                )
+            }
+        }
         binding.msgList.addOnScrollListener(object :
             androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrolled(
@@ -116,7 +143,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // decode resizes its row) that recycles the focused row lets the
         // system fall back onto these buttons uninvited
         setHeaderFocusable(false)
-        binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, new ->
+        binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            // FOCUS TRACING: names the exact view that takes focus, so a thief
+            // can't hide behind "the top bar" — plus the state flags that
+            // decide whether the guardian may reclaim it
+            io.github.theonionsarewatching.nova.util.FocusTrace.log(
+                this, old, new, binding.msgList,
+                "compose=$composeMode sel=$selecting legit=$headerEntryLegit " +
+                    "lastPos=$lastListFocusPos rows=${rows.size}"
+            )
             when {
                 new != null && new.parent === binding.msgList -> {
                     lastListFocusPos = binding.msgList.getChildAdapterPosition(new)
@@ -125,10 +160,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 new === binding.composeInput -> headerEntryLegit = false
                 new != null && !composeMode && !selecting && !headerEntryLegit &&
                     lastListFocusPos >= 0 && rows.isNotEmpty() &&
-                    (new === binding.btnBack || new === binding.btnOverflow) -> {
+                    new.parent !== binding.msgList &&
+                    new !== binding.composeInput &&
+                    !binding.threadSelectionBar.isShown &&
+                    generateSequence(new as android.view.View?) { it.parent as? android.view.View }
+                        .none { it === binding.composeBar } -> {
                     // focus fell onto the top bar without enterHeader(): an
                     // async relayout stole it — reclaim the message row
                     val p = lastListFocusPos.coerceAtMost(rows.size - 1)
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        this, "focus", "GUARDIAN reclaiming -> pos $p"
+                    )
                     binding.msgList.post { scroller?.focusPosition(p, null) }
                 }
             }

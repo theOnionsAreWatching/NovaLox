@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.theonionsarewatching.nova"
         minSdk = 23
         targetSdk = 34
-        versionCode = 90
-        versionName = "0.9.83"
+        versionCode = 92
+        versionName = "0.9.85"
         vectorDrawables.useSupportLibrary = true
     }
 

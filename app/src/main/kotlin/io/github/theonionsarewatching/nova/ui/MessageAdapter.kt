@@ -308,6 +308,16 @@ class MessageAdapter(
             holder.b.thumb.maxHeight = tmax
             holder.b.thumb.load(File(visual.filePath)) {
                 size(tmax, tmax)
+                listener(
+                    onSuccess = { _, _ ->
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            ctx, "focus",
+                            "image decoded pos=${holder.bindingAdapterPosition} " +
+                                "(row resize can steal focus here)"
+                        )
+                    },
+                    onError = { _, _ -> }
+                )
                 size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black
                 if (visual.isVideo()) videoFrameMillis(1000)
