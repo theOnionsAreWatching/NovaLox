@@ -60,6 +60,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** staged attachments: (path, mime, displayName) — sent together with the next Send */
     private val pendingAttachments = ArrayList<Triple<String, String, String>>()
 
+    private var lastListFocusPos = -1
+    private var headerEntryLegit = false
     private var selecting = false
     private val selectedIds = HashSet<Long>()
 
@@ -109,6 +111,28 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
         )
 
+        // the top bar is focusable ONLY while deliberately entered via
+        // enterHeader(); otherwise a relayout (an image finishing its async
+        // decode resizes its row) that recycles the focused row lets the
+        // system fall back onto these buttons uninvited
+        setHeaderFocusable(false)
+        binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, new ->
+            when {
+                new != null && new.parent === binding.msgList -> {
+                    lastListFocusPos = binding.msgList.getChildAdapterPosition(new)
+                    headerEntryLegit = false
+                }
+                new === binding.composeInput -> headerEntryLegit = false
+                new != null && !composeMode && !selecting && !headerEntryLegit &&
+                    lastListFocusPos >= 0 && rows.isNotEmpty() &&
+                    (new === binding.btnBack || new === binding.btnOverflow) -> {
+                    // focus fell onto the top bar without enterHeader(): an
+                    // async relayout stole it — reclaim the message row
+                    val p = lastListFocusPos.coerceAtMost(rows.size - 1)
+                    binding.msgList.post { scroller?.focusPosition(p, null) }
+                }
+            }
+        }
         binding.btnBack.setOnClickListener { goBack() }
         binding.unreadChip.setOnClickListener {
             binding.msgList.scrollToPosition((rows.size - 1).coerceAtLeast(0))
@@ -650,6 +674,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun enterHeader() {
+        headerEntryLegit = true
         setHeaderFocusable(true)
         if (!binding.btnOverflow.requestFocus() && !binding.btnBack.requestFocus()) {
             setHeaderFocusable(false)
@@ -762,7 +787,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Focus the newest message but keep the list scrolled to the very bottom —
      *  a tall last message stays bottom-aligned until the next D-pad up sub-scrolls it. */
     private fun focusBottomPinned() {
-        val pos = rows.size - 1
+        // a trailing "— switched to … —" line is inert: pin to the last REAL
+        // message, or D-pad-up from the compose box has nothing to land on
+        var pos = rows.size - 1
+        while (pos >= 0 && rows[pos].isSystemLine) pos--
         if (pos < 0) return
         binding.msgList.scrollToPosition(pos)
         binding.msgList.post {
