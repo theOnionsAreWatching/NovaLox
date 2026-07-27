@@ -21,6 +21,14 @@
         android:title="@string/pref_dpad_center_send"
         android:summary="@string/pref_dpad_center_send_summary"
         android:defaultValue="false" />
+
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="t9_contact_match"
+        android:title="@string/pref_t9_match"
+        android:summary="@string/pref_t9_match_summary"
+        android:defaultValue="true" />
     <SwitchPreferenceCompat
         app:singleLineTitle="false"
         app:iconSpaceReserved="false"

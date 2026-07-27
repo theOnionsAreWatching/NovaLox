@@ -214,6 +214,7 @@ class ComposeActivity : BaseActivity() {
         // then any WORD prefix ("ma" ranks "Sir Manfield Barker" up), then
         // plain contains.
         val qd = qDigits.length >= 2
+        val t9on = prefs.t9ContactMatch
         fun rank(c: ContactsHelper.Contact): Int {
             val n = c.name.lowercase()
             val t = t9Of(c.name)
@@ -222,9 +223,10 @@ class ComposeActivity : BaseActivity() {
             val tWords = t.split(wordSplit).filter { it.isNotBlank() }
             return when {
                 n.startsWith(lower) ||
-                    (qd && (t.startsWith(qDigits) || num.startsWith(qDigits))) -> 0
+                    (qd && ((t9on && t.startsWith(qDigits)) ||
+                        num.startsWith(qDigits))) -> 0
                 words.any { it.startsWith(lower) } ||
-                    (qd && tWords.any { it.startsWith(qDigits) }) -> 1
+                    (qd && t9on && tWords.any { it.startsWith(qDigits) }) -> 1
                 else -> 2
             }
         }
@@ -232,10 +234,11 @@ class ComposeActivity : BaseActivity() {
             c.name.lowercase().contains(lower) ||
                 (qd && (
                     c.number.filter { it.isDigit() }.contains(qDigits) ||
-                        t9Of(c.name).contains(qDigits)))
+                        (t9on && t9Of(c.name).contains(qDigits))))
         }.sortedBy { rank(it) }
         suggestionAdapter.hlQuery = lower
         suggestionAdapter.hlDigits = qDigits
+        suggestionAdapter.hlT9 = t9on
         // the typed value itself is offered as a row even when it matches no
         // contact — so raw numbers can be added and the field freed for the next
         val typed = q.trim()
@@ -797,10 +800,12 @@ class ComposeActivity : BaseActivity() {
 
         var hlQuery = ""
         var hlDigits = ""
+        var hlT9 = true
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val c = items[position]
-            holder.b.suggestionName.text = highlightName(c.name, hlQuery, hlDigits)
+            holder.b.suggestionName.text =
+                highlightName(c.name, hlQuery, if (hlT9) hlDigits else "")
             holder.b.suggestionNumber.text = highlightNumber(c.number, hlDigits)
             holder.itemView.setOnClickListener { onPick(c) }
         }

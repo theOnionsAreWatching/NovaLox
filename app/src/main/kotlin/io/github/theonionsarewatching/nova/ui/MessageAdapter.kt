@@ -306,18 +306,19 @@ class MessageAdapter(
             val tmax = dp(prefs.thumbMaxDp)
             holder.b.thumb.maxWidth = tmax
             holder.b.thumb.maxHeight = tmax
+            // reserve the picture's vertical space BEFORE decode. Undecoded
+            // rows bound collapsed, so while an image was still decoding the
+            // "top of the thread" arrived several D-pad presses early — the
+            // header was entered legitimately, then the decode grew the row
+            // under the user (focus-log-proven). A fixed height means decode
+            // completion never shifts the vertical layout.
+            if (holder.b.thumb.layoutParams.height != tmax) {
+                holder.b.thumb.layoutParams =
+                    holder.b.thumb.layoutParams.apply { height = tmax }
+            }
             holder.b.thumb.load(File(visual.filePath)) {
                 size(tmax, tmax)
-                listener(
-                    onSuccess = { _, _ ->
-                        io.github.theonionsarewatching.nova.util.DiagLog.log(
-                            ctx, "focus",
-                            "image decoded pos=${holder.bindingAdapterPosition} " +
-                                "(row resize can steal focus here)"
-                        )
-                    },
-                    onError = { _, _ -> }
-                )
+                placeholder(android.graphics.drawable.ColorDrawable(0x14808080))
                 size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black
                 if (visual.isVideo()) videoFrameMillis(1000)

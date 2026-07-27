@@ -137,6 +137,8 @@ class Prefs(context: Context) {
     val respondReadReports: Boolean get() = sp.getBoolean("respond_read_reports", true)
     // center D-pad key = Send while the cursor is in the message box
     val dpadCenterSend: Boolean get() = sp.getBoolean("dpad_center_send", false)
+    // typed digits in the recipient box also match names by keypad letters
+    val t9ContactMatch: Boolean get() = sp.getBoolean("t9_contact_match", true)
     // per-conversation compose drafts, autosaved on leaving the thread
     fun draft(convoId: Long): String = sp.getString("draft_$convoId", "") ?: ""
     fun setDraft(convoId: Long, v: String) {
