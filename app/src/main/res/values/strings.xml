@@ -52,10 +52,12 @@
     <string name="customize_menu">Customize</string>
     <string name="subtitle_broadcast">Broadcast</string>
     <string name="subtitle_group">Group message</string>
+    <string name="loading_more">Loading\u2026</string>
+    <string name="zoom">Zoom</string>
+    <string name="zoom_out_label">* \u2212</string>
+    <string name="zoom_in_label"># +</string>
     <string name="pref_dpad_center_send">D-pad center sends</string>
     <string name="pref_dpad_center_send_summary">When the cursor is in the message box, pressing the center D-pad key sends the message</string>
-    <string name="pref_translucent_bars">See-through bars</string>
-    <string name="pref_translucent_bars_summary">Let the chat background show through the top bar and the message box area, keeping text readable</string>
     <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>
     <string name="unarchive">Unarchive</string>
     <string name="mute">Mute (silent notifications)</string>
@@ -490,7 +492,7 @@
     <string name="about_title">About</string>
     <string name="about_app_name">D-SMS (NovaLox)</string>
     <string name="about_summary">by github.com/theOnionsAreWatching</string>
-    <string name="about_summary_fmt">Version %1$s · by github.com/theOnionsAreWatching</string>
+    <string name="about_summary_fmt">Version %1$s · PolyForm Noncommercial 1.0.0 · by github.com/theOnionsAreWatching</string>
 
     <!-- v0.9.24 additions -->
     <string name="schedule_summary_fmt">%1$s at %2$s</string>

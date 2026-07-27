@@ -203,15 +203,27 @@ class ComposeActivity : BaseActivity() {
     private fun filterSuggestions(q: String) {
         if (q.isBlank()) {
             suggestionAdapter.submit(emptyList())
-            binding.suggestionList.visibility = View.GONE
+            setSuggestionsShown(false)
             return
         }
         val lower = q.lowercase()
         val qDigits = q.filter { it.isDigit() }
+        // T9: digits match the letters on the keypad keys, so "323" finds
+        // "Dad" — alongside plain name and number-substring matching. ALL
+        // matches show; the list scrolls.
+        fun t9(t: String): String = t.lowercase().map { ch ->
+            when (ch) {
+                in 'a'..'c' -> '2'; in 'd'..'f' -> '3'; in 'g'..'i' -> '4'
+                in 'j'..'l' -> '5'; in 'm'..'o' -> '6'; in 'p'..'s' -> '7'
+                in 't'..'v' -> '8'; in 'w'..'z' -> '9'; else -> ch
+            }
+        }.joinToString("")
         val base = contacts.filter { c ->
             c.name.lowercase().contains(lower) ||
-                (qDigits.length >= 2 && c.number.filter { it.isDigit() }.contains(qDigits))
-        }.take(4)
+                (qDigits.length >= 2 && (
+                    c.number.filter { it.isDigit() }.contains(qDigits) ||
+                        t9(c.name).contains(qDigits)))
+        }
         // the typed value itself is offered as a row even when it matches no
         // contact — so raw numbers can be added and the field freed for the next
         val typed = q.trim()
@@ -227,8 +239,7 @@ class ComposeActivity : BaseActivity() {
         if (suggestionsSuppressed &&
             binding.recipientInput.text?.toString().orEmpty() != suppressedQuery
         ) suggestionsSuppressed = false
-        binding.suggestionList.visibility =
-            if (matches.isEmpty() || suggestionsSuppressed) View.GONE else View.VISIBLE
+        setSuggestionsShown(!(matches.isEmpty() || suggestionsSuppressed))
     }
 
     private fun pick(c: ContactsHelper.Contact) {
@@ -423,6 +434,17 @@ class ComposeActivity : BaseActivity() {
     private var suggestionsSuppressed = false
     private var suppressedQuery = ""
 
+    /** The suggestion list takes the whole lower screen: message box, action
+     *  row, and softkey bar step aside while it's up. */
+    private fun setSuggestionsShown(shown: Boolean) {
+        binding.suggestionList.visibility = if (shown) View.VISIBLE else View.GONE
+        val bottomVis = if (shown) View.GONE else View.VISIBLE
+        binding.bodyInputFrame.visibility = bottomVis
+        binding.sendRow.visibility = bottomVis
+        binding.softkeyBar.root.visibility =
+            if (shown || softkeys?.shouldShow() != true) View.GONE else View.VISIBLE
+    }
+
     @Deprecated("Deprecated in Java")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         // BACK while suggestions are up: minimize the list, stay on the screen
@@ -432,7 +454,9 @@ class ComposeActivity : BaseActivity() {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 suggestionsSuppressed = true
                 suppressedQuery = binding.recipientInput.text?.toString().orEmpty()
-                binding.suggestionList.visibility = View.GONE
+                setSuggestionsShown(false)
+                // focus returns to the typing box, not the back arrow
+                binding.recipientInput.requestFocus()
             }
             return true
         }

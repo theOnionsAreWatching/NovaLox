@@ -228,6 +228,10 @@ object Sender {
                             requestReadReport = Prefs.get(context).requestReadReports,
                             groupMms = false,
                             linkRow = { linkedTid ->
+                                // register the copy the moment its telephony row
+                                // exists — before any confirmation can ingest it
+                                io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                    .record(context, linkedTid, messageId)
                                 if (firstTid == -1L) {
                                     firstTid = linkedTid
                                     kotlinx.coroutines.runBlocking {

@@ -140,14 +140,87 @@ class MediaViewerActivity : BaseActivity() {
         val center = when {
             p != null && p.isVideo() && playing -> getString(R.string.pause)
             p != null && p.isVideo() -> getString(R.string.play)
+            p != null && p.isImage() -> getString(R.string.zoom)
             else -> ""
         }
         softkeys?.set(
             getString(R.string.back), center, getString(R.string.save),
             onLeft = { finish() },
-            onCenter = { playCurrent() },
+            onCenter = { if (currentPart()?.isImage() == true) enterZoom() else playCurrent() },
             onRight = { saveCurrent() }
         )
+        // the viewer's bar shows even with softkeys off: pictures always
+        // offer Zoom in the center, videos Play
+        binding.softkeyBar.root.visibility = View.VISIBLE
+    }
+
+    // ---------------- zoom mode ----------------
+    // center D-pad on a picture enters zoom: # zooms in, * zooms out (each
+    // label shows only when that step is possible), the D-pad pans instead of
+    // switching pictures, BACK returns to the normal viewer. Videos untouched.
+
+    private var zoomMode = false
+    private var zoomScale = 1f
+
+    private fun currentImageView(): android.widget.ImageView? {
+        val rv = binding.pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+            ?: return null
+        val page = rv.layoutManager?.findViewByPosition(binding.pager.currentItem) ?: return null
+        return page.findViewById(R.id.pageImage)
+    }
+
+    private fun enterZoom() {
+        val iv = currentImageView() ?: return
+        zoomMode = true
+        zoomScale = 1f
+        binding.pager.isUserInputEnabled = false
+        iv.scaleX = 1f; iv.scaleY = 1f; iv.translationX = 0f; iv.translationY = 0f
+        updateZoomSoftkeys()
+    }
+
+    private fun exitZoom() {
+        zoomMode = false
+        currentImageView()?.apply {
+            scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f
+        }
+        binding.pager.isUserInputEnabled = true
+        updateMediaSoftkeys()
+    }
+
+    private fun zoomStep(zoomIn: Boolean) {
+        val iv = currentImageView() ?: return
+        zoomScale = if (zoomIn) (zoomScale * 1.5f).coerceAtMost(4f)
+        else (zoomScale / 1.5f).let { if (it < 1.15f) 1f else it }
+        iv.scaleX = zoomScale
+        iv.scaleY = zoomScale
+        clampPan(iv)
+        updateZoomSoftkeys()
+    }
+
+    private fun panBy(dx: Float, dy: Float) {
+        val iv = currentImageView() ?: return
+        iv.translationX += dx
+        iv.translationY += dy
+        clampPan(iv)
+    }
+
+    private fun clampPan(iv: android.widget.ImageView) {
+        val maxX = (zoomScale - 1f) * iv.width / 2f
+        val maxY = (zoomScale - 1f) * iv.height / 2f
+        iv.translationX = iv.translationX.coerceIn(-maxX, maxX)
+        iv.translationY = iv.translationY.coerceIn(-maxY, maxY)
+    }
+
+    private fun updateZoomSoftkeys() {
+        softkeys?.set(
+            if (zoomScale > 1f) getString(R.string.zoom_out_label) else null,
+            null,
+            if (zoomScale < 4f) getString(R.string.zoom_in_label) else null,
+            onLeft = { zoomStep(false) },
+            onCenter = null,
+            onRight = { zoomStep(true) }
+        )
+        binding.softkeyBar.root.visibility = View.VISIBLE
     }
 
     private fun playCurrent() {
@@ -291,6 +364,25 @@ class MediaViewerActivity : BaseActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (zoomMode) {
+            // volume passes through; everything else belongs to zoom mode
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+                event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+            ) return super.dispatchKeyEvent(event)
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                val step = 60 * resources.displayMetrics.density
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> panBy(step, 0f)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> panBy(-step, 0f)
+                    KeyEvent.KEYCODE_DPAD_UP -> panBy(0f, step)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> panBy(0f, -step)
+                    KeyEvent.KEYCODE_POUND -> zoomStep(true)
+                    KeyEvent.KEYCODE_STAR -> zoomStep(false)
+                    KeyEvent.KEYCODE_BACK -> exitZoom()
+                }
+            }
+            return true
+        }
         if (softkeys?.handleKey(event) == true) return true
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
@@ -319,7 +411,7 @@ class MediaViewerActivity : BaseActivity() {
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    playCurrent()
+                    if (currentPart()?.isImage() == true) enterZoom() else playCurrent()
                     return true
                 }
             }

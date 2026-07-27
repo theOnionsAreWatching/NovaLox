@@ -118,6 +118,8 @@ class MessageAdapter(
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) {
+        holder.itemView.isFocusable = !rows[position].isSystemLine
+        holder.itemView.isClickable = !rows[position].isSystemLine
         val row = rows[position]
         val m = row.msg
         val ctx = holder.itemView.context
@@ -133,6 +135,10 @@ class MessageAdapter(
 
         // ---- system line ----
         if (row.isSystemLine) {
+            holder.itemView.setOnClickListener(null)
+            holder.itemView.setOnLongClickListener(null)
+            holder.itemView.setOnTouchListener(null)
+            holder.itemView.setOnKeyListener(null)
             holder.b.senderName.visibility = View.GONE
             holder.b.thumb.visibility = View.GONE
             holder.b.attachLabel.visibility = View.GONE
@@ -400,9 +406,26 @@ class MessageAdapter(
         )
         holder.b.metaRow.gravity = if (m.isMine && prefs.messageStyle != "accentbar") Gravity.END else Gravity.START
 
-        // focus shade stays on the row — a neutral grey, not the accent, so the
-        // bubble's own colors stay legible; SELECTION outlines the bubble itself
-        holder.b.root.background = ThemeUtils.focusFillNeutral(ctx)
+        // focus shade stays on the row; built from the BACKDROP's brightness,
+        // not the theme — dark mode over a white custom background needs dark
+        // shading, and vice versa. SELECTION outlines the bubble itself.
+        run {
+            val bd = backdropColor()
+            val lightBd = androidx.core.graphics.ColorUtils.calculateLuminance(bd) > 0.5
+            val c = if (lightBd) 0xFF2E2E36.toInt() else Color.WHITE
+            val focused = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setStroke((2f * ctx.resources.displayMetrics.density).toInt(), withAlpha(c, 200))
+                setColor(withAlpha(c, 26))
+            }
+            holder.b.root.background = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), focused)
+                addState(
+                    IntArray(0),
+                    android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                )
+            }
+        }
         holder.b.root.foreground = null
         if (isSelected(m.id)) {
             // single clean ring that adapts: accent when it reads against the
@@ -426,7 +449,7 @@ class MessageAdapter(
             val brightAccent = run {
                 val hsv = FloatArray(3)
                 Color.colorToHSV(accent, hsv)
-                hsv[1] = (hsv[1] * 0.75f)          // less saturated -> more luminous
+                hsv[1] = (hsv[1] * 0.9f)           // keep the color rich
                 hsv[2] = kotlin.math.max(hsv[2], 0.92f)
                 Color.HSVToColor(hsv)
             }
@@ -449,8 +472,8 @@ class MessageAdapter(
             }!!
             val ring = GradientDrawable().apply {
                 cornerRadius = radius
-                setColor(withAlpha(ringColor, 26))
-                setStroke((2.5f * density).toInt(), ringColor)
+                setColor(withAlpha(ringColor, 56))
+                setStroke((3.5f * density).toInt(), ringColor)
             }
             holder.b.bubbleBox.foreground = ring
         } else {
@@ -604,10 +627,17 @@ private fun bubbleFillColor(
     if (!isMine && prefs.colorIncoming) {
         // a chosen incoming color takes precedence over the default accent tint
         customIncomingColor(ctx)?.let { return it }
-        return withAlpha(accent, 32)
+        return androidx.core.graphics.ColorUtils
+            .compositeColors(withAlpha(accent, 32), Color.WHITE)
     }
-    return if (isMine) withAlpha(accent, 56)
-    else androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
+    // ALWAYS opaque: translucent fills let a busy chat background bleed
+    // through the text — composite the tint over the surface instead
+    return if (isMine) androidx.core.graphics.ColorUtils
+        .compositeColors(withAlpha(accent, 56), Color.WHITE)
+    else androidx.core.graphics.ColorUtils.compositeColors(
+        androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other),
+        Color.WHITE
+    )
 }
 
 /** The card behind plain / accent-bar messages: white over the light-grey

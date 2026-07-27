@@ -113,6 +113,22 @@
             android:descendantFocusability="afterDescendants" />
 
         <TextView
+            android:id="@+id/loadingBanner"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="4dp"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:background="#99202020"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:text="@string/loading_more"
+            android:visibility="gone" />
+
+        <TextView
             android:id="@+id/emptyLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

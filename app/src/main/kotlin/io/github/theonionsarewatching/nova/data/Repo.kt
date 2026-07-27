@@ -281,6 +281,12 @@ class Repo private constructor(private val context: Context) {
 
     @SuppressLint("Range")
     suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? {
+        // broadcast copies are machinery of the broadcast illusion — the one
+        // real message already lives in the broadcast conversation. EVERY
+        // ingest route (sync loops, sent-confirmation, push) funnels through
+        // here, so this is the single authoritative guard against the copy
+        // reappearing as a "new" message in the one-to-one thread.
+        if (io.github.theonionsarewatching.nova.util.BroadcastCopies.isCopy(context, mmsId)) return null
         val resolver = context.contentResolver
         val isMine = msgBox != Telephony.Mms.MESSAGE_BOX_INBOX
 
@@ -1795,9 +1801,6 @@ class Repo private constructor(private val context: Context) {
                     if (done % 20 == 0) onProgress(done * 100 / total)
                     val id = c.getLong(0)
                     if (db.messages().existsByTelephonyId(id, true)) continue
-                    // broadcast copies are machinery, not 1:1 messages
-                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
-                            .isCopy(context, id)) continue
                     ingestMms(id, c.getLong(1) * 1000L, c.getInt(2))
                 }
             }
@@ -1884,9 +1887,6 @@ class Repo private constructor(private val context: Context) {
                             }
                             continue
                         }
-                        // broadcast copies are machinery, not 1:1 messages
-                        if (io.github.theonionsarewatching.nova.util.BroadcastCopies
-                                .isCopy(context, id)) continue
                         // a bare notification row (130) whose real message has
                         // already been downloaded and ingested under a different
                         // _id: skip it, or the "Tap to download" stub reappears

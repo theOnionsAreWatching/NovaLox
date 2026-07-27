@@ -532,6 +532,42 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             .show()
     }
 
+    /** Mirrors the thread's group-mode picker, incl. the system line rules. */
+    private fun pickGroupModeMain(c: ConversationEntity) {
+        val gm = io.github.theonionsarewatching.nova.data.GroupMode
+        val labels = arrayOf(getString(R.string.mode_broadcast), getString(R.string.mode_group_mms))
+        val current = if (c.groupMode == gm.GROUP_MMS) 1 else 0
+        AlertDialog.Builder(this)
+            .setTitle(R.string.group_send_mode)
+            .setSingleChoiceItems(labels, current) { d, which ->
+                d.dismiss()
+                val newMode = if (which == 1) gm.GROUP_MMS else gm.BROADCAST
+                if (newMode == c.groupMode) return@setSingleChoiceItems
+                lifecycleScope.launch {
+                    repo.db.conversations().setGroupMode(c.id, newMode)
+                    val newestMsg = repo.db.messages().newest(c.id)
+                    if (newestMsg != null &&
+                        newestMsg.address == MessageRow.SYSTEM_ADDRESS
+                    ) {
+                        repo.db.messages().hardDelete(newestMsg.id)
+                    } else repo.db.messages().insert(
+                        io.github.theonionsarewatching.nova.data.MessageEntity(
+                            convoId = c.id, address = MessageRow.SYSTEM_ADDRESS,
+                            body = getString(
+                                if (newMode == gm.GROUP_MMS) R.string.switched_group_mms
+                                else R.string.switched_broadcast
+                            ),
+                            date = System.currentTimeMillis(), isMine = false,
+                            status = io.github.theonionsarewatching.nova.data.MsgStatus.RECEIVED,
+                            read = true, elementsExtracted = true
+                        )
+                    )
+                    ChangeBus.ping()
+                }
+            }
+            .show()
+    }
+
     /** Same grouping as the thread's options menu. */
     private fun blockAndMenu(c: ConversationEntity) {
         val items = ArrayList<Pair<String, () -> Unit>>()
@@ -764,6 +800,9 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         }
         items += (if (c.pinned) getString(R.string.unpin) else getString(R.string.pin)) to {
             lifecycleScope.launch { repo.db.conversations().setPinned(c.id, !c.pinned); ChangeBus.ping() }
+        }
+        if (c.isGroup) {
+            items += getString(R.string.group_send_mode) to { pickGroupModeMain(c) }
         }
         items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
         items += getString(R.string.customize_menu) to { customizeMenu(c) }

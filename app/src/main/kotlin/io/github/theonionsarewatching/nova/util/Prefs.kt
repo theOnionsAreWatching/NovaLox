@@ -128,8 +128,12 @@ class Prefs(context: Context) {
     val respondReadReports: Boolean get() = sp.getBoolean("respond_read_reports", true)
     // center D-pad key = Send while the cursor is in the message box
     val dpadCenterSend: Boolean get() = sp.getBoolean("dpad_center_send", false)
-    // chat background shows through the top bar and compose row
-    val barsTranslucent: Boolean get() = sp.getBoolean("bars_translucent", false)
+    // per-conversation compose drafts, autosaved on leaving the thread
+    fun draft(convoId: Long): String = sp.getString("draft_$convoId", "") ?: ""
+    fun setDraft(convoId: Long, v: String) {
+        if (v.isBlank()) sp.edit().remove("draft_$convoId").apply()
+        else sp.edit().putString("draft_$convoId", v).apply()
+    }
 
     // "tid:messageId" pairs for telephony rows that are broadcast copies —
     // machinery of the broadcast illusion, not real 1:1 messages

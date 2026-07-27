@@ -53,6 +53,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private var composeMode = true
     /** staged attachments: (path, mime, displayName) — sent together with the next Send */
     private val pendingAttachments = ArrayList<Triple<String, String, String>>()
+
+    // picture-heavy threads: only the newest slice binds at open; scrolling
+    // toward the top widens the window ("Loading…" banner in between)
+    private var allRows: List<MessageRow> = emptyList()
+    private var loadedWindow = 60
+    private var moreAbove = false
+    private var expandingWindow = false
     private var selecting = false
     private val selectedIds = HashSet<Long>()
 
@@ -74,6 +81,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.msgList.layoutManager =
             BoundedLinearLayoutManager(this, maxStepPx = lineStep).apply { stackFromEnd = true }
         binding.msgList.isFocusable = true
+        binding.msgList.addOnScrollListener(object :
+            androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrolled(
+                rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int
+            ) {
+                if (dy >= 0) return
+                val lm = rv.layoutManager as? LinearLayoutManager ?: return
+                if (lm.findFirstVisibleItemPosition() <= 1) expandWindow()
+            }
+        })
         scroller = DpadScroller(
             binding.msgList,
             subScrollTallItems = true,
@@ -149,6 +166,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) { updateCharCounter() }
         })
+        if (binding.composeInput.text.isNullOrBlank()) {
+            val draft = prefs.draft(convoId)
+            if (draft.isNotBlank()) {
+                binding.composeInput.setText(draft)
+                binding.composeInput.setSelection(draft.length)
+            }
+        }
         updateSendHint()
         updateSoftkeys()
 
@@ -157,7 +181,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val c = convo ?: run { finish(); return@launch }
             binding.threadTitle.text = c.displayTitle()
             binding.threadSubtitle.text =
-                if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
+                if (c.isGroup) getString(
+                    if (c.groupMode == GroupMode.GROUP_MMS) R.string.subtitle_group
+                    else R.string.subtitle_broadcast
+                )
                 else c.addressList().firstOrNull() ?: ""
             updateNotifStatusIcon(c)
             adapter = MessageAdapter(
@@ -239,6 +266,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     override fun onPause() {
+        prefs.setDraft(convoId, binding.composeInput.text?.toString().orEmpty())
         super.onPause()
         visibleConvoId = -1L
         saveDraft()
@@ -561,7 +589,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val latest = repo.db.messages().latest(convoId, requested).reversed()
             rows = ArrayList(buildRows(latest))
             hasMoreOlder = latest.size >= requested
-            adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
+            allRows = rows
+            val windowed = if (rows.size > loadedWindow) rows.takeLast(loadedWindow) else rows
+            moreAbove = rows.size > windowed.size
+            adapter.submit(windowed) // diff: only changed rows repaint — no full-list flash
+            if (!moreAbove) binding.loadingBanner.visibility = View.GONE
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             updateScrollExtent()
             if (wasCompose && atBottom) {
@@ -637,6 +669,22 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** The "Send" hint bar + D-pad-center-sends behavior exist only when the
      *  softkey bar is off (otherwise the softkey Send covers it) and the
      *  compose box is focused. */
+    /** Widen the message window toward older history; instant if cached. */
+    private fun expandWindow() {
+        if (!moreAbove || expandingWindow) return
+        expandingWindow = true
+        binding.loadingBanner.visibility = View.VISIBLE
+        binding.msgList.post {
+            loadedWindow += 80
+            val windowed =
+                if (allRows.size > loadedWindow) allRows.takeLast(loadedWindow) else allRows
+            moreAbove = allRows.size > windowed.size
+            adapter.submit(windowed)
+            binding.loadingBanner.visibility = View.GONE
+            expandingWindow = false
+        }
+    }
+
     private fun sendHintActive(): Boolean =
         (softkeys?.shouldShow() != true || prefs.dpadCenterSend) &&
             binding.composeInput.hasFocus()
@@ -738,11 +786,18 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ) {
             val fv = currentFocus
             if (fv != null && fv.parent === binding.msgList &&
-                binding.msgList.getChildAdapterPosition(fv) == 0 && fv.top < 0
+                binding.msgList.getChildAdapterPosition(fv) == 0
             ) {
-                val step = (80 * resources.displayMetrics.density).toInt()
-                binding.msgList.scrollBy(0, maxOf(fv.top, -step))
-                return true
+                if (fv.top < 0) {
+                    val step = (80 * resources.displayMetrics.density).toInt()
+                    binding.msgList.scrollBy(0, maxOf(fv.top, -step))
+                    return true
+                }
+                if (moreAbove) {
+                    // older history exists: pull it in before focus may leave
+                    expandWindow()
+                    return true
+                }
             }
         }
 
@@ -836,6 +891,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
         val attachments = pendingAttachments.toList()
         if (text.isEmpty() && attachments.isEmpty()) return
+        prefs.setDraft(convoId, "")
         binding.composeInput.setText("")
         clearAttachments(deleteFiles = false)
         lifecycleScope.launch {
@@ -1473,27 +1529,37 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     /** The chat background as one opaque color, for contrast decisions.
      *  Mirrors applyChatBackground; photo backgrounds report a mid grey. */
-    private fun currentBackdropColor(): Int {
+    /** The effective chat background value for THIS conversation, with the
+     *  dark-theme rule applied in one place so the two consumers can't drift:
+     *  dark = "same as light" uses the light choice (color or picture) —
+     *  UNLESS the light choice is App default, in which case the DARK app
+     *  default applies. Per-conversation values resolve before any of this. */
+    private fun resolvedChatBg(): String {
         var v = prefs.chatBg(convoId)
-        val night = ThemeUtils.isNight(this)
-        if (night) {
+        if (ThemeUtils.isNight(this)) {
             v = when (val d = prefs.darkChatBg) {
                 "same" -> v
                 "default" -> ""
                 else -> d
             }
+            if (v.isBlank() &&
+                (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
+            ) {
+                // dark counterpart of the card-style default backdrop
+                v = "#1B1B1E"
+            }
         } else if (v.isBlank() &&
             (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
         ) {
+            // card styles read as white squares over a very light grey
             v = "#F2F2F3"
         }
-        if (v.isBlank() && ThemeUtils.isNight(this) &&
-            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
-        ) {
-            // dark-theme counterpart of the card-style default: "same as light"
-            // over a default light background resolves to the DARK default
-            v = "#1B1B1E"
-        }
+        return v
+    }
+
+    private fun currentBackdropColor(): Int {
+        val v = resolvedChatBg()
+        val night = ThemeUtils.isNight(this)
         return when {
             v.isBlank() -> if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE
             v.startsWith("#") ->
@@ -1504,28 +1570,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun applyChatBackground() {
-        var v = prefs.chatBg(convoId)
-        if (ThemeUtils.isNight(this)) {
-            // dark theme: a light custom background would glare — the user
-            // chooses whether it carries over (Settings -> chat background)
-            v = when (val d = prefs.darkChatBg) {
-                "same" -> v
-                "default" -> ""
-                else -> d
-            }
-        } else if (v.isBlank() &&
-            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
-        ) {
-            // card styles read as white squares over a very light grey
-            v = "#F2F2F3"
-        }
-        if (v.isBlank() && ThemeUtils.isNight(this) &&
-            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
-        ) {
-            // dark-theme counterpart of the card-style default: "same as light"
-            // over a default light background resolves to the DARK default
-            v = "#1B1B1E"
-        }
+        val v = resolvedChatBg()
         when {
             v.isBlank() -> {
                 binding.chatBackdrop.visibility = View.GONE
@@ -1544,16 +1589,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 binding.chatBackdrop.visibility = View.VISIBLE
             }
         }
-        // see-through bars: let a custom background show through the top bar
-        // and the compose row, keeping the text readable via partial alpha
-        val surface = if (ThemeUtils.isNight(this)) 0xFF121212.toInt()
-        else android.graphics.Color.WHITE
-        val barColor = if (prefs.barsTranslucent &&
-            binding.chatBackdrop.visibility == View.VISIBLE
-        ) androidx.core.graphics.ColorUtils.setAlphaComponent(surface, 0xC8)
-        else surface
-        (binding.btnBack.parent as? View)?.setBackgroundColor(barColor)
-        (binding.btnSend.parent as? View)?.setBackgroundColor(barColor)
     }
 
 
