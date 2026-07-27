@@ -202,10 +202,11 @@ class Repo private constructor(private val context: Context) {
         get() = simOwnNumbers + Prefs.get(context).learnedOwnNumbers
 
     /** Restore needs the combined own-number set to write correct system rows. */
-    suspend fun ownNumbersForRestore(): Set<String> = ownNumbers
+    suspend fun ownNumbersForRestore(): Set<String> =
+        withContext(Dispatchers.IO) { ownNumbers }
 
     /** This phone's own numbers per the SIM — best effort, empty on many SIMs. */
-    private val simOwnNumbers: Set<String> by lazy = withContext(Dispatchers.IO) {
+    private val simOwnNumbers: Set<String> by lazy {
         val out = HashSet<String>()
         try {
             val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
