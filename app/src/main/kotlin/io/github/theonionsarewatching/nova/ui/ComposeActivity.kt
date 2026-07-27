@@ -462,13 +462,15 @@ class ComposeActivity : BaseActivity() {
             binding.suggestionList.post { binding.suggestionList.scrollToPosition(0) }
         }
         if (shown) {
-            binding.bodyInputFrame.visibility = View.GONE
+            // the ScrollView carries layout_weight=1 — IT is what held half
+            // the screen while its content hid; the whole thing steps aside
+            binding.bodyScroll.visibility = View.GONE
             binding.sendRow.visibility = View.GONE
             binding.btnGroupMode.visibility = View.GONE
             binding.attachChip.visibility = View.GONE
             binding.softkeyBar.root.visibility = View.GONE
         } else {
-            binding.bodyInputFrame.visibility = View.VISIBLE
+            binding.bodyScroll.visibility = View.VISIBLE
             binding.sendRow.visibility = View.VISIBLE
             binding.btnGroupMode.visibility = savedGroupModeVis
             binding.attachChip.visibility = savedAttachChipVis

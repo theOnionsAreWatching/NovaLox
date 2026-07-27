@@ -57,7 +57,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     // picture-heavy threads: only the newest slice binds at open; scrolling
     // toward the top widens the window ("Loading…" banner in between)
     private var allRows: List<MessageRow> = emptyList()
-    private var loadedWindow = 15
+    private var loadedWindow = 8
     private var moreAbove = false
     private var expandingWindow = false
     private var selecting = false
@@ -675,7 +675,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         expandingWindow = true
         binding.loadingBanner.visibility = View.VISIBLE
         binding.msgList.post {
-            loadedWindow += 30
+            loadedWindow += 10
             val windowed =
                 if (allRows.size > loadedWindow) allRows.takeLast(loadedWindow) else allRows
             moreAbove = allRows.size > windowed.size
@@ -1536,10 +1536,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
      *  UNLESS the light choice is App default, in which case the DARK app
      *  default applies. Per-conversation values resolve before any of this. */
     private fun resolvedChatBg(): String {
-        var v = prefs.chatBg(convoId)
+        val own = prefs.chatBgOwn(convoId)?.takeIf { it.isNotBlank() }
+        val globalLight = prefs.chatBg(-1L)
+        var v = own ?: globalLight
         if (ThemeUtils.isNight(this)) {
             v = when (val d = prefs.darkChatBg) {
-                "same" -> v
+                // "same as light": every chat gets the DARK app default —
+                // UNLESS this chat has its own custom light background (then
+                // only THIS chat carries it), or the GENERAL light background
+                // is custom (then it carries everywhere)
+                "same" -> own ?: globalLight.takeIf { it.isNotBlank() } ?: ""
                 "default" -> ""
                 else -> d
             }

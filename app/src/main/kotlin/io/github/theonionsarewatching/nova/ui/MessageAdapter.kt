@@ -471,11 +471,28 @@ class MessageAdapter(
                     kotlin.math.abs(lum(c) - lum(backdrop))
                 )
             }!!
-            val ring = GradientDrawable().apply {
+            // selection = the INVERSE of the bubble's on-screen color, so it
+            // reads against any colored message — wrapped in black hairlines
+            // on both edges so it stays visible even where the background
+            // happens to match the inverse
+            val inverse = Color.rgb(
+                255 - Color.red(fillOnScreen),
+                255 - Color.green(fillOnScreen),
+                255 - Color.blue(fillOnScreen)
+            )
+            val hair = (1f * density).toInt().coerceAtLeast(1)
+            val strokeW = (3.5f * density).toInt()
+            val outer = GradientDrawable().apply {
                 cornerRadius = radius
-                // selection = bright royal blue, always
-                setColor(withAlpha(0xFF3D74FF.toInt(), 44))
-                setStroke((3.5f * density).toInt(), 0xFF3D74FF.toInt())
+                setStroke(strokeW + 2 * hair, Color.BLACK)
+            }
+            val inner = GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(withAlpha(inverse, 30))
+                setStroke(strokeW, inverse)
+            }
+            val ring = android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
+                setLayerInset(1, hair, hair, hair, hair)
             }
             holder.b.bubbleBox.foreground = ring
         } else {

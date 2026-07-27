@@ -149,9 +149,11 @@ class MediaViewerActivity : BaseActivity() {
             onCenter = { if (currentPart()?.isImage() == true) enterZoom() else playCurrent() },
             onRight = { saveCurrent() }
         )
-        // leaving zoom mode: clear the magnifier icons
-        binding.softkeyBar.softLeft.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
-        binding.softkeyBar.softRight.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
+        // "Zoom" renders exactly like Back and Save — same size, same face
+        binding.softkeyBar.softCenter.setTextSize(
+            android.util.TypedValue.COMPLEX_UNIT_PX, binding.softkeyBar.softLeft.textSize
+        )
+        binding.softkeyBar.softCenter.typeface = binding.softkeyBar.softLeft.typeface
         // the viewer's bar shows even with softkeys off: pictures always
         // offer Zoom in the center, videos Play
         binding.softkeyBar.root.visibility = View.VISIBLE
@@ -223,17 +225,33 @@ class MediaViewerActivity : BaseActivity() {
             onCenter = null,
             onRight = { zoomStep(true) }
         )
-        // magnifier −/+ icons next to the * and # key labels
-        binding.softkeyBar.softLeft.setCompoundDrawablesRelativeWithIntrinsicBounds(
-            0, 0, if (zoomScale > 1f) R.drawable.ic_zoom_out else 0, 0
-        )
-        binding.softkeyBar.softRight.setCompoundDrawablesRelativeWithIntrinsicBounds(
-            if (zoomScale < 4f) R.drawable.ic_zoom_in else 0, 0, 0, 0
-        )
-        val pad = (4 * resources.displayMetrics.density).toInt()
-        binding.softkeyBar.softLeft.compoundDrawablePadding = pad
-        binding.softkeyBar.softRight.compoundDrawablePadding = pad
+        // magnifier −/+ drawn INLINE right beside the key labels (compound
+        // drawables anchor to the slot edges, which spread them way apart)
+        if (zoomScale > 1f) {
+            binding.softkeyBar.softLeft.text =
+                iconLabel("* ", R.drawable.ic_zoom_out, binding.softkeyBar.softLeft)
+        }
+        if (zoomScale < 4f) {
+            binding.softkeyBar.softRight.text =
+                iconLabel("# ", R.drawable.ic_zoom_in, binding.softkeyBar.softRight)
+        }
         binding.softkeyBar.root.visibility = View.VISIBLE
+    }
+
+    /** "<txt> [icon]" as one centered piece, icon sized off the label font. */
+    private fun iconLabel(
+        txt: String, iconRes: Int, tv: android.widget.TextView
+    ): CharSequence {
+        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)!!.mutate()
+        val sz = (tv.textSize * 1.6f).toInt()
+        d.setBounds(0, 0, sz, sz)
+        d.setTint(tv.currentTextColor)
+        val ssb = android.text.SpannableStringBuilder(txt).append("\u25A1")
+        ssb.setSpan(
+            android.text.style.ImageSpan(d, android.text.style.ImageSpan.ALIGN_BOTTOM),
+            ssb.length - 1, ssb.length, 0
+        )
+        return ssb
     }
 
     private fun playCurrent() {
