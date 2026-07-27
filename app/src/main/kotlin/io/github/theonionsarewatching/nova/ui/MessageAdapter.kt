@@ -306,19 +306,34 @@ class MessageAdapter(
             val tmax = dp(prefs.thumbMaxDp)
             holder.b.thumb.maxWidth = tmax
             holder.b.thumb.maxHeight = tmax
-            // reserve the picture's vertical space BEFORE decode. Undecoded
-            // rows bound collapsed, so while an image was still decoding the
-            // "top of the thread" arrived several D-pad presses early — the
-            // header was entered legitimately, then the decode grew the row
-            // under the user (focus-log-proven). A fixed height means decode
-            // completion never shifts the vertical layout.
-            if (holder.b.thumb.layoutParams.height != tmax) {
+            // stable row heights around async decode, without forcing every
+            // image square: each picture's real aspect is remembered after its
+            // FIRST decode and rows are pre-sized exactly from then on — fast
+            // scroll rebinds at the final size with zero shift. Never-decoded
+            // pictures reserve the full box once (this is what keeps the top
+            // edge honest: a still-loading top image can't collapse and let
+            // the header arrive early). The blanket fixed-height + placeholder
+            // approach caused jump/flash under fast scroll and is gone.
+            val targetH = thumbHeightFor(thumbSizeCache[visual.id], tmax)
+            if (holder.b.thumb.layoutParams.height != targetH) {
                 holder.b.thumb.layoutParams =
-                    holder.b.thumb.layoutParams.apply { height = tmax }
+                    holder.b.thumb.layoutParams.apply { height = targetH }
             }
             holder.b.thumb.load(File(visual.filePath)) {
                 size(tmax, tmax)
-                placeholder(android.graphics.drawable.ColorDrawable(0x14808080))
+                listener(onSuccess = { _, res ->
+                    val d = res.drawable
+                    val dims = d.intrinsicWidth to d.intrinsicHeight
+                    val first = thumbSizeCache.put(visual.id, dims) == null
+                    if (first) {
+                        // settle to the real aspect exactly once
+                        val th = thumbHeightFor(dims, tmax)
+                        if (holder.b.thumb.layoutParams.height != th) {
+                            holder.b.thumb.layoutParams =
+                                holder.b.thumb.layoutParams.apply { height = th }
+                        }
+                    }
+                })
                 size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black
                 if (visual.isVideo()) videoFrameMillis(1000)
@@ -839,4 +854,16 @@ class BottomTailBubbleDrawable(
     override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
+// picture intrinsic sizes learned at first decode, so rebinding rows during
+// scroll can pre-size exactly and never shift the layout (session-scoped)
+private val thumbSizeCache = HashMap<Long, Pair<Int, Int>>()
+
+private fun thumbHeightFor(dims: Pair<Int, Int>?, tmax: Int): Int {
+    val (w, h) = dims ?: return tmax
+    if (w <= 0 || h <= 0) return tmax
+    // the decode fits within a tmax box; height follows the same rule
+    return if (w >= h) (tmax.toLong() * h / w).toInt().coerceAtLeast(tmax / 4)
+    else tmax
 }
