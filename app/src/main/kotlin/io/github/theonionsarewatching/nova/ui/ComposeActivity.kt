@@ -60,6 +60,7 @@ class ComposeActivity : BaseActivity() {
         binding.attachChip.setOnClickListener { manageAttachments() }
 
         binding.recipientInput.addTextChangedListener(object : TextWatcher {
+
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) { filterSuggestions(s?.toString().orEmpty()) }
@@ -221,7 +222,13 @@ class ComposeActivity : BaseActivity() {
             listOf(ContactsHelper.Contact(getString(R.string.add_number_row), typed)) + base
         } else base
         suggestionAdapter.submit(matches)
-        binding.suggestionList.visibility = if (matches.isEmpty()) View.GONE else View.VISIBLE
+        // BACK-minimized stays minimized only while the typed query is
+        // unchanged; editing it brings the list back
+        if (suggestionsSuppressed &&
+            binding.recipientInput.text?.toString().orEmpty() != suppressedQuery
+        ) suggestionsSuppressed = false
+        binding.suggestionList.visibility =
+            if (matches.isEmpty() || suggestionsSuppressed) View.GONE else View.VISIBLE
     }
 
     private fun pick(c: ContactsHelper.Contact) {
@@ -413,8 +420,47 @@ class ComposeActivity : BaseActivity() {
         }
     }
 
+    private var suggestionsSuppressed = false
+    private var suppressedQuery = ""
+
     @Deprecated("Deprecated in Java")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // BACK while suggestions are up: minimize the list, stay on the screen
+        if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+            binding.suggestionList.visibility == View.VISIBLE
+        ) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                suggestionsSuppressed = true
+                suppressedQuery = binding.recipientInput.text?.toString().orEmpty()
+                binding.suggestionList.visibility = View.GONE
+            }
+            return true
+        }
+        // D-pad-up from the button below the list re-enters it at the LAST row
+        if (event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+            binding.suggestionList.visibility == View.VISIBLE &&
+            currentFocus === binding.btnGroupMode
+        ) {
+            val last = (binding.suggestionList.adapter?.itemCount ?: 0) - 1
+            if (last >= 0) {
+                binding.suggestionList.scrollToPosition(last)
+                fun focusLast(attempt: Int) {
+                    val v = binding.suggestionList
+                        .findViewHolderForAdapterPosition(last)?.itemView
+                    if (v != null) {
+                        v.requestFocus()
+                        v.requestRectangleOnScreen(
+                            android.graphics.Rect(0, 0, v.width, v.height), false
+                        )
+                    } else if (attempt < 3) {
+                        binding.suggestionList.post { focusLast(attempt + 1) }
+                    }
+                }
+                binding.suggestionList.post { focusLast(0) }
+                return true
+            }
+        }
         // D-pad through the suggestion list: default focus search only reaches
         // laid-out children, so focus escaped to the group-mode button after
         // the last VISIBLE row and the rest of the list was unreachable. Move
@@ -430,6 +476,10 @@ class ComposeActivity : BaseActivity() {
                 val pos = holder?.bindingAdapterPosition ?: -1
                 val last = (binding.suggestionList.adapter?.itemCount ?: 0) - 1
                 val next = if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) pos + 1 else pos - 1
+                if (pos == 0 && next < 0) {
+                    binding.recipientInput.requestFocus()
+                    return true
+                }
                 if (pos >= 0 && next in 0..last) {
                     binding.suggestionList.scrollToPosition(next)
                     // requestFocus races the layout pass after the scroll: if

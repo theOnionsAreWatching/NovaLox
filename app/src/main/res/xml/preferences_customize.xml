@@ -19,6 +19,14 @@
         android:key="open_message_color"
         android:title="@string/pref_message_color"
         android:summary="@string/pref_message_color_summary" />
+    <SwitchPreferenceCompat
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="bars_translucent"
+        android:title="@string/pref_translucent_bars"
+        android:summary="@string/pref_translucent_bars_summary"
+        android:defaultValue="false" />
+
     <Preference
         app:iconSpaceReserved="false"
         android:key="all_backgrounds"

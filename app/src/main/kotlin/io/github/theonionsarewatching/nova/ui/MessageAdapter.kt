@@ -303,6 +303,7 @@ class MessageAdapter(
             holder.b.thumb.maxHeight = tmax
             holder.b.thumb.load(File(visual.filePath)) {
                 size(tmax, tmax)
+                size(tmax, tmax)
                 // videos: grab a frame from 1s in — frame zero is often black
                 if (visual.isVideo()) videoFrameMillis(1000)
             }
@@ -460,10 +461,50 @@ class MessageAdapter(
             val pos = holder.bindingAdapterPosition
             if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onPress(rows[pos])
         }
-        holder.itemView.setOnLongClickListener {
-            val pos = holder.bindingAdapterPosition
-            if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onHold(rows[pos])
-            true
+        if (rows[position].msg.isMms) {
+            holder.itemView.setOnTouchListener(null)
+            holder.itemView.setOnKeyListener(null)
+            holder.itemView.setOnLongClickListener {
+                val pos = holder.bindingAdapterPosition
+                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onHold(rows[pos])
+                true
+            }
+        } else {
+            // SMS options open at HALF the standard long-press time, for touch
+            // and D-pad-center alike; the runnable replaces the system timing
+            holder.itemView.setOnLongClickListener(null)
+            val half = android.view.ViewConfiguration.getLongPressTimeout().toLong() / 2
+            var fired = false
+            val fire = Runnable {
+                fired = true
+                holder.itemView.isPressed = false
+                val pos = holder.bindingAdapterPosition
+                if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onHold(rows[pos])
+            }
+            holder.itemView.setOnTouchListener { v, ev ->
+                when (ev.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> { fired = false; v.postDelayed(fire, half); false }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        v.removeCallbacks(fire)
+                        fired && ev.actionMasked == android.view.MotionEvent.ACTION_UP
+                    }
+                    else -> false
+                }
+            }
+            holder.itemView.setOnKeyListener { v, keyCode, ev ->
+                if (keyCode != android.view.KeyEvent.KEYCODE_DPAD_CENTER &&
+                    keyCode != android.view.KeyEvent.KEYCODE_ENTER
+                ) return@setOnKeyListener false
+                when {
+                    ev.action == android.view.KeyEvent.ACTION_DOWN && ev.repeatCount == 0 -> {
+                        fired = false; v.postDelayed(fire, half); false
+                    }
+                    ev.action == android.view.KeyEvent.ACTION_UP -> {
+                        v.removeCallbacks(fire); fired
+                    }
+                    else -> fired
+                }
+            }
         }
     }
 
@@ -527,10 +568,14 @@ private fun groupAwareStatus(
 ): String {
     val rs = m.recipientStatuses
     if (rs.isBlank()) return Sender.statusLabel(ctx, m.status)
-    val marks = rs.split(",").filter { it.contains("=") }.map { it.substringAfter("=") }
+    // two formats share this field: D/R letters (MMS reports) and numeric
+    // per-recipient statuses (SMS broadcast) — count both
+    val marks = rs.split(",").filter { it.contains("=") }.map { it.substringAfterLast("=") }
     if (marks.isEmpty()) return Sender.statusLabel(ctx, m.status)
-    val read = marks.count { it == "R" }
-    val delivered = marks.count { it == "D" } + read
+    val dSt = io.github.theonionsarewatching.nova.data.MsgStatus.DELIVERED
+    val rSt = io.github.theonionsarewatching.nova.data.MsgStatus.READ_BY_RECIPIENT
+    val read = marks.count { it == "R" || it.toIntOrNull() == rSt }
+    val delivered = marks.count { it == "D" || it.toIntOrNull() == dSt } + read
     val parts = ArrayList<String>()
     if (delivered > 0) parts += ctx.getString(R.string.delivered_to_n, delivered)
     if (read > 0) parts += ctx.getString(R.string.read_by_n, read)

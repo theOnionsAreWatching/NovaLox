@@ -141,17 +141,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // are off, D-pad center sends while the compose box has focus, and a
         // small "Send" hint bar appears so it's discoverable — only while the
         // box is focused.
-        binding.composeInput.setOnFocusChangeListener { _, _ -> updateSendHint() }
-        if (prefs.sendOnLeft) {
-            // move the on-screen Send button to the left end of the compose row
-            // (and Attach to the right) so the option holds with softkeys off too
-            (binding.btnSend.parent as? android.widget.LinearLayout)?.let { row ->
-                row.removeView(binding.btnSend)
-                row.addView(binding.btnSend, 0)
-                row.removeView(binding.btnAttach)
-                row.addView(binding.btnAttach)
-            }
+        binding.composeInput.setOnFocusChangeListener { _, _ ->
+            updateSendHint(); updateCharCounter()
         }
+        binding.composeInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { updateCharCounter() }
+        })
         updateSendHint()
         updateSoftkeys()
 
@@ -305,7 +302,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.threadSelectionBar.visibility = View.GONE
         binding.composeBar.visibility = View.VISIBLE
         binding.threadSubtitle.text = convo?.let { c ->
-            if (c.isGroup) getString(R.string.n_recipients, c.addressList().size)
+            if (c.isGroup) getString(
+                if (c.groupMode == GroupMode.GROUP_MMS) R.string.subtitle_group
+                else R.string.subtitle_broadcast
+            )
             else c.addressList().firstOrNull() ?: ""
         } ?: ""
         updateSoftkeys()
@@ -609,30 +609,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun updateSoftkeys() {
         if (selecting) { updateSelectionUi(); return }
         if (composeMode) {
-            val attachLabel = if (clipboardText().isNullOrBlank())
+            val leftLabel = if (clipboardText().isNullOrBlank())
                 getString(R.string.softkey_attach) else getString(R.string.softkey_options)
-            val attachAction: () -> Unit = { AttachOrPaste.open(this, binding.composeInput,
-                onAttach = { pickAttachment() },
-                onRecord = { recordAudioAttachment() }) }
-            // send-on-left: for keyboards that steal the right softkey / treat
-            // right-D-pad as Space, the Send action can live on the LEFT slot
-            if (prefs.sendOnLeft) {
-                softkeys?.set(
-                    getString(R.string.softkey_send), null, attachLabel,
-                    onLeft = { send() },
-                    onCenter = null,
-                    onRight = attachAction,
-                    onMenu = { threadOptions() }
-                )
-            } else {
-                softkeys?.set(
-                    attachLabel, null, getString(R.string.softkey_send),
-                    onLeft = attachAction,
-                    onCenter = null,
-                    onRight = { send() },
-                    onMenu = { threadOptions() }
-                )
-            }
+            softkeys?.set(
+                leftLabel, null, getString(R.string.softkey_send),
+                onLeft = { AttachOrPaste.open(this, binding.composeInput,
+                    onAttach = { pickAttachment() },
+                    onRecord = { recordAudioAttachment() }) },
+                onCenter = null,
+                onRight = { send() },
+                onMenu = { threadOptions() }
+            )
         } else {
             // scroll mode: the center opens the focused message; it is NOT the
             // selection action (that's entered by long-press / hold), so it must
@@ -651,7 +638,25 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
      *  softkey bar is off (otherwise the softkey Send covers it) and the
      *  compose box is focused. */
     private fun sendHintActive(): Boolean =
-        softkeys?.shouldShow() != true && binding.composeInput.hasFocus()
+        (softkeys?.shouldShow() != true || prefs.dpadCenterSend) &&
+            binding.composeInput.hasFocus()
+
+    /** chars-over-segments counter in the corner of the compose box */
+    private fun updateCharCounter() {
+        val len = binding.composeInput.text?.length ?: 0
+        if (len == 0 || !binding.composeInput.hasFocus()) {
+            binding.charCounter.visibility = View.GONE
+            return
+        }
+        binding.charCounter.visibility = View.VISIBLE
+        binding.charCounter.text = if (pendingAttachments.isNotEmpty()) {
+            len.toString()
+        } else {
+            val segs = (len + 159) / 160
+            val inSeg = len - 160 * (segs - 1)
+            "($inSeg/$segs)"
+        }
+    }
 
     private fun updateSendHint() {
         binding.sendHintBar.visibility = if (sendHintActive()) View.VISIBLE else View.GONE
@@ -659,9 +664,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // slot is Send — make D-pad-down from the text box land there first,
         // instead of Android's default nearest pick (the attach slot on the left)
         if (prefs.softkeysFocusable && composeMode && softkeys?.shouldShow() == true) {
-            binding.composeInput.nextFocusDownId =
-                if (prefs.sendOnLeft) binding.softkeyBar.softLeft.id
-                else binding.softkeyBar.softRight.id
+            binding.composeInput.nextFocusDownId = binding.softkeyBar.softRight.id
         } else {
             binding.composeInput.nextFocusDownId = View.NO_ID
         }
@@ -726,6 +729,22 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             return true
         }
         if (softkeys?.handleKey(event) == true) return true
+
+        // a tall first message (a picture): keep scrolling it into view on
+        // D-pad-up; only once its top is fully visible may focus leave the
+        // list for the top bar
+        if (event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode == KeyEvent.KEYCODE_DPAD_UP
+        ) {
+            val fv = currentFocus
+            if (fv != null && fv.parent === binding.msgList &&
+                binding.msgList.getChildAdapterPosition(fv) == 0 && fv.top < 0
+            ) {
+                val step = (80 * resources.displayMetrics.density).toInt()
+                binding.msgList.scrollBy(0, maxOf(fv.top, -step))
+                return true
+            }
+        }
 
         // D-pad center = Send when the compose box is focused and the softkey
         // bar is off. This is the escape hatch for keyboards that repurpose the
@@ -1357,9 +1376,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             sb.append(getString(R.string.detail_status)).append(": ")
                 .append(Sender.statusLabel(this, m.status)).append('\n')
             if (m.recipientStatuses.isNotBlank()) {
-                repo.parseStatuses(m.recipientStatuses).forEach { (addr, st) ->
-                    sb.append("  ").append(addr).append(": ")
-                        .append(Sender.statusLabel(this, st)).append('\n')
+                // the field carries two formats: numeric per-recipient statuses
+                // (SMS broadcast) and D/R letters (MMS reports)
+                m.recipientStatuses.split(",").filter { it.contains("=") }.forEach { e ->
+                    val addr = e.substringBeforeLast("=")
+                    val vRaw = e.substringAfterLast("=")
+                    val label = when (vRaw) {
+                        "R" -> Sender.statusLabel(this, MsgStatus.READ_BY_RECIPIENT)
+                        "D" -> Sender.statusLabel(this, MsgStatus.DELIVERED)
+                        else -> Sender.statusLabel(this, vRaw.toIntOrNull() ?: 0)
+                    }
+                    sb.append("  ").append(addr).append(": ").append(label).append('\n')
                 }
             }
         }
@@ -1460,6 +1487,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ) {
             v = "#F2F2F3"
         }
+        if (v.isBlank() && ThemeUtils.isNight(this) &&
+            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
+        ) {
+            // dark-theme counterpart of the card-style default: "same as light"
+            // over a default light background resolves to the DARK default
+            v = "#1B1B1E"
+        }
         return when {
             v.isBlank() -> if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE
             v.startsWith("#") ->
@@ -1485,6 +1519,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // card styles read as white squares over a very light grey
             v = "#F2F2F3"
         }
+        if (v.isBlank() && ThemeUtils.isNight(this) &&
+            (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
+        ) {
+            // dark-theme counterpart of the card-style default: "same as light"
+            // over a default light background resolves to the DARK default
+            v = "#1B1B1E"
+        }
         when {
             v.isBlank() -> {
                 binding.chatBackdrop.visibility = View.GONE
@@ -1503,6 +1544,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 binding.chatBackdrop.visibility = View.VISIBLE
             }
         }
+        // see-through bars: let a custom background show through the top bar
+        // and the compose row, keeping the text readable via partial alpha
+        val surface = if (ThemeUtils.isNight(this)) 0xFF121212.toInt()
+        else android.graphics.Color.WHITE
+        val barColor = if (prefs.barsTranslucent &&
+            binding.chatBackdrop.visibility == View.VISIBLE
+        ) androidx.core.graphics.ColorUtils.setAlphaComponent(surface, 0xC8)
+        else surface
+        (binding.btnBack.parent as? View)?.setBackgroundColor(barColor)
+        (binding.btnSend.parent as? View)?.setBackgroundColor(barColor)
     }
 
 
@@ -1746,8 +1797,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 lifecycleScope.launch {
                     repo.db.conversations().setGroupMode(convoId, newMode)
                     convo = repo.db.conversations().byId(convoId)
-                    // system line noting the switch (future messages only)
-                    repo.db.messages().insert(
+                    // system line noting the switch. If the newest thing in
+                    // the thread is already a switch line, this toggle merely
+                    // cancels it — the mode went back with no messages sent in
+                    // between, so remove the line instead of stacking another.
+                    val newestMsg = repo.db.messages().newest(convoId)
+                    if (newestMsg != null && newestMsg.address == MessageRow.SYSTEM_ADDRESS) {
+                        repo.db.messages().hardDelete(newestMsg.id)
+                    } else repo.db.messages().insert(
                         MessageEntity(
                             convoId = convoId, address = MessageRow.SYSTEM_ADDRESS,
                             body = getString(

@@ -791,9 +791,21 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             .show()
     }
 
+    private var focusHookInstalled = false
+
     private fun setupDefaultSoftkeys() {
+        if (!focusHookInstalled) {
+            focusHookInstalled = true
+            // "Open" means the focused conversation — with focus on the top-bar
+            // buttons there is nothing to open, so the label follows the focus
+            binding.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ ->
+                if (!selectingConvos) setupDefaultSoftkeys()
+            }
+        }
         softkeys?.set(
-            getString(R.string.softkey_new_message), getString(R.string.softkey_open), getString(R.string.softkey_options),
+            getString(R.string.softkey_new_message),
+            if (binding.convoList.hasFocus()) getString(R.string.softkey_open) else null,
+            getString(R.string.softkey_options),
             onLeft = { startActivity(Intent(this, ComposeActivity::class.java)) },
             onCenter = { (binding.convoList.focusedChild)?.performClick() },
             onRight = { optionsMenu() },

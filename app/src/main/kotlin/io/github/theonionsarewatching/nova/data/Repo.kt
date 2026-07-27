@@ -1238,9 +1238,10 @@ class Repo private constructor(private val context: Context) {
             // reports for the other copies resolve through the registry to the
             // ONE broadcast message — that's what feeds the per-recipient
             // "Delivered to N · Read by N" counts
+            var viaBroadcast = false
             val m = db.messages().byTelephonyMms(tId)
                 ?: io.github.theonionsarewatching.nova.util.BroadcastCopies
-                    .messageIdFor(context, tId)?.let { db.messages().byId(it) }
+                    .messageIdFor(context, tId)?.let { viaBroadcast = true; db.messages().byId(it) }
                 ?: run {
                     io.github.theonionsarewatching.nova.util.DiagLog.log(
                         context, "mms-delivery",
@@ -1287,7 +1288,7 @@ class Repo private constructor(private val context: Context) {
             // the indication's TO address row, so the meta line can say
             // "Delivered to X \u00b7 Read by Y"
             try {
-                if (m.address.contains(",") || m.address.contains(";")) {
+                if (viaBroadcast || m.address.contains(",") || m.address.contains(";")) {
                     var who: String? = null
                     context.contentResolver.query(
                         Uri.parse("content://mms/$indId/addr"),

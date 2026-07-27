@@ -17,9 +17,9 @@
     <SwitchPreferenceCompat
         app:singleLineTitle="false"
         app:iconSpaceReserved="false"
-        android:key="send_on_left"
-        android:title="@string/pref_send_left"
-        android:summary="@string/pref_send_left_summary"
+        android:key="dpad_center_send"
+        android:title="@string/pref_dpad_center_send"
+        android:summary="@string/pref_dpad_center_send_summary"
         android:defaultValue="false" />
     <SwitchPreferenceCompat
         app:singleLineTitle="false"

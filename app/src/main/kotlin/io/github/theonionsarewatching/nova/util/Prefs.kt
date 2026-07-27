@@ -126,8 +126,10 @@ class Prefs(context: Context) {
     val requestReadReports: Boolean get() = sp.getBoolean("request_read_reports", false)
     // answer other people's read-report requests when the user reads
     val respondReadReports: Boolean get() = sp.getBoolean("respond_read_reports", true)
-    // Send softkey/button on the LEFT (for keyboards that steal the right side)
-    val sendOnLeft: Boolean get() = sp.getBoolean("send_on_left", false)
+    // center D-pad key = Send while the cursor is in the message box
+    val dpadCenterSend: Boolean get() = sp.getBoolean("dpad_center_send", false)
+    // chat background shows through the top bar and compose row
+    val barsTranslucent: Boolean get() = sp.getBoolean("bars_translucent", false)
 
     // "tid:messageId" pairs for telephony rows that are broadcast copies —
     // machinery of the broadcast illusion, not real 1:1 messages

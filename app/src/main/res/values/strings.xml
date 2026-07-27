@@ -48,11 +48,15 @@
     <string name="pin">Pin</string>
     <string name="unpin">Unpin</string>
     <string name="archive">Archive</string>
-    <string name="block_and_menu">Block and\u2026</string>
+    <string name="block_and_menu">Blocking</string>
     <string name="customize_menu">Customize</string>
+    <string name="subtitle_broadcast">Broadcast</string>
+    <string name="subtitle_group">Group message</string>
+    <string name="pref_dpad_center_send">D-pad center sends</string>
+    <string name="pref_dpad_center_send_summary">When the cursor is in the message box, pressing the center D-pad key sends the message</string>
+    <string name="pref_translucent_bars">See-through bars</string>
+    <string name="pref_translucent_bars_summary">Let the chat background show through the top bar and the message box area, keeping text readable</string>
     <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>
-    <string name="pref_send_left">Send button on the left</string>
-    <string name="pref_send_left_summary">Puts Send on the left softkey and the left side of the message box. For phones whose keyboard takes over the right softkey or treats right on the D-pad as Space.</string>
     <string name="unarchive">Unarchive</string>
     <string name="mute">Mute (silent notifications)</string>
     <string name="unmute">Unmute</string>
@@ -350,7 +354,7 @@
     <string name="pref_request_read">Request read reports (picture messages)</string>
     <string name="pref_request_read_summary">Ask the recipient\u2019s phone to confirm when a picture message is opened. Off by default: on some carriers this causes duplicate messages to appear. Read confirmations that arrive on their own are always shown either way.</string>
     <string name="pref_request_delivery_summary">Ask the carrier to confirm when your messages are delivered</string>
-    <string name="pref_softkey_settings">Softkey settings</string>
+    <string name="pref_softkey_settings">Physical keys</string>
     <string name="pref_softkey_settings_summary">Softkey mode, key mapping, D-pad reachability</string>
     <string name="pref_advanced_group">Advanced settings</string>
     <string name="pref_advanced_group_summary">Storage, backup, diagnostics, contacts</string>
