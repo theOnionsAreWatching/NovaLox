@@ -35,7 +35,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         const val EXTRA_CONVO_ID = "convo_id"
         private const val REQ_CHAT_BG = 207
         const val EXTRA_TARGET_MESSAGE_ID = "target_message_id"
-        const val PAGE = 60
+        // picture-heavy threads: a small first page, small steps after.
+        // There is exactly ONE pager (rows + hasMoreOlder + loadOlder);
+        // a second windowing layer on top of it desynchronised the adapter
+        // indices from this list and wedged the UI.
+        const val PAGE = 8
+        const val PAGE_MORE = 10
         var visibleConvoId: Long = -1L
     }
 
@@ -54,12 +59,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** staged attachments: (path, mime, displayName) — sent together with the next Send */
     private val pendingAttachments = ArrayList<Triple<String, String, String>>()
 
-    // picture-heavy threads: only the newest slice binds at open; scrolling
-    // toward the top widens the window ("Loading…" banner in between)
-    private var allRows: List<MessageRow> = emptyList()
-    private var loadedWindow = 8
-    private var moreAbove = false
-    private var expandingWindow = false
     private var selecting = false
     private val selectedIds = HashSet<Long>()
 
@@ -88,7 +87,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             ) {
                 if (dy >= 0) return
                 val lm = rv.layoutManager as? LinearLayoutManager ?: return
-                if (lm.findFirstVisibleItemPosition() <= 1) expandWindow()
+                if (lm.findFirstVisibleItemPosition() <= 1) loadOlder()
             }
         })
         scroller = DpadScroller(
@@ -104,6 +103,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     }
                     true
                 } else if (hasMoreOlder) { loadOlder(); true }
+                else if (loading) { true }
                 else { enterHeader(); true }
             }
         )
@@ -480,12 +480,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         if (loading) return
         loading = true
         lifecycleScope.launch {
+            val t0 = System.currentTimeMillis()
             val latest = repo.db.messages().latest(convoId, PAGE).reversed()
+            val tQuery = System.currentTimeMillis() - t0
+            val t1 = System.currentTimeMillis()
             rows = ArrayList(buildRows(latest))
+            val tBuild = System.currentTimeMillis() - t1
             hasMoreOlder = latest.size >= PAGE
             hasMoreNewer = false
+            val t2 = System.currentTimeMillis()
             adapter.rows = rows
             adapter.notifyDataSetChanged()
+            val tNotify = System.currentTimeMillis() - t2
+            Perf.logLoad(this@ThreadActivity, rows, tQuery, tBuild, tNotify, t0)
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             updateScrollExtent()
             if (focusBottom) {
@@ -503,10 +510,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun loadOlder() {
         if (loading || !hasMoreOlder || rows.isEmpty()) return
         loading = true
+        binding.loadingBanner.visibility = View.VISIBLE
         lifecycleScope.launch {
+            val t0 = System.currentTimeMillis()
             val first = rows.first().msg
-            val older = repo.db.messages().olderThan(convoId, first.date, first.id, PAGE).reversed()
-            hasMoreOlder = older.size >= PAGE
+            val older = repo.db.messages()
+                .olderThan(convoId, first.date, first.id, PAGE_MORE).reversed()
+            val tQuery = System.currentTimeMillis() - t0
+            hasMoreOlder = older.size >= PAGE_MORE
             if (older.isNotEmpty()) {
                 // keep the exact scroll position AND the focused view: capture the
                 // current anchor, insert above, then restore the anchor shifted by
@@ -524,7 +535,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
                         ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
                 }
+                Perf.log(
+                    this@ThreadActivity, "loadOlder",
+                    "rows=${older.size} total=${rows.size} query=${tQuery}ms " +
+                        "total=${System.currentTimeMillis() - t0}ms"
+                )
             }
+            binding.loadingBanner.visibility = View.GONE
             loading = false
         }
     }
@@ -585,15 +602,20 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val wasCompose = composeMode
             val lmB = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
             val atBottom = (lmB?.findLastVisibleItemPosition() ?: -1) >= adapter.itemCount - 1
+            val t0 = System.currentTimeMillis()
             val requested = maxOf(PAGE, rows.size)
             val latest = repo.db.messages().latest(convoId, requested).reversed()
+            val tQuery = System.currentTimeMillis() - t0
+            val t1 = System.currentTimeMillis()
             rows = ArrayList(buildRows(latest))
+            val tBuild = System.currentTimeMillis() - t1
             hasMoreOlder = latest.size >= requested
-            allRows = rows
-            val windowed = if (rows.size > loadedWindow) rows.takeLast(loadedWindow) else rows
-            moreAbove = rows.size > windowed.size
-            adapter.submit(windowed) // diff: only changed rows repaint — no full-list flash
-            if (!moreAbove) binding.loadingBanner.visibility = View.GONE
+            val t2 = System.currentTimeMillis()
+            adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
+            Perf.logRefresh(
+                this@ThreadActivity, rows.size, requested, tQuery, tBuild,
+                System.currentTimeMillis() - t2, t0
+            )
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
             updateScrollExtent()
             if (wasCompose && atBottom) {
@@ -669,22 +691,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** The "Send" hint bar + D-pad-center-sends behavior exist only when the
      *  softkey bar is off (otherwise the softkey Send covers it) and the
      *  compose box is focused. */
-    /** Widen the message window toward older history; instant if cached. */
-    private fun expandWindow() {
-        if (!moreAbove || expandingWindow) return
-        expandingWindow = true
-        binding.loadingBanner.visibility = View.VISIBLE
-        binding.msgList.post {
-            loadedWindow += 10
-            val windowed =
-                if (allRows.size > loadedWindow) allRows.takeLast(loadedWindow) else allRows
-            moreAbove = allRows.size > windowed.size
-            adapter.submit(windowed)
-            binding.loadingBanner.visibility = View.GONE
-            expandingWindow = false
-        }
-    }
-
     private fun sendHintActive(): Boolean =
         (softkeys?.shouldShow() != true || prefs.dpadCenterSend) &&
             binding.composeInput.hasFocus()
@@ -794,9 +800,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     binding.msgList.scrollBy(0, maxOf(fv.top, -step))
                     return true
                 }
-                if (moreAbove) {
+                if (hasMoreOlder || loading) {
                     // older history exists: pull it in before focus may leave
-                    expandWindow()
+                    loadOlder()
                     return true
                 }
             }
@@ -1561,12 +1567,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // card styles read as white squares over a very light grey
             v = "#F2F2F3"
         }
-        io.github.theonionsarewatching.nova.util.DiagLog.log(
-            this, "bg",
-            "convo=$convoId own=${prefs.chatBgOwn(convoId) ?: "<none>"} " +
-                "global='${prefs.chatBg(-1L).take(24)}' dark='${prefs.darkChatBg.take(24)}' " +
-                "night=${ThemeUtils.isNight(this)} -> '${v.take(24)}'"
-        )
+        io.github.theonionsarewatching.nova.util.ThemeDebug
+            .dump(this, "thread convo=$convoId", convoId, v)
         return v
     }
 

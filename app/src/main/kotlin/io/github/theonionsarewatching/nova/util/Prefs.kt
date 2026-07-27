@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.preference.PreferenceManager
 
 class Prefs(context: Context) {
+    private val appContext: Context = context.applicationContext
     val sp: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
 
     // ---- first run / import ----
@@ -37,6 +38,8 @@ class Prefs(context: Context) {
     fun setChatBg(convoId: Long, v: String) {
         val key = if (convoId == -1L) "chat_bg_all" else "chat_bg_$convoId"
         sp.edit().putString(key, v).apply()
+        // read back AFTER writing: a value that doesn't persist is caught here
+        ThemeDebug.logWrite(appContext, key, v)
     }
     val autoDownloadMms: Boolean
         get() = sp.getBoolean("auto_download_mms", true)
@@ -85,7 +88,10 @@ class Prefs(context: Context) {
     // light-theme background, "#RRGGBB" = a color chosen for dark specifically
     var darkChatBg: String
         get() = sp.getString("dark_chat_bg", "default") ?: "default"
-        set(v) { sp.edit().putString("dark_chat_bg", v).apply() }
+        set(v) {
+            sp.edit().putString("dark_chat_bg", v).apply()
+            ThemeDebug.logWrite(appContext, "dark_chat_bg", v)
+        }
     val accent: String get() = sp.getString("accent", "blue") ?: "blue"
     val msgTextSp: Float get() = (sp.getString("msg_text_size", "16") ?: "16").toFloatOrNull() ?: 16f
     // media thumbnail max edge (dp); smaller default than the old 220

@@ -20,6 +20,19 @@ class App : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // catches the freeze in the act: logs whenever the main thread stops
+        // responding, with the duration
+        io.github.theonionsarewatching.nova.util.Perf.startWatchdog(this)
+        if (io.github.theonionsarewatching.nova.BuildConfig.DEBUG) {
+            // main-thread disk/DB work is the usual cause of a UI stall — have
+            // the platform name the offender instead of us guessing
+            android.os.StrictMode.setThreadPolicy(
+                android.os.StrictMode.ThreadPolicy.Builder()
+                    .detectDiskReads().detectDiskWrites().detectCustomSlowCalls()
+                    .penaltyLog()
+                    .build()
+            )
+        }
         // boot-aware components can spin this process up BEFORE the user
         // unlocks, when credential-protected storage (database, preferences,
         // files) is still locked. Do nothing in that state — the guarded

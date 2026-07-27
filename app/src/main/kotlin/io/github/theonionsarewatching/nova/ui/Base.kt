@@ -18,6 +18,8 @@ import io.github.theonionsarewatching.nova.util.Prefs
 object ThemeUtils {
 
     fun applyNightMode(context: Context) {
+        io.github.theonionsarewatching.nova.util.ThemeDebug
+            .dump(context, "applyNightMode", null, null)
         when (Prefs.get(context).theme) {
             "light" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             "dark" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
