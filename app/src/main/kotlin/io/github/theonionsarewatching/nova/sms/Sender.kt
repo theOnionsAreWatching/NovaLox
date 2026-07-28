@@ -32,6 +32,10 @@ object Sender {
     /** Broadcast/single SMS: one system-provider row + one system send per recipient. */
     fun sendSmsToAll(context: Context, messageId: Long, text: String, addresses: List<String>) {
         val repo = Repo.get(context)
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "sms-send",
+            "fan-out msg=$messageId recipients=${addresses.size}: ${addresses.joinToString()}"
+        )
         repo.scope.launch {
             var anyStarted = false
             for (address in addresses) {
@@ -69,11 +73,19 @@ object Sender {
                         val existing = repo0.db.messages().byId(messageId)
                         if (existing != null && existing.telephonyId == null) {
                             repo0.db.messages().setTelephonyId(messageId, tid, false)
+                            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                context, "sms-send",
+                                "row -> $dest tid=$tid LINKED to msg=$messageId"
+                            )
                         } else if (existing != null) {
                             // a fan-out copy (broadcast / group SMS): register it
                             // so no ingest route duplicates it into a 1:1 thread
                             io.github.theonionsarewatching.nova.util.BroadcastCopies
                                 .recordSms(context, tid, messageId)
+                            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                context, "sms-send",
+                                "row -> $dest tid=$tid registered as fan-out copy of msg=$messageId"
+                            )
                         }
                     }
                 }

@@ -411,9 +411,20 @@ class MediaViewerActivity : BaseActivity() {
             ) return super.dispatchKeyEvent(event)
             // PHYSICAL SOFTKEYS ZOOM: the bar's zoom actions were wired but this
             // branch swallowed every key before handleKey ever saw it — labels
-            // showed, softkeys did nothing. Give the mapped softkeys first shot;
-            // * and # below remain the fallback for phones with the bar off.
-            if (softkeys?.handleKey(event) == true) return true
+            // showed, softkeys did nothing. ORDER MATTERS: zoom's own keys are
+            // handled FIRST — on plenty of flips a softkey is physically the
+            // BACK key, and letting handleKey see BACK would turn "exit zoom"
+            // into "zoom in" with no way out (same for softkeys that emit
+            // D-pad/*/# codes, which would break panning). Softkeys only get
+            // the codes zoom mode doesn't already own.
+            val zoomOwned = when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_POUND, KeyEvent.KEYCODE_STAR,
+                KeyEvent.KEYCODE_BACK -> true
+                else -> false
+            }
+            if (!zoomOwned && softkeys?.handleKey(event) == true) return true
             if (event.action == KeyEvent.ACTION_DOWN) {
                 val step = 60 * resources.displayMetrics.density
                 when (event.keyCode) {

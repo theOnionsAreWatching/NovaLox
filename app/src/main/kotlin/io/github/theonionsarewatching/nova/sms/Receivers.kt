@@ -84,8 +84,17 @@ class SmsDeliverReceiver : BroadcastReceiver() {
 // to the sender. We honor the user's choice for the latter.
 class MmsReceiver : MmsReceivedReceiver() {
 
-    override fun isAddressBlocked(context: Context, address: String): Boolean =
-        Repo.get(context).isNumberBlocked(address)
+    override fun isAddressBlocked(context: Context, address: String): Boolean {
+        val blocked = Repo.get(context).isNumberBlocked(address)
+        // this engine check runs BEFORE the message is persisted — a true here
+        // makes the MMS vanish with no telephony row and, until now, no trace
+        if (blocked) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest", "engine dropped incoming pre-persist: sender blocked ($address)"
+            )
+        }
+        return blocked
+    }
 
     override fun onMessageReceived(context: Context, messageUri: Uri) {
         val repo = Repo.get(context)
@@ -102,7 +111,11 @@ class MmsReceiver : MmsReceivedReceiver() {
     }
 
     override fun onError(context: Context, error: String) {
-        // download failed; the engine retries per carrier rules
+        // download failed; the engine retries per carrier rules — but leave a
+        // trace, this was a fully silent exit
+        io.github.theonionsarewatching.nova.util.DiagLog.log(
+            context, "mms-ingest", "engine receive error: $error"
+        )
     }
 }
 

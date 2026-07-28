@@ -51,6 +51,42 @@ class Repo private constructor(private val context: Context) {
     private val downloadFallbackAttempts =
         java.util.Collections.synchronizedSet(HashSet<String>())
 
+    // telephony rows whose email-address diagnostic already printed this run —
+    // the per-sync repetition of that line flooded the DiagLog ring buffer and
+    // rotated real history out of field logs
+    private val emailDiagLogged =
+        java.util.Collections.synchronizedSet(HashSet<Long>())
+
+    // inbox MMS rows whose ingest DROP reason already printed this run (the
+    // sync loop revisits rows every few seconds; one line per row is enough)
+    private val ingestDropLogged =
+        java.util.Collections.synchronizedSet(HashSet<String>())
+
+    // one-shot snapshot: if the field ever shows legit senders detected as
+    // "own", this line tells us whether ownNumbers is polluted and from where
+    @Volatile private var ownNumbersSnapshotLogged = false
+    private fun logOwnNumbersSnapshotOnce() {
+        if (ownNumbersSnapshotLogged) return
+        ownNumbersSnapshotLogged = true
+        try {
+            val prefs = Prefs.get(context)
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest",
+                "own-numbers snapshot: sim=${simOwnNumbers.joinToString()} " +
+                    "learned=${prefs.learnedOwnNumbers.joinToString()} " +
+                    "blockedList=${prefs.blockedNumbers.size}"
+            )
+        } catch (_: Exception) {}
+    }
+
+    private fun logIngestDrop(mmsId: Long, reason: String) {
+        if (ingestDropLogged.add("$mmsId:$reason")) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest", "drop tid=$mmsId reason=$reason"
+            )
+        }
+    }
+
     // ============================== Conversations ==============================
 
     suspend fun getOrCreateConversation(addresses: List<String>): ConversationEntity = convoMutex.withLock {
@@ -207,7 +243,20 @@ class Repo private constructor(private val context: Context) {
         // EXCEPTION: a download stub is linked to this same row (tap-to-download
         // updates 130 -> 132 in place); it must pass so ingestMms can replace it.
         val linked = db.messages().byTelephonyMms(mmsId)
-        if (linked != null && !MmsStub.isStub(linked.body)) return@withContext null
+        if (linked != null && !MmsStub.isStub(linked.body)) {
+            // the newest-by-date row was already ours: the row this callback
+            // fired FOR must be older than it (sender clock skew / relay
+            // dating) and is now the sync loop's job. One line so field logs
+            // show when the picker loses this race.
+            if (ingestDropLogged.add("$mmsId:picker-linked")) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "latest-picker: newest row tid=$mmsId already linked — " +
+                        "the new arrival is older-dated; sync will ingest it"
+                )
+            }
+            return@withContext null
+        }
         return@withContext ingestMms(mmsId, date, msgBox)
     }
 
@@ -311,7 +360,10 @@ class Repo private constructor(private val context: Context) {
         // ingest route (sync loops, sent-confirmation, push) funnels through
         // here, so this is the single authoritative guard against the copy
         // reappearing as a "new" message in the one-to-one thread.
-        if (io.github.theonionsarewatching.nova.util.BroadcastCopies.isCopy(context, mmsId)) return@withContext null
+        if (io.github.theonionsarewatching.nova.util.BroadcastCopies.isCopy(context, mmsId)) {
+            if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX) logIngestDrop(mmsId, "broadcast-copy")
+            return@withContext null
+        }
         val resolver = context.contentResolver
         val isMine = msgBox != Telephony.Mms.MESSAGE_BOX_INBOX
 
@@ -329,7 +381,7 @@ class Repo private constructor(private val context: Context) {
                         val a = c.getString(0) ?: continue
                         if (a.contains("@")) sb.append("[t=${c.getInt(1)}]$a ")
                     }
-                    if (sb.isNotEmpty()) {
+                    if (sb.isNotEmpty() && emailDiagLogged.add(mmsId)) {
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-email",
                             "ingest tid=$mmsId box=$msgBox addrs: $sb"
@@ -501,7 +553,10 @@ class Repo private constructor(private val context: Context) {
         // read reports, acknowledgements (m_type 129/131/133/135/136...). These
         // imported as BLANK messages next to the real MMS. Only actual messages pass:
         // 128 = outgoing send-request, 132 = downloaded incoming, 130 = placeholder.
-        if (mType != 0 && mType != 128 && mType != 130 && mType != 132) return@withContext null
+        if (mType != 0 && mType != 128 && mType != 130 && mType != 132) {
+            if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX) logIngestDrop(mmsId, "mtype=$mType")
+            return@withContext null
+        }
 
         // a downloaded copy replaces its own notification placeholder (matched by
         // transaction id) — covers users who toggled auto-download mid-stream
@@ -628,6 +683,7 @@ class Repo private constructor(private val context: Context) {
         // log line records which signal fired so field logs can tell us if
         // the fallback ever carries the load alone.
         if (!isMine) {
+            logOwnNumbersSnapshotOnce()
             val echoByMid = try {
                 var hit = false
                 resolver.query(Uri.parse("content://mms"), arrayOf("m_id"),
@@ -649,16 +705,20 @@ class Repo private constructor(private val context: Context) {
             val echoByFrom = from.isNotEmpty() &&
                 from.all { PhoneUtils.normalize(it) in ownNumbers }
             if (echoByMid || echoByFrom) {
+                // 0.9.94 REGRESSION ROLLBACK: 0.9.94 suppressed the match AND
+                // deleted the telephony row. The field immediately reported
+                // incoming group MMS not arriving, and deletion destroys the
+                // evidence along with the message. Until a field log proves
+                // the detection is precise, this is DETECTION ONLY: log and
+                // ingest normally. Do not re-enable suppression or deletion
+                // without a log showing dry-run lines firing ONLY on true
+                // echoes across normal group traffic.
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-ingest",
-                    "self-echo suppressed tid=$mmsId (midMatch=$echoByMid " +
+                    "self-echo DETECTED tid=$mmsId (midMatch=$echoByMid " +
                         "fromMatch=$echoByFrom from=${from.joinToString()}) — " +
-                        "relay copy of our own send (Google Voice group)"
+                        "DRY RUN, ingesting normally"
                 )
-                try {
-                    resolver.delete(Uri.parse("content://mms/$mmsId"), null, null)
-                } catch (_: Exception) {}
-                return@withContext null
             }
         }
 
@@ -686,7 +746,10 @@ class Repo private constructor(private val context: Context) {
             }
         }.ifEmpty { listOf("Unknown") }
 
-        if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) return@withContext null
+        if (!isMine && from.firstOrNull()?.let { isNumberBlocked(it) } == true) {
+            logIngestDrop(mmsId, "blocked-number")
+            return@withContext null
+        }
 
         // parts
         var bodyText = ""
@@ -816,6 +879,14 @@ class Repo private constructor(private val context: Context) {
             telephonyId = mmsId, telephonyIsMms = true
         )
         val id = db.messages().insert(fixed)
+        if (!isMine) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-ingest",
+                "ingested tid=$mmsId mtype=$mType msg=$id convo=${convo.id} " +
+                    "from=${from.joinToString()} to=${to.size} " +
+                    "participants=${participants.size}"
+            )
+        }
 
         // copy binary parts into app storage for instant loading
         val dir = File(context.filesDir, "parts").apply { mkdirs() }
@@ -2050,13 +2121,19 @@ class Repo private constructor(private val context: Context) {
                         if (db.messages().existsByTelephonyId(tId, false)) continue
                         if (io.github.theonionsarewatching.nova.util.BroadcastCopies
                                 .isSmsCopy(context, tId)) continue
-                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
-                            .isSmsCopy(context, tId)) continue
                         val address = c.getString(1) ?: continue
                         val body = c.getString(2) ?: ""
                         val date = c.getLong(3)
                         val type = c.getInt(4)
                         val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
+                        // GROUP-SMS DUPLICATE RACE: Sender inserts the provider
+                        // row FIRST and registers/links it a moment later — but
+                        // this observer-driven pass can land in between, see an
+                        // unowned outgoing row, and ingest it as a duplicate
+                        // 1:1 message to that member. Fresh outgoing rows are
+                        // mid-fan-out: leave them for the next pass, by which
+                        // time they're linked or registered.
+                        if (isMine && System.currentTimeMillis() - date < 15_000L) continue
                         val convo = getOrCreateConversation(listOf(address))
                         if (db.messages().existsSimilar(convo.id, isMine, body, date - 5000, date + 5000)) continue
                         if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue
