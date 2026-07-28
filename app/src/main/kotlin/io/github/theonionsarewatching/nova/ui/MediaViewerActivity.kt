@@ -226,7 +226,10 @@ class MediaViewerActivity : BaseActivity() {
             if (canIn) getString(R.string.zoom_in_label) else null,
             onLeft = { zoomStep(false) },
             onCenter = null,
-            onRight = { zoomStep(true) }
+            onRight = { zoomStep(true) },
+            // MENU defaults to the left action — that would make the MENU key
+            // zoom out. Keep MENU inert inside zoom mode (BACK exits).
+            onMenu = {}
         )
         // softkey bar ON: the softkeys themselves zoom — each shows just its
         // magnifier. Bar OFF (forced-visible viewer bar): * and # zoom, with
@@ -406,6 +409,11 @@ class MediaViewerActivity : BaseActivity() {
             if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
                 event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
             ) return super.dispatchKeyEvent(event)
+            // PHYSICAL SOFTKEYS ZOOM: the bar's zoom actions were wired but this
+            // branch swallowed every key before handleKey ever saw it — labels
+            // showed, softkeys did nothing. Give the mapped softkeys first shot;
+            // * and # below remain the fallback for phones with the bar off.
+            if (softkeys?.handleKey(event) == true) return true
             if (event.action == KeyEvent.ACTION_DOWN) {
                 val step = 60 * resources.displayMetrics.density
                 when (event.keyCode) {

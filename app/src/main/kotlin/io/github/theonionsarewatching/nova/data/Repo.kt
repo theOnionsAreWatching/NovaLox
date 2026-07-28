@@ -610,6 +610,58 @@ class Repo private constructor(private val context: Context) {
             }
         } catch (_: Exception) {}
 
+        // GOOGLE VOICE GROUP ECHO: when a group includes a Google Voice number,
+        // the GV relay re-broadcasts the sender's own message BACK to the sender.
+        // It arrives as a normal incoming MMS whose From is THIS PHONE's number
+        // and whose Message-ID is the m_id of the message we just sent (field
+        // log 07-27: sent m_id=…0203 returned 2s later as tr_id=…020302, was
+        // downloaded with From=own number, and the app then sent a read
+        // receipt to ITSELF). Ingesting it created a phantom conversation
+        // showing our own message as received — and replies to that phantom
+        // went 1:1 to the GV number, echoing again. The real message already
+        // lives in the group thread as our sent copy, so suppress the echo
+        // entirely and delete the telephony row: that keeps the content
+        // observer from re-ingesting it and the read-receipt scanner from
+        // answering its rr=128 request. Detection is belt-and-suspenders:
+        // Message-ID matching one of OUR sent rows is airtight; From being an
+        // own number is the fallback for relays that rewrite the m_id. The
+        // log line records which signal fired so field logs can tell us if
+        // the fallback ever carries the load alone.
+        if (!isMine) {
+            val echoByMid = try {
+                var hit = false
+                resolver.query(Uri.parse("content://mms"), arrayOf("m_id"),
+                    "_id = ?", arrayOf(mmsId.toString()), null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val mid = c.getString(0)
+                        if (!mid.isNullOrBlank()) {
+                            resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                                "m_id = ? AND msg_box = " +
+                                    Telephony.Mms.MESSAGE_BOX_SENT + " AND _id != ?",
+                                arrayOf(mid, mmsId.toString()), null)?.use { sent ->
+                                hit = sent.count > 0
+                            }
+                        }
+                    }
+                }
+                hit
+            } catch (_: Exception) { false }
+            val echoByFrom = from.isNotEmpty() &&
+                from.all { PhoneUtils.normalize(it) in ownNumbers }
+            if (echoByMid || echoByFrom) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "self-echo suppressed tid=$mmsId (midMatch=$echoByMid " +
+                        "fromMatch=$echoByFrom from=${from.joinToString()}) — " +
+                        "relay copy of our own send (Google Voice group)"
+                )
+                try {
+                    resolver.delete(Uri.parse("content://mms/$mmsId"), null, null)
+                } catch (_: Exception) {}
+                return@withContext null
+            }
+        }
+
         // Participant rules (deterministic AND correct for 1:1):
         //   * received where the "to" side is just one number -> that one number is
         //     THIS PHONE, so the conversation is 1:1 with the sender. Keeping our own
