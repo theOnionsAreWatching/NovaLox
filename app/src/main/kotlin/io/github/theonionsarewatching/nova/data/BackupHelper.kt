@@ -22,7 +22,12 @@ import java.util.zip.ZipOutputStream
  */
 object BackupHelper {
 
-    const val VERSION = 1
+    // v2: + conversation customName, message deliveryDebug, keywords2 (full
+    // keyword entities: mode / numbers / caseSensitive), broadcastCopies
+    // registry, and restore-side re-application of per-recipient statuses.
+    // Old readers still restore v2 backups: unknown names are skipped, and
+    // "keywords" stays a plain string array alongside "keywords2".
+    const val VERSION = 2
 
     data class LocalBackup(val displayName: String, val uri: Uri)
 
@@ -152,6 +157,7 @@ object BackupHelper {
                         w.name("cachedPhotoUri").value(c.cachedPhotoUri)
                         w.name("isGroup").value(c.isGroup)
                         w.name("groupMode").value(c.groupMode)
+                        w.name("customName").value(c.customName)
                         w.name("snippet").value(c.snippet)
                         w.name("snippetDate").value(c.snippetDate)
                         w.name("snippetIsMine").value(c.snippetIsMine)
@@ -187,6 +193,7 @@ object BackupHelper {
                         if (m.scheduledAt != null) w.name("scheduledAt").value(m.scheduledAt)
                         w.name("blockedByKeyword").value(m.blockedByKeyword)
                         w.name("recipientStatuses").value(m.recipientStatuses)
+                        if (m.deliveryDebug.isNotBlank()) w.name("deliveryDebug").value(m.deliveryDebug)
                         w.name("elementsExtracted").value(m.elementsExtracted)
                         if (m.telephonyId != null) w.name("telephonyId").value(m.telephonyId)
                         w.name("telephonyIsMms").value(m.telephonyIsMms)
@@ -219,9 +226,32 @@ object BackupHelper {
                     }
                     w.endArray()
 
+                    // legacy plain strings, so OLD app versions can still
+                    // restore this backup without choking on objects
                     w.name("keywords").beginArray()
                     for (k in keywords) w.value(k.keyword)
                     w.endArray()
+
+                    // the full keyword entities: sender scope mode, listed
+                    // numbers, case sensitivity (lost by the legacy format)
+                    w.name("keywords2").beginArray()
+                    for (k in keywords) {
+                        w.beginObject()
+                        w.name("keyword").value(k.keyword)
+                        w.name("mode").value(k.mode)
+                        w.name("numbers").value(k.numbers)
+                        w.name("caseSensitive").value(k.caseSensitive)
+                        w.endObject()
+                    }
+                    w.endArray()
+
+                    // broadcast-copy registry: on a same-phone restore the
+                    // telephony rows survive, and the re-import needs these
+                    // entries or old fan-out copies come back as duplicates.
+                    // Cross-phone it's inert: SMS entries match on id AND
+                    // same-day date, which another phone's rows won't satisfy.
+                    w.name("broadcastCopies").value(
+                        io.github.theonionsarewatching.nova.util.Prefs.get(context).broadcastCopyMap)
 
                     w.endObject()
                     w.flush()
@@ -258,6 +288,8 @@ object BackupHelper {
             val messages = ArrayList<RMsg>()
             val parts = ArrayList<RestorePart>()
             val keywords = ArrayList<String>()
+            val keywords2 = ArrayList<KeywordEntity>()
+            var restoredRegistry = ""
 
             // part files land in a TEMP dir first: they get written into the system
             // store, and the import then copies them back into app storage itself
@@ -285,7 +317,7 @@ object BackupHelper {
                                             var snippet = ""; var sDate = 0L; var sMine = false; var unread = 0
                                             var pinned = false; var archived = false; var muted = false
                                             var nBlocked = false; var hidden = false; var draft = ""
-                                            var tone = ""; var vibMode = 0
+                                            var tone = ""; var vibMode = 0; var customName = ""
                                             r.beginObject()
                                             while (r.hasNext()) when (r.nextName()) {
                                                 "id" -> id = r.nextLong()
@@ -307,12 +339,14 @@ object BackupHelper {
                                                 "draft" -> draft = r.nextString()
                                                 "customTone" -> tone = r.nextString()
                                                 "vibrateMode" -> vibMode = r.nextInt()
+                                                "customName" -> customName = r.nextString()
                                                 else -> r.skipValue()
                                             }
                                             r.endObject()
                                             convos.add(RConvo(id, ConversationEntity(
                                                 convoKey = key, addresses = addrs, cachedNames = names,
                                                 cachedPhotoUri = photo, isGroup = isGroup, groupMode = mode,
+                                                customName = customName,
                                                 snippet = snippet, snippetDate = sDate, snippetIsMine = sMine,
                                                 unreadCount = unread, pinned = pinned, archived = archived,
                                                 muted = muted, notifBlocked = nBlocked, hidden = hidden, draft = draft,
@@ -329,7 +363,7 @@ object BackupHelper {
                                             var locked = false; var deletedAt: Long? = null; var isMms = false
                                             var subId = -1; var scheduledAt: Long? = null; var blocked = false
                                             var rStatuses = ""; var extracted = true
-                                            var tId: Long? = null; var tMms = false
+                                            var tId: Long? = null; var tMms = false; var dDebug = ""
                                             r.beginObject()
                                             while (r.hasNext()) when (r.nextName()) {
                                                 "id" -> id = r.nextLong()
@@ -347,6 +381,7 @@ object BackupHelper {
                                                 "scheduledAt" -> scheduledAt = r.nextLong()
                                                 "blockedByKeyword" -> blocked = r.nextBoolean()
                                                 "recipientStatuses" -> rStatuses = r.nextString()
+                                                "deliveryDebug" -> dDebug = r.nextString()
                                                 "elementsExtracted" -> extracted = r.nextBoolean()
                                                 "telephonyId" -> tId = r.nextLong()
                                                 "telephonyIsMms" -> tMms = r.nextBoolean()
@@ -358,7 +393,8 @@ object BackupHelper {
                                                 isMine = isMine, status = status, read = read, locked = locked,
                                                 deletedAt = deletedAt, isMms = isMms, subId = subId,
                                                 scheduledAt = scheduledAt, blockedByKeyword = blocked,
-                                                recipientStatuses = rStatuses, elementsExtracted = extracted,
+                                                recipientStatuses = rStatuses, deliveryDebug = dDebug,
+                                                elementsExtracted = extracted,
                                                 telephonyId = tId, telephonyIsMms = tMms
                                             )))
                                         }
@@ -387,6 +423,27 @@ object BackupHelper {
                                         while (r.hasNext()) keywords.add(r.nextString())
                                         r.endArray()
                                     }
+                                    "keywords2" -> {
+                                        r.beginArray()
+                                        while (r.hasNext()) {
+                                            var kw = ""; var kMode = 0; var kNums = ""; var kCase = false
+                                            r.beginObject()
+                                            while (r.hasNext()) when (r.nextName()) {
+                                                "keyword" -> kw = r.nextString()
+                                                "mode" -> kMode = r.nextInt()
+                                                "numbers" -> kNums = r.nextString()
+                                                "caseSensitive" -> kCase = r.nextBoolean()
+                                                else -> r.skipValue()
+                                            }
+                                            r.endObject()
+                                            if (kw.isNotBlank()) keywords2.add(KeywordEntity(
+                                                keyword = kw, mode = kMode, numbers = kNums,
+                                                caseSensitive = kCase
+                                            ))
+                                        }
+                                        r.endArray()
+                                    }
+                                    "broadcastCopies" -> restoredRegistry = r.nextString()
                                     else -> r.skipValue()
                                 }
                             }
@@ -498,7 +555,17 @@ object BackupHelper {
             }
 
             repo.syncSuspended = true
-            val flagged = ArrayList<Triple<Long, Boolean, Boolean>>() // sysId, isMms, locked
+            // app-only knowledge to re-apply after the re-import, keyed by the
+            // system row id each message was written to
+            data class RFlag(
+                val sysId: Long, val isMms: Boolean, val locked: Boolean,
+                val status: Int, val rStatuses: String, val dDebug: String
+            )
+            val flagged = ArrayList<RFlag>()
+            fun needsTracking(e: MessageEntity): Boolean =
+                e.locked || e.recipientStatuses.isNotBlank() || e.deliveryDebug.isNotBlank() ||
+                    e.status == MsgStatus.DELIVERED || e.status == MsgStatus.READ_BY_RECIPIENT ||
+                    e.status == MsgStatus.FAILED
             val scheduledLater = ArrayList<RMsg>()
             val total = messages.size.coerceAtLeast(1)
             var done = 0
@@ -546,19 +613,33 @@ object BackupHelper {
                         val targets = if (e.isMine)
                             e.address.split("|").filter { it.isNotBlank() }.ifEmpty { convoAddrs }
                         else listOf(e.address)
+                        var firstRow = true
                         for (t in targets) {
                             val dupKey = e.date * 31 + e.body.hashCode()
                             if (dupKey in smsSeen) continue
                             smsSeen.add(dupKey)
-                            if (e.locked) {
-                                // locked rows are inserted alone: we need their id back
+                            if (firstRow && needsTracking(e)) {
+                                // rows carrying app-only state (locked, per-
+                                // recipient statuses, delivery trail, a richer
+                                // status than Sent) are inserted alone: their
+                                // id is the key for Phase 3 re-application
                                 val u = resolver.insert(Telephony.Sms.CONTENT_URI, smsValues(t, e))
                                 val sysId = u?.lastPathSegment?.toLongOrNull()
-                                if (sysId != null) flagged.add(Triple(sysId, false, true))
+                                if (sysId != null) flagged.add(RFlag(
+                                    sysId, false, e.locked, e.status,
+                                    e.recipientStatuses, e.deliveryDebug
+                                ))
+                            } else if (e.locked) {
+                                // additional fan-out copies of a locked send:
+                                // each row's re-imported message keeps the lock
+                                val u = resolver.insert(Telephony.Sms.CONTENT_URI, smsValues(t, e))
+                                val sysId = u?.lastPathSegment?.toLongOrNull()
+                                if (sysId != null) flagged.add(RFlag(sysId, false, true, 0, "", ""))
                             } else {
                                 smsBatch.add(smsValues(t, e))
                                 if (smsBatch.size >= 100) flushSmsBatch()
                             }
+                            firstRow = false
                         }
                     } else {
                         val dupKey = (e.date / 1000) * 10 +
@@ -571,7 +652,10 @@ object BackupHelper {
                             reportWriting(done, total)
                         }
                         currentFile = ""
-                        if (sysId != null && e.locked) flagged.add(Triple(sysId, true, true))
+                        if (sysId != null && needsTracking(e)) flagged.add(RFlag(
+                            sysId, true, e.locked, e.status,
+                            e.recipientStatuses, e.deliveryDebug
+                        ))
                     }
                 } catch (_: Exception) {
                     // one bad message must not sink the restore
@@ -592,6 +676,14 @@ object BackupHelper {
                 File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
             } catch (_: Exception) {}
             repo.syncSuspended = false
+            // the copy registry must be live BEFORE the re-import scans the
+            // system store: on a same-phone restore the old fan-out rows are
+            // still there, and without their entries every broadcast copy
+            // becomes a duplicate 1:1 message
+            if (restoredRegistry.isNotBlank()) {
+                io.github.theonionsarewatching.nova.util.BroadcastCopies
+                    .restoreMerge(context, restoredRegistry)
+            }
             val rebuilding = context.getString(
                 io.github.theonionsarewatching.nova.R.string.restore_rebuilding)
             repo.importFromTelephony { pct -> progress.report(50 + pct * 45 / 100, rebuilding) }
@@ -599,10 +691,24 @@ object BackupHelper {
             // ---- Phase 3: re-apply what only the app knows ----
             progress.report(95, context.getString(
                 io.github.theonionsarewatching.nova.R.string.restore_finishing))
-            for ((sysId, isMms, locked) in flagged) {
-                if (!locked) continue
-                repo.db.messages().byTelephonyId(sysId, isMms)?.let {
-                    repo.db.messages().setLocked(it.id, true)
+            for (f in flagged) {
+                val row = repo.db.messages().byTelephonyId(f.sysId, f.isMms) ?: continue
+                if (f.locked) repo.db.messages().setLocked(row.id, true)
+                if (f.rStatuses.isNotBlank()) {
+                    repo.db.messages().setRecipientStatuses(row.id, f.rStatuses)
+                }
+                if (f.dDebug.isNotBlank() && row.deliveryDebug.isBlank()) {
+                    repo.db.messages().appendDeliveryDebug(row.id, f.dDebug)
+                }
+                // the re-import derives Sent from the system box; lift it back
+                // to the richer state the backup knew (Delivered / Read /
+                // Failed) — only upward from Sent, never stomping anything
+                // the re-import itself learned
+                if (row.isMine && row.status == MsgStatus.SENT && f.status in intArrayOf(
+                        MsgStatus.DELIVERED, MsgStatus.READ_BY_RECIPIENT, MsgStatus.FAILED
+                    )
+                ) {
+                    repo.db.messages().setStatus(row.id, f.status)
                 }
             }
             for (m in scheduledLater) {
@@ -623,6 +729,9 @@ object BackupHelper {
                 val key = PhoneUtils.convoKey(addrs)
                 val target = repo.db.conversations().byKey(key) ?: continue
                 val e = c.entity
+                if (e.customName.isNotBlank()) {
+                    repo.db.conversations().setCustomName(target.id, e.customName)
+                }
                 if (e.pinned || e.archived || e.muted || e.notifBlocked || e.hidden ||
                     e.draft.isNotBlank() || e.customTone.isNotBlank() || e.vibrateMode != 0 ||
                     e.groupMode != target.groupMode
@@ -633,7 +742,14 @@ object BackupHelper {
                     )
                 }
             }
-            for (k in keywords) repo.db.keywords().insert(KeywordEntity(keyword = k))
+            if (keywords2.isNotEmpty()) {
+                // v2 backups carry the full entities (sender scope, listed
+                // numbers, case sensitivity); the plain-string list is only
+                // there for OLD app versions reading this backup
+                for (k in keywords2) repo.db.keywords().insert(k)
+            } else {
+                for (k in keywords) repo.db.keywords().insert(KeywordEntity(keyword = k))
+            }
 
             tempDir.deleteRecursively()
             repo.rescheduleAllAlarms()

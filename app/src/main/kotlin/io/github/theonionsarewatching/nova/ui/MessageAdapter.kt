@@ -183,7 +183,9 @@ class MessageAdapter(
                 val barColor = if (m.isMine) accent else Color.GRAY
                 val tail = dp(6); val barW = dp(4); val gap = dp(7)
                 val card = GradientDrawable().apply {
-                    cornerRadius = dp(6).toFloat()
+                    // fully square: the bar is a hard rectangle, and rounded card
+                    // corners next to it read as a mistake (user-reported)
+                    cornerRadius = 0f
                     setColor(cardColor(ctx))
                 }
                 // the white card must begin at the bar, not extend out under

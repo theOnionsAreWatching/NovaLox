@@ -36,6 +36,10 @@ object Dialogs {
             setText(text)
             textSize = 17f
             setTypeface(typeface, Typeface.BOLD)
+            // capped at two lines everywhere — a big group's member list must
+            // not swallow the screen (same rule as the list's options header)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(22), dp(18), dp(22), dp(12))
         }
         val line = View(activity).apply {
@@ -63,12 +67,16 @@ object GroupParticipants {
                 activity.getString(R.string.participants_title, addresses.size)))
             .setItems(labels.toTypedArray()) { _, which ->
                 val addr = addresses[which]
+                // email participants can't be dialed — no Call row for them
+                val actions = if (addr.contains("@"))
+                    arrayOf(activity.getString(R.string.message_privately))
+                else arrayOf(
+                    activity.getString(R.string.message_privately),
+                    activity.getString(R.string.call)
+                )
                 androidx.appcompat.app.AlertDialog.Builder(activity)
                     .setTitle(labels[which])
-                    .setItems(arrayOf(
-                        activity.getString(R.string.message_privately),
-                        activity.getString(R.string.call)
-                    )) { _, action ->
+                    .setItems(actions) { _, action ->
                         when (action) {
                             0 -> activity.lifecycleScope.launch {
                                 val c = io.github.theonionsarewatching.nova.data.Repo

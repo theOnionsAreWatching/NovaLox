@@ -539,6 +539,20 @@ class SettingsActivity : BaseActivity() {
             super.onResume()
             updateAccentSummary()
             updateToneSummary()
+            // "Save to SD card" is only selectable while a card is mounted;
+            // re-checked here so inserting/removing a card takes effect on
+            // return without reopening settings. The pref VALUE is left alone —
+            // the save path falls back to phone storage when the card is gone
+            // and resumes SD saving when it comes back.
+            findPreference<androidx.preference.SwitchPreferenceCompat>("save_to_sd")?.apply {
+                val present = io.github.theonionsarewatching.nova.ui.Saver
+                    .sdCardPresent(requireContext())
+                isEnabled = present
+                summary = getString(
+                    if (present) R.string.pref_save_to_sd_summary
+                    else R.string.pref_save_to_sd_none
+                )
+            }
         }
 
         override fun onPause() {

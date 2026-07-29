@@ -56,10 +56,14 @@ object Sender {
             // an unowned outgoing SMS and ingests a duplicate (this is the SMS
             // retry-duplicate: the MMS path links, the SMS path never did).
             try {
+                // the registry stores this date next to the row id — a match
+                // later requires BOTH, so a recycled row id can't be mistaken
+                // for this copy (see BroadcastCopies)
+                val rowDate = System.currentTimeMillis()
                 val values = ContentValues().apply {
                     put(Telephony.Sms.ADDRESS, dest)
                     put(Telephony.Sms.BODY, text)
-                    put(Telephony.Sms.DATE, System.currentTimeMillis())
+                    put(Telephony.Sms.DATE, rowDate)
                     put(Telephony.Sms.READ, 1)
                     put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
                 }
@@ -81,7 +85,7 @@ object Sender {
                             // a fan-out copy (broadcast / group SMS): register it
                             // so no ingest route duplicates it into a 1:1 thread
                             io.github.theonionsarewatching.nova.util.BroadcastCopies
-                                .recordSms(context, tid, messageId)
+                                .recordSms(context, tid, messageId, rowDate)
                             io.github.theonionsarewatching.nova.util.DiagLog.log(
                                 context, "sms-send",
                                 "row -> $dest tid=$tid registered as fan-out copy of msg=$messageId"

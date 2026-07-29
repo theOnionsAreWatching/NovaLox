@@ -411,6 +411,11 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
      *  and acting on UP means the dialog only exists after the keypress is
      *  fully over. */
     fun handleKey(event: KeyEvent): Boolean {
+        // softkeys act ONLY while the bar is shown. With the bar off the
+        // physical keys used to keep firing their invisible actions (right
+        // softkey silently sent) — user-reported as wrong. The capture screen
+        // is unaffected: it reads raw key events in its own dispatch.
+        if (!shouldShow()) return false
         if (!codeMatches(event.keyCode)) return false
         if (event.action != KeyEvent.ACTION_UP) return true
         when (event.keyCode) {

@@ -1184,8 +1184,11 @@ class Repo private constructor(private val context: Context) {
         val asGroupMms = hasEmail || asLongMms ||
             (convo.isGroup && convo.groupMode == GroupMode.GROUP_MMS)
         val now = System.currentTimeMillis()
+        // every GROUP send gets the per-recipient map — group-MMS included,
+        // so its details list recipients and its meta line can count
+        // "Delivered to N · Read by N" exactly like broadcast
         val initialStatuses =
-            if (convo.isGroup && !asGroupMms)
+            if (convo.isGroup)
                 addresses.joinToString(",") { "${PhoneUtils.normalize(it)}=${MsgStatus.SENDING}" }
             else ""
         val msg = MessageEntity(
@@ -1216,7 +1219,10 @@ class Repo private constructor(private val context: Context) {
         val now = System.currentTimeMillis()
         val msg = MessageEntity(
             convoId = convoId, address = addresses.joinToString("|"), body = text, date = now,
-            isMine = true, status = MsgStatus.SENDING, isMms = true
+            isMine = true, status = MsgStatus.SENDING, isMms = true,
+            recipientStatuses = if (convo.isGroup)
+                addresses.joinToString(",") { "${PhoneUtils.normalize(it)}=${MsgStatus.SENDING}" }
+            else ""
         )
         val id = db.messages().insert(msg)
         for ((path, mime, name) in attachments) {
@@ -1569,7 +1575,12 @@ class Repo private constructor(private val context: Context) {
             // the indication's TO address row, so the meta line can say
             // "Delivered to X \u00b7 Read by Y"
             try {
-                if (viaBroadcast || m.address.contains(",") || m.address.contains(";")) {
+                // group addresses are PIPE-joined ("a|b|c") — the old comma/
+                // semicolon test never matched them, which is why group-MMS
+                // messages showed a single status while broadcast showed
+                // per-recipient counts (user-reported)
+                if (viaBroadcast || m.address.contains("|") ||
+                    m.address.contains(",") || m.address.contains(";")) {
                     var who: String? = null
                     context.contentResolver.query(
                         Uri.parse("content://mms/$indId/addr"),
@@ -1666,6 +1677,23 @@ class Repo private constructor(private val context: Context) {
             // recognizes it as ours (closes the duplicate window from this side too)
             if (telephonyId != null && m.telephonyId == null) {
                 db.messages().setTelephonyId(m.id, telephonyId, true)
+            }
+            // group send confirmed: advance the per-recipient map's SENDING
+            // entries to SENT so details don't read "Sending…" forever. STRING
+            // rewrite on purpose — parseStatuses/encodeStatuses turn the D/R
+            // letter marks from MMS reports into 0 and must not touch this
+            // field once letters can be present.
+            if (ok && m.recipientStatuses.isNotBlank()) {
+                val sending = "${MsgStatus.SENDING}"
+                val rewritten = m.recipientStatuses.split(",").joinToString(",") { e ->
+                    val idx = e.lastIndexOf('=')
+                    if (idx > 0 && e.substring(idx + 1) == sending)
+                        e.substring(0, idx + 1) + MsgStatus.SENT
+                    else e
+                }
+                if (rewritten != m.recipientStatuses) {
+                    db.messages().setRecipientStatuses(messageId, rewritten)
+                }
             }
             refreshAndPing(m.convoId)
         }
@@ -2037,11 +2065,11 @@ class Repo private constructor(private val context: Context) {
                     if (done % 50 == 0) onProgress(done * 100 / total)
                     val tId = c.getLong(0)
                     if (db.messages().existsByTelephonyId(tId, false)) continue
-                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
-                            .isSmsCopy(context, tId)) continue
                     val address = c.getString(1) ?: continue
                     val body = c.getString(2) ?: ""
                     val date = c.getLong(3)
+                    if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                            .isSmsCopy(context, tId, date)) continue
                     val type = c.getInt(4)
                     val read = c.getInt(5) == 1
                     val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
@@ -2119,11 +2147,11 @@ class Repo private constructor(private val context: Context) {
                     while (c.moveToNext()) {
                         val tId = c.getLong(0)
                         if (db.messages().existsByTelephonyId(tId, false)) continue
-                        if (io.github.theonionsarewatching.nova.util.BroadcastCopies
-                                .isSmsCopy(context, tId)) continue
                         val address = c.getString(1) ?: continue
                         val body = c.getString(2) ?: ""
                         val date = c.getLong(3)
+                        if (io.github.theonionsarewatching.nova.util.BroadcastCopies
+                                .isSmsCopy(context, tId, date)) continue
                         val type = c.getInt(4)
                         val isMine = type != Telephony.Sms.MESSAGE_TYPE_INBOX
                         // GROUP-SMS DUPLICATE RACE: Sender inserts the provider

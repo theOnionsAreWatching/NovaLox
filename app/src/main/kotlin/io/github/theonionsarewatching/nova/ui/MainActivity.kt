@@ -476,40 +476,6 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     /** Mute / notification block / sound & vibration / number block, out of
      *  the main long-press list into one place. */
     /** Mirrors the thread's group-mode picker, incl. the system line rules. */
-    private fun pickGroupModeMain(c: ConversationEntity) {
-        val gm = io.github.theonionsarewatching.nova.data.GroupMode
-        val labels = arrayOf(getString(R.string.mode_broadcast), getString(R.string.mode_group_mms))
-        val current = if (c.groupMode == gm.GROUP_MMS) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle(R.string.group_send_mode)
-            .setSingleChoiceItems(labels, current) { d, which ->
-                d.dismiss()
-                val newMode = if (which == 1) gm.GROUP_MMS else gm.BROADCAST
-                if (newMode == c.groupMode) return@setSingleChoiceItems
-                lifecycleScope.launch {
-                    repo.db.conversations().setGroupMode(c.id, newMode)
-                    val newestMsg = repo.db.messages().newest(c.id)
-                    if (newestMsg != null &&
-                        newestMsg.address == MessageRow.SYSTEM_ADDRESS
-                    ) {
-                        repo.db.messages().hardDelete(newestMsg.id)
-                    } else repo.db.messages().insert(
-                        io.github.theonionsarewatching.nova.data.MessageEntity(
-                            convoId = c.id, address = MessageRow.SYSTEM_ADDRESS,
-                            body = getString(
-                                if (newMode == gm.GROUP_MMS) R.string.switched_group_mms
-                                else R.string.switched_broadcast
-                            ),
-                            date = System.currentTimeMillis(), isMine = false,
-                            status = io.github.theonionsarewatching.nova.data.MsgStatus.RECEIVED,
-                            read = true, elementsExtracted = true
-                        )
-                    )
-                    ChangeBus.ping()
-                }
-            }
-            .show()
-    }
 
     /** Same grouping as the thread's options menu. */
     private fun blockAndMenu(c: ConversationEntity) {
@@ -521,11 +487,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         else getString(R.string.block_notifications)) to {
             lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
         }
-        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
-            lifecycleScope.launch {
-                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
-            }
-        }
+        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
         items += getString(R.string.hide_conversation) to {
             AlertDialog.Builder(this)
                 .setMessage(R.string.hide_confirm)
@@ -575,7 +537,6 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     /** Same grouping as the thread's options menu. */
     private fun customizeMenu(c: ConversationEntity) {
         val items = arrayListOf<Pair<String, () -> Unit>>(
-            getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) },
             getString(R.string.chat_background) to {
                 bgTargetConvoId = c.id
                 io.github.theonionsarewatching.nova.ui.ChatBackground.show(this, prefs, c.id, this)
@@ -719,15 +680,20 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         .setTitle(number)
                         .setItems(labels) { _, which ->
                             try {
+                                // an email thread's address belongs in the
+                                // contact's EMAIL field, not the number field
+                                val field = if (number.contains("@"))
+                                    android.provider.ContactsContract.Intents.Insert.EMAIL
+                                else android.provider.ContactsContract.Intents.Insert.PHONE
                                 if (which == 0) {
                                     startActivity(Intent(Intent.ACTION_INSERT).apply {
                                         type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
-                                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                                        putExtra(field, number)
                                     })
                                 } else {
                                     startActivity(Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
                                         type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
-                                        putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                                        putExtra(field, number)
                                     })
                                 }
                             } catch (_: Exception) {}
@@ -745,8 +711,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         items += (if (c.pinned) getString(R.string.unpin) else getString(R.string.pin)) to {
             lifecycleScope.launch { repo.db.conversations().setPinned(c.id, !c.pinned); ChangeBus.ping() }
         }
-        if (c.isGroup) {
-            items += getString(R.string.group_send_mode) to { pickGroupModeMain(c) }
+        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
+            lifecycleScope.launch {
+                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
+            }
         }
         items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
         items += getString(R.string.customize_menu) to { customizeMenu(c) }
@@ -754,6 +722,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             items += getString(R.string.participants_title, c.addressList().size) to {
                 GroupParticipants.show(this, c)
             }
+        }
+        items += getString(R.string.view_media) to {
+            startActivity(Intent(this, MediaViewerActivity::class.java)
+                .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, c.id))
         }
         items += getString(R.string.schedule_send) to { scheduleForConvo(c) }
         items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }

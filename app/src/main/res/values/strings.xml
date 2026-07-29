@@ -46,7 +46,7 @@
     <string name="pin">Pin</string>
     <string name="unpin">Unpin</string>
     <string name="archive">Archive</string>
-    <string name="block_and_menu">Blocking</string>
+    <string name="block_and_menu">Notifications</string>
     <string name="customize_menu">Customize</string>
     <string name="subtitle_broadcast">Broadcast</string>
     <string name="subtitle_group">Group message</string>
@@ -54,8 +54,12 @@
     <string name="zoom">Zoom</string>
     <string name="zoom_out_label">*</string>
     <string name="zoom_in_label">#</string>
-    <string name="pref_dpad_center_send">D-pad center sends</string>
-    <string name="pref_dpad_center_send_summary">When the cursor is in the message box, pressing the center D-pad key sends the message</string>
+    <string name="pref_save_to_sd">Save to SD card</string>
+    <string name="pref_save_to_sd_summary">Saved attachments go to the SD card. When no SD card is present they go to phone storage</string>
+    <string name="pref_save_to_sd_none">No SD card detected</string>
+    <string name="saved_to_sd">SD card (%1$s)</string>
+    <string name="pref_send_on_left">Send on the left</string>
+    <string name="pref_send_on_left_summary">Left softkey sends. With the softkey bar off, the Send and + buttons sit to the left of the message box, reachable with the left arrow. For keyboards that use the right arrow as Space</string>
     <string name="pref_t9_match">Number keys find names</string>
     <string name="pref_t9_match_summary">When adding recipients, typed digits also match names by their keypad letters — 2 finds A, B, or C; 3 finds D, E, or F, and so on</string>
     <string name="block_number_warning">Block this number? You won\u2019t receive any messages or calls in this app from them while blocked.</string>

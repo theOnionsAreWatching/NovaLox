@@ -17,6 +17,7 @@ import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.databinding.ActivityComposeBinding
 import io.github.theonionsarewatching.nova.databinding.ItemSuggestionBinding
 import io.github.theonionsarewatching.nova.util.ContactsHelper
+import io.github.theonionsarewatching.nova.util.Prefs
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -696,16 +697,28 @@ class ComposeActivity : BaseActivity() {
     }
 
     private fun updateComposeSoftkeys(sk: Softkeys? = softkeys) {
-        val leftLabel = if (clipboardText().isNullOrBlank())
+        val attachLabel = if (clipboardText().isNullOrBlank())
             getString(R.string.softkey_attach) else getString(R.string.softkey_options)
-        sk?.set(
-            leftLabel, null, getString(R.string.softkey_send),
-            onLeft = { AttachOrPaste.open(this, binding.bodyInput,
-                onAttach = { pickAttachment() },
-                onRecord = { recordAudioAttachment() }) },
-            onCenter = null,
-            onRight = { start() }
-        )
+        val attachAction = { AttachOrPaste.open(this, binding.bodyInput,
+            onAttach = { pickAttachment() },
+            onRecord = { recordAudioAttachment() }) }
+        if (Prefs.get(this).sendOnLeft) {
+            // send-on-left: mirrored — Send on the left softkey, attach on the
+            // right; the on-screen + also remains next to the schedule button
+            sk?.set(
+                getString(R.string.softkey_send), null, attachLabel,
+                onLeft = { start() },
+                onCenter = null,
+                onRight = attachAction
+            )
+        } else {
+            sk?.set(
+                attachLabel, null, getString(R.string.softkey_send),
+                onLeft = attachAction,
+                onCenter = null,
+                onRight = { start() }
+            )
+        }
     }
 
     override fun onClipboardChanged() {

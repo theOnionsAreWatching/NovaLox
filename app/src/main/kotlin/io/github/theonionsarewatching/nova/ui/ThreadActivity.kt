@@ -154,16 +154,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         })
 
         softkeys = Softkeys(this, binding.softkeyBar)
-        if (softkeys?.shouldShow() == true) {
-            binding.btnAttach.visibility = View.GONE
-            binding.btnSend.visibility = View.GONE
-        }
+        applyComposeButtonLayout()
         // On phones whose keyboard steals the right D-pad as Space (e.g. Kyocera
         // E4810) the user can't reach the on-screen Send button, and if the
         // softkey bar is off there's no softkey Send either. So when softkeys
-        // are off, D-pad center sends while the compose box has focus, and a
-        // small "Send" hint bar appears so it's discoverable — only while the
-        // box is focused.
+        // are off, D-pad center sends while the compose box has focus.
         binding.composeInput.setOnFocusChangeListener { _, _ ->
             updateSendHint(); updateCharCounter()
         }
@@ -258,9 +253,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 updateNotifStatusIcon(it)
             }
         }
-        val barShown = softkeys?.shouldShow() == true
-        binding.btnAttach.visibility = if (barShown) View.GONE else View.VISIBLE
-        binding.btnSend.visibility = if (barShown) View.GONE else View.VISIBLE
+        applyComposeButtonLayout()
         updateSoftkeys()
         markRead()
         // color / style / thumbnail settings can change while a settings screen
@@ -674,21 +667,75 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
+    /** Compose-bar buttons for the current mode:
+     *  - bar ON, normal: both on-screen buttons hidden (softkeys carry them)
+     *  - bar ON, send-on-left: the + stays on screen at the left (attach /
+     *    record / paste); Send lives on the LEFT softkey
+     *  - bar OFF, normal: [ + ] [ box ] [ send ]
+     *  - bar OFF, send-on-left: [ + ] [ send ] [ box ] with an explicit
+     *    left-arrow focus chain box -> Send -> +, for keyboards that consume
+     *    the right D-pad as Space (no escape to the right of the box). */
+    private fun applyComposeButtonLayout() {
+        val barShown = softkeys?.shouldShow() == true
+        val sol = prefs.sendOnLeft
+        binding.btnAttach.visibility = if (barShown && !sol) View.GONE else View.VISIBLE
+        binding.btnSend.visibility = if (barShown) View.GONE else View.VISIBLE
+        val bar = binding.composeBar
+        val frame = binding.composeInput.parent as View
+        val wantSendFirst = sol && !barShown
+        val isSendFirst = bar.indexOfChild(binding.btnSend) in 0 until bar.indexOfChild(frame)
+        if (wantSendFirst != isSendFirst) {
+            bar.removeView(binding.btnAttach)
+            bar.removeView(binding.btnSend)
+            if (wantSendFirst) {
+                bar.addView(binding.btnSend, 0)
+                bar.addView(binding.btnAttach, 0)
+            } else {
+                bar.addView(binding.btnAttach, 0)
+                bar.addView(binding.btnSend)
+            }
+        }
+        if (wantSendFirst) {
+            binding.composeInput.nextFocusLeftId = binding.btnSend.id
+            binding.btnSend.nextFocusLeftId = binding.btnAttach.id
+            binding.btnSend.nextFocusRightId = binding.composeInput.id
+            binding.btnAttach.nextFocusRightId = binding.btnSend.id
+        } else {
+            binding.composeInput.nextFocusLeftId = View.NO_ID
+            binding.btnSend.nextFocusLeftId = View.NO_ID
+            binding.btnSend.nextFocusRightId = View.NO_ID
+            binding.btnAttach.nextFocusRightId = View.NO_ID
+        }
+    }
+
     /** Compose mode: Attach | Send on the softkeys. Scroll mode: Options | Select | Compose. */
     private fun updateSoftkeys() {
         if (selecting) { updateSelectionUi(); return }
         if (composeMode) {
-            val leftLabel = if (clipboardText().isNullOrBlank())
-                getString(R.string.softkey_attach) else getString(R.string.softkey_options)
-            softkeys?.set(
-                leftLabel, null, getString(R.string.softkey_send),
-                onLeft = { AttachOrPaste.open(this, binding.composeInput,
-                    onAttach = { pickAttachment() },
-                    onRecord = { recordAudioAttachment() }) },
-                onCenter = null,
-                onRight = { send() },
-                onMenu = { threadOptions() }
-            )
+            if (prefs.sendOnLeft) {
+                // send-on-left: Send is the LEFT softkey, the right stays
+                // blank (its action is null so the physical key is inert), and
+                // attach/record/paste live on the on-screen + button
+                softkeys?.set(
+                    getString(R.string.softkey_send), null, null,
+                    onLeft = { send() },
+                    onCenter = null,
+                    onRight = null,
+                    onMenu = { threadOptions() }
+                )
+            } else {
+                val leftLabel = if (clipboardText().isNullOrBlank())
+                    getString(R.string.softkey_attach) else getString(R.string.softkey_options)
+                softkeys?.set(
+                    leftLabel, null, getString(R.string.softkey_send),
+                    onLeft = { AttachOrPaste.open(this, binding.composeInput,
+                        onAttach = { pickAttachment() },
+                        onRecord = { recordAudioAttachment() }) },
+                    onCenter = null,
+                    onRight = { send() },
+                    onMenu = { threadOptions() }
+                )
+            }
         } else {
             // scroll mode: the center opens the focused message; it is NOT the
             // selection action (that's entered by long-press / hold), so it must
@@ -703,12 +750,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
-    /** The "Send" hint bar + D-pad-center-sends behavior exist only when the
-     *  softkey bar is off (otherwise the softkey Send covers it) and the
-     *  compose box is focused. */
+    /** D-pad-center sends only when the softkey bar is off (otherwise a
+     *  softkey Send exists) and the compose box is focused. The on-screen
+     *  "Send" hint bar this used to drive is gone (user request) — the
+     *  BEHAVIOR stays as the escape hatch for keyboards that eat the right
+     *  D-pad as Space. */
     private fun sendHintActive(): Boolean =
-        (softkeys?.shouldShow() != true || prefs.dpadCenterSend) &&
-            binding.composeInput.hasFocus()
+        softkeys?.shouldShow() != true && binding.composeInput.hasFocus()
 
     /** chars-over-segments counter in the corner of the compose box */
     private fun updateCharCounter() {
@@ -728,7 +776,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun updateSendHint() {
-        binding.sendHintBar.visibility = if (sendHintActive()) View.VISIBLE else View.GONE
         // when the softkeys are D-pad selectable and in compose mode, the right
         // slot is Send — make D-pad-down from the text box land there first,
         // instead of Android's default nearest pick (the attach slot on the left)
@@ -1625,8 +1672,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
-
-
     override fun applyBackgroundForCurrent() { applyChatBackground() }
 
     override fun startPicturePickerForBackground(convoId: Long) {
@@ -1658,22 +1703,56 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun threadOptions() {
         val c = convo ?: return
         val items = ArrayList<Pair<String, () -> Unit>>()
+        // SAME item set and order as the list's long-press menu (user rule:
+        // the two menus mirror each other) — except list-only actions like
+        // "Select conversations", which have no meaning inside a thread.
         if (!c.isGroup) {
-            if (!c.addressList().first().contains("@"))
+            val addr = c.addressList().firstOrNull().orEmpty()
+            if (!addr.contains("@"))
                 items += getString(R.string.call_contact, c.displayTitle()) to {
                 try {
-                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
+                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$addr")))
                 } catch (_: Exception) {}
+            }
+            val lookupUri = io.github.theonionsarewatching.nova.util.ContactsHelper
+                .lookupContactUri(this, addr)
+            if (lookupUri != null) {
+                items += getString(R.string.view_contact) to {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, lookupUri)) } catch (_: Exception) {}
+                }
+            } else if (addr.isNotBlank()) {
+                items += getString(R.string.add_to_contacts) to { addToContactsDialog(addr) }
             }
         }
         if (c.isGroup) {
-            items += getString(R.string.group_send_mode) to { pickGroupMode(c) }
+            items += getString(
+                if (c.customName.isBlank()) R.string.name_group else R.string.rename_group
+            ) to { nameGroupDialog(c) }
         }
-        items += getString(R.string.schedule_send) to { scheduleSend() }
+        items += (if (c.pinned) getString(R.string.unpin) else getString(R.string.pin)) to {
+            lifecycleScope.launch {
+                repo.db.conversations().setPinned(c.id, !c.pinned); ChangeBus.ping()
+                refreshConvoState()
+            }
+        }
+        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
+            lifecycleScope.launch {
+                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
+                refreshConvoState()
+            }
+        }
+        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
+        items += getString(R.string.customize_menu) to { customizeMenu() }
+        if (c.isGroup) {
+            items += getString(R.string.participants_title, c.addressList().size) to {
+                GroupParticipants.show(this, c)
+            }
+        }
         items += getString(R.string.view_media) to {
             startActivity(Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, convoId))
         }
+        items += getString(R.string.schedule_send) to { scheduleSend() }
         items += getString(R.string.mark_unread) to {
             lifecycleScope.launch {
                 repo.db.messages().newest(convoId)?.let { repo.db.messages().setRead(it.id, false) }
@@ -1682,18 +1761,71 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 finish()
             }
         }
-        if (c.isGroup) {
-            items += getString(R.string.participants_title, c.addressList().size) to {
-                GroupParticipants.show(this, c)
-            }
-        }
-        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
-        items += getString(R.string.customize_menu) to { customizeMenu() }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
         AlertDialog.Builder(this)
             .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .show()
+    }
+
+    /** Same dialog as the list menu: name or rename a group. */
+    private fun nameGroupDialog(c: ConversationEntity) {
+        val input = android.widget.EditText(this).apply {
+            setText(c.customName)
+            hint = getString(R.string.name_group_hint)
+            setSingleLine(true)
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0); addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.name_group)
+            .setView(wrap)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = input.text?.toString()?.trim().orEmpty()
+                lifecycleScope.launch {
+                    repo.db.conversations().setCustomName(c.id, name)
+                    refreshConvoState()
+                    ChangeBus.ping()
+                }
+                Toast.makeText(this,
+                    if (name.isBlank()) R.string.group_name_removed else R.string.group_name_set,
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Same dialog as the list menu: create-new or add-to-existing; email
+     *  addresses land in the contact's EMAIL field, not the number field. */
+    private fun addToContactsDialog(address: String) {
+        val labels = arrayOf(
+            getString(R.string.contact_create_new),
+            getString(R.string.contact_add_existing)
+        )
+        val field = if (address.contains("@"))
+            android.provider.ContactsContract.Intents.Insert.EMAIL
+        else android.provider.ContactsContract.Intents.Insert.PHONE
+        AlertDialog.Builder(this)
+            .setTitle(address)
+            .setItems(labels) { _, which ->
+                try {
+                    if (which == 0) {
+                        startActivity(Intent(Intent.ACTION_INSERT).apply {
+                            type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
+                            putExtra(field, address)
+                        })
+                    } else {
+                        startActivity(Intent(Intent.ACTION_INSERT_OR_EDIT).apply {
+                            type = android.provider.ContactsContract.Contacts.CONTENT_ITEM_TYPE
+                            putExtra(field, address)
+                        })
+                    }
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -1707,11 +1839,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         else getString(R.string.block_notifications)) to {
             lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); refreshConvoState() }
         }
-        items += (if (c.archived) getString(R.string.unarchive) else getString(R.string.archive)) to {
-            lifecycleScope.launch {
-                repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
-            }
-        }
+        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
         items += getString(R.string.hide_conversation) to {
             AlertDialog.Builder(this)
                 .setMessage(R.string.hide_confirm)
@@ -1763,7 +1891,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Sound, background, style and colors for this look. */
     private fun customizeMenu() {
         val items = arrayListOf<Pair<String, () -> Unit>>(
-            getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) },
             getString(R.string.chat_background) to {
                 io.github.theonionsarewatching.nova.ui.ChatBackground
                     .show(this, prefs, convoId, this)
@@ -1855,41 +1982,6 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
-    private fun pickGroupMode(c: ConversationEntity) {
-        val labels = arrayOf(getString(R.string.mode_broadcast), getString(R.string.mode_group_mms))
-        val current = if (c.groupMode == GroupMode.GROUP_MMS) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle(R.string.group_send_mode)
-            .setSingleChoiceItems(labels, current) { d, which ->
-                d.dismiss()
-                val newMode = if (which == 1) GroupMode.GROUP_MMS else GroupMode.BROADCAST
-                if (newMode == c.groupMode) return@setSingleChoiceItems
-                lifecycleScope.launch {
-                    repo.db.conversations().setGroupMode(convoId, newMode)
-                    convo = repo.db.conversations().byId(convoId)
-                    // system line noting the switch. If the newest thing in
-                    // the thread is already a switch line, this toggle merely
-                    // cancels it — the mode went back with no messages sent in
-                    // between, so remove the line instead of stacking another.
-                    val newestMsg = repo.db.messages().newest(convoId)
-                    if (newestMsg != null && newestMsg.address == MessageRow.SYSTEM_ADDRESS) {
-                        repo.db.messages().hardDelete(newestMsg.id)
-                    } else repo.db.messages().insert(
-                        MessageEntity(
-                            convoId = convoId, address = MessageRow.SYSTEM_ADDRESS,
-                            body = getString(
-                                if (newMode == GroupMode.GROUP_MMS) R.string.switched_group_mms
-                                else R.string.switched_broadcast
-                            ),
-                            date = System.currentTimeMillis(), isMine = false,
-                            status = MsgStatus.RECEIVED, read = true, elementsExtracted = true
-                        )
-                    )
-                    ChangeBus.ping()
-                }
-            }
-            .show()
-    }
 
     private fun scheduleSend() {
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()

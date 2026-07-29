@@ -82,6 +82,13 @@
             android:entryValues="@array/group_mode_values"
             android:defaultValue="group_mms"
             android:summary="%s" />
+        <SwitchPreferenceCompat
+            app:singleLineTitle="false"
+            app:iconSpaceReserved="false"
+            android:key="save_to_sd"
+            android:title="@string/pref_save_to_sd"
+            android:summary="@string/pref_save_to_sd_summary"
+            android:defaultValue="false" />
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_mms_advanced"
