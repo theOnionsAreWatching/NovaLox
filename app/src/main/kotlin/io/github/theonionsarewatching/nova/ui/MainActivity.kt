@@ -114,6 +114,9 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     override fun onResume() {
         super.onResume()
+        // failed sends parked as "retry when service returns" also get a
+        // chance whenever the user comes back to the app
+        io.github.theonionsarewatching.nova.util.AutoRetry.sweep(this)
         // arriving at the conversation list dismisses everything by default;
         // the other mode clears each thread's notification only when opened
         if (prefs.notifClearMode == "app") {
@@ -327,17 +330,23 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             }
             val release = (result as? io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpdateAvailable)?.release
             if (release != null && release.tag == prefs.lastNotifiedUpdateTag) return@launch
-            if (release != null) prefs.lastNotifiedUpdateTag = release.tag
             if (release != null && !isFinishing) {
+                // the "asked already" flag is written in the BUTTONS, not
+                // before showing: a prompt that dies without interaction
+                // (rotation, backgrounding) asks again next launch, and
+                // "Later" silences THIS version until a newer tag appears
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(getString(R.string.update_available, release.tag))
                     .setMessage(R.string.update_prompt)
                     .setPositiveButton(R.string.download) { _, _ ->
+                        prefs.lastNotifiedUpdateTag = release.tag
                         io.github.theonionsarewatching.nova.util.UpdateChecker.download(this@MainActivity, release)
                         android.widget.Toast.makeText(this@MainActivity, R.string.update_downloading,
                             android.widget.Toast.LENGTH_LONG).show()
                     }
-                    .setNegativeButton(R.string.later, null)
+                    .setNegativeButton(R.string.later) { _, _ ->
+                        prefs.lastNotifiedUpdateTag = release.tag
+                    }
                     .show()
             }
         }

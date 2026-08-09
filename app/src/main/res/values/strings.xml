@@ -54,6 +54,9 @@
     <string name="zoom">Zoom</string>
     <string name="zoom_out_label">*</string>
     <string name="zoom_in_label">#</string>
+    <string name="retry_on_service">Retry when service returns</string>
+    <string name="retry_on_service_armed">Will retry when service is back</string>
+    <string name="detail_sent_at">Sent (sender\u2019s time)</string>
     <string name="pref_save_to_sd">Save to SD card</string>
     <string name="pref_save_to_sd_summary">Saved attachments go to the SD card. When no SD card is present they go to phone storage</string>
     <string name="pref_save_to_sd_none">No SD card detected</string>

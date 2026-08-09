@@ -1597,7 +1597,7 @@ class Repo private constructor(private val context: Context) {
             // that was never delivered.
             val delivered = st == 129 || isRead
 
-            db.messages().appendDeliveryDebug(
+            appendDeliveryDebugCapped(
                 m.id,
                 if (mType == 136)
                     "[$stamp] MMS read report (read_status=$readStatus) -> read\n"
@@ -1627,13 +1627,41 @@ class Repo private constructor(private val context: Context) {
                 // per-recipient counts (user-reported)
                 if (viaBroadcast || m.address.contains("|") ||
                     m.address.contains(",") || m.address.contains(";")) {
-                    var who: String? = null
+                    // WHO the notice is about depends on the PDU type
+                    // (OMA-MMS-ENC): a DELIVERY-ind's To (151) is the
+                    // recipient it reports on, but a READ-ORIG-ind's To is
+                    // the ORIGINAL SENDER — us. The reader is its From (137).
+                    // Reading 151 for both keyed every read mark to our own
+                    // number: displayed as the wrong number before 0.9.99,
+                    // and silently filtered out after it ("sometimes doesn't
+                    // show read"). Same path serves group AND broadcast MMS.
+                    var to151: String? = null
+                    var from137: String? = null
                     context.contentResolver.query(
                         Uri.parse("content://mms/$indId/addr"),
                         arrayOf("address", "type"), null, null, null
                     )?.use { c ->
                         while (c.moveToNext()) {
-                            if (c.getInt(1) == 151) { who = c.getString(0); break }
+                            val a = c.getString(0)
+                            if (a.isNullOrBlank() || a == "insert-address-token") continue
+                            when (c.getInt(1)) {
+                                151 -> if (to151 == null) to151 = a
+                                137 -> if (from137 == null) from137 = a
+                            }
+                        }
+                    }
+                    var who: String? = if (isRead) from137 ?: to151 else to151
+                    // never key a mark to our own number — that's how the
+                    // old bug hid reads; if a carrier puts us in both slots,
+                    // fall back to the other one, else drop the mark
+                    if (who != null && PhoneUtils.normalize(who!!) in ownNumbers) {
+                        val alt = if (isRead) to151 else from137
+                        who = if (alt != null && PhoneUtils.normalize(alt) !in ownNumbers) alt else null
+                        if (who == null) {
+                            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                                context, "mms-delivery",
+                                "report addr resolves to own number on all slots — mark dropped (ind=$indId)"
+                            )
                         }
                     }
                     if (!who.isNullOrBlank()) {
@@ -1685,7 +1713,7 @@ class Repo private constructor(private val context: Context) {
         // diagnostic trail: proves whether reports ARRIVE (carrier side) and what
         // they said — shown in the message's Details
         val stamp = android.text.format.DateFormat.format("MM-dd HH:mm", System.currentTimeMillis())
-        db.messages().appendDeliveryDebug(
+        appendDeliveryDebugCapped(
             messageId,
             "[$stamp] report tp=$tpStatus rc=$resultCode -> ${if (ok) "delivered" else "not delivered"}\n"
         )
@@ -1769,6 +1797,18 @@ class Repo private constructor(private val context: Context) {
             else -> MsgStatus.SENDING
         }
         setStatusRespectingCancel(messageId, agg)
+    }
+
+    /** Append to a message's delivery trail, clamped to the newest 40 lines —
+     *  it's append-only diagnostics and long-lived group threads grew it
+     *  without bound. */
+    private suspend fun appendDeliveryDebugCapped(id: Long, line: String) {
+        db.messages().appendDeliveryDebug(id, line)
+        val m = db.messages().byId(id) ?: return
+        val lines = m.deliveryDebug.split("\n").filter { it.isNotBlank() }
+        if (lines.size > 40) {
+            db.messages().setDeliveryDebug(id, lines.takeLast(40).joinToString("\n") + "\n")
+        }
     }
 
     fun parseStatuses(s: String): Map<String, Int> =

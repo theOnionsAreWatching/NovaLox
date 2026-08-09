@@ -358,6 +358,9 @@ interface MessageDao {
     @Query("UPDATE messages SET deliveryDebug = deliveryDebug || :line WHERE id = :id")
     suspend fun appendDeliveryDebug(id: Long, line: String)
 
+    @Query("UPDATE messages SET deliveryDebug = :v WHERE id = :id")
+    suspend fun setDeliveryDebug(id: Long, v: String)
+
     @Query("UPDATE messages SET recipientStatuses = :v WHERE id = :id")
     suspend fun setRecipientStatuses(id: Long, v: String)
 

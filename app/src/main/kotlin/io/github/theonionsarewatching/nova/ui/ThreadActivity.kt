@@ -1435,7 +1435,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         items += getString(R.string.select_messages) to { enterSelection(row) }
 
         when (m.status) {
-            MsgStatus.FAILED -> items += getString(R.string.retry) to { lifecycleScope.launch { repo.retry(m.id) } }
+            MsgStatus.FAILED -> {
+                items += getString(R.string.retry) to { lifecycleScope.launch { repo.retry(m.id) } }
+                items += getString(R.string.retry_on_service) to {
+                    io.github.theonionsarewatching.nova.util.AutoRetry.add(this, m.id)
+                    Toast.makeText(this, R.string.retry_on_service_armed, Toast.LENGTH_SHORT).show()
+                }
+            }
             MsgStatus.SENDING -> items += getString(R.string.cancel_sending) to {
                 lifecycleScope.launch { repo.cancelSending(m.id) }
             }
@@ -1501,6 +1507,27 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             sb.append(getString(R.string.detail_from)).append(": ").append(row.senderName).append('\n')
         }
         sb.append(getString(R.string.detail_date)).append(": ").append(Formatters.full(m.date)).append('\n')
+        if (!m.isMine && m.telephonyId != null) {
+            // sender-side timestamp, read on demand from the provider row.
+            // SMS: date_sent (millis, 0 when the carrier didn't supply it).
+            // MMS: the row's date IS the PDU Date header (sender-side,
+            // seconds) and our m.date came from it, so there's nothing
+            // extra to show — SMS only.
+            if (!m.telephonyIsMms) {
+                var sentAt = 0L
+                try {
+                    contentResolver.query(
+                        android.provider.Telephony.Sms.CONTENT_URI,
+                        arrayOf(android.provider.Telephony.Sms.DATE_SENT),
+                        "_id = ?", arrayOf(m.telephonyId.toString()), null
+                    )?.use { c -> if (c.moveToFirst()) sentAt = c.getLong(0) }
+                } catch (_: Exception) {}
+                if (sentAt > 0 && kotlin.math.abs(sentAt - m.date) > 2000) {
+                    sb.append(getString(R.string.detail_sent_at)).append(": ")
+                        .append(Formatters.full(sentAt)).append('\n')
+                }
+            }
+        }
         if (m.isMine) {
             sb.append(getString(R.string.detail_status)).append(": ")
                 .append(Sender.statusLabel(this, m.status)).append('\n')
