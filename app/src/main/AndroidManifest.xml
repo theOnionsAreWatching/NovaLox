@@ -204,6 +204,7 @@
         </receiver>
 
         <receiver android:name=".notify.MarkReadReceiver" android:exported="false" />
+        <receiver android:name=".notify.ReplyReceiver" android:exported="false" />
 
         <!-- FileProvider for opening stored attachments (vCards etc.) in other apps -->
         <provider

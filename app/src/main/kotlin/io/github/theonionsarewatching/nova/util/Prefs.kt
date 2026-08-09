@@ -226,6 +226,9 @@ class Prefs(context: Context) {
     // ---- softkeys ----
     // auto / always / never
     val softkeyMode: String get() = sp.getString("softkey_mode", "auto") ?: "auto"
+    /** "Touch screen phone" softkey mode: no bar, softkeys inert, keyboard
+     *  only on tap, touch gestures enabled. */
+    val touchMode: Boolean get() = softkeyMode == "touch"
     var softkeyLeftCode: Int
         get() = sp.getInt("softkey_left_code", android.view.KeyEvent.KEYCODE_SOFT_LEFT)
         set(v) = sp.edit().putInt("softkey_left_code", v).apply()

@@ -7,7 +7,7 @@
         android:key="open_search"
         android:title="@string/pref_search_messages" />
 
-    <PreferenceCategory android:title="@string/settings_appearance">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_appearance">
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="theme"
@@ -31,7 +31,7 @@
             android:summary="@string/pref_customize_summary" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_sound">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_sound">
         <Preference
             app:iconSpaceReserved="false"
             android:key="default_tone"
@@ -46,7 +46,7 @@
             android:summary="%s" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_notifications">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_notifications">
         <ListPreference
             app:iconSpaceReserved="false"
             android:key="notif_mode"
@@ -66,7 +66,7 @@
             android:summary="%s" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_mms">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_mms">
         <SwitchPreferenceCompat
             app:singleLineTitle="false"
             app:iconSpaceReserved="false"
@@ -96,7 +96,7 @@
             android:summary="@string/pref_mms_advanced_summary" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_messages">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_messages">
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_delivery"
@@ -116,7 +116,7 @@
             android:title="@string/open_hidden_pref" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_other">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_other">
         <Preference
             app:iconSpaceReserved="false"
             android:key="resync"
@@ -143,7 +143,7 @@
             android:defaultValue="true" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/settings_advanced">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_advanced">
         <Preference
             app:iconSpaceReserved="false"
             android:key="open_advanced"
@@ -151,7 +151,7 @@
             android:summary="@string/pref_advanced_group_summary" />
     </PreferenceCategory>
 
-    <PreferenceCategory android:title="@string/about_title">
+    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/about_title">
         <Preference
             app:iconSpaceReserved="false"
             android:key="about_footer"

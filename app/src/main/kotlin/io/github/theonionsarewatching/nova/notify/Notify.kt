@@ -156,6 +156,23 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, context.getString(R.string.action_mark_read), markReadPi)
+            .addAction(run {
+                // inline reply: RemoteInput text box in the notification shade
+                // on phones that support it; unsupported shades just show the
+                // action, which opens nothing worse than a no-op
+                val remote = androidx.core.app.RemoteInput.Builder(ReplyReceiver.KEY_TEXT)
+                    .setLabel(context.getString(R.string.action_reply)).build()
+                val ri = Intent(context, ReplyReceiver::class.java)
+                    .putExtra("convo_id", convo.id)
+                val riFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                val riPi = PendingIntent.getBroadcast(
+                    context, (convo.id + 900000).toInt(), ri, riFlags
+                )
+                NotificationCompat.Action.Builder(
+                    0, context.getString(R.string.action_reply), riPi
+                ).addRemoteInput(remote).build()
+            })
         builder.setLights(android.graphics.Color.WHITE, 500, 500)
         if (Build.VERSION.SDK_INT < 26) {
             builder.setSound(soundUri(effectiveTone(context, convo)))
@@ -206,6 +223,27 @@ object NotificationHelper {
 
     fun cancel(context: Context, convoId: Long) {
         NotificationManagerCompat.from(context).cancel(convoId.toInt())
+    }
+}
+
+class ReplyReceiver : BroadcastReceiver() {
+    companion object { const val KEY_TEXT = "reply_text" }
+    override fun onReceive(context: Context, intent: Intent) {
+        val convoId = intent.getLongExtra("convo_id", -1L)
+        if (convoId <= 0) return
+        val text = androidx.core.app.RemoteInput.getResultsFromIntent(intent)
+            ?.getCharSequence(KEY_TEXT)?.toString()?.trim().orEmpty()
+        if (text.isBlank()) return
+        val pending = goAsync()
+        val repo = Repo.get(context)
+        repo.scope.launch {
+            try {
+                repo.sendText(convoId, text)
+                repo.db.messages().markThreadRead(convoId)
+                repo.refreshConversation(convoId)
+                NotificationHelper.cancel(context, convoId)
+            } catch (_: Exception) {} finally { pending.finish() }
+        }
     }
 }
 

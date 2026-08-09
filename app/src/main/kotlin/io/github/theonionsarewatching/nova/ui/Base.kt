@@ -210,6 +210,38 @@ object ThemeUtils {
 
 abstract class BaseActivity : AppCompatActivity() {
 
+    // ---- audio file pick (custom notification tones) ----
+    private var audioPickCallback: ((String) -> Unit)? = null
+
+    /** SAF audio picker; grants persistable read permission so the tone keeps
+     *  playing after reboot. Callback gets the uri string. */
+    fun pickAudioFile(cb: (String) -> Unit) {
+        audioPickCallback = cb
+        try {
+            startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                type = "audio/*"
+            }, 977)
+        } catch (_: Exception) { audioPickCallback = null }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 977) {
+            val cb = audioPickCallback; audioPickCallback = null
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null && cb != null) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+                cb(uri.toString())
+            }
+        }
+    }
+
+
     protected lateinit var prefs: Prefs
     var softkeys: Softkeys? = null
 
@@ -360,6 +392,9 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
     fun shouldShow(): Boolean = when (prefs.softkeyMode) {
         "always" -> true
         "never" -> false
+        // touch phones: no bar, and (via the handleKey gate) no softkey
+        // reactions either — the capture wizard reads raw keys and is exempt
+        "touch" -> false
         else -> {
             // Auto: show once the user has actually saved softkey mappings, or on obvious
             // keypad hardware. Saved keys are the reliable signal on real devices, since

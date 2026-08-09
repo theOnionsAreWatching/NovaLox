@@ -252,11 +252,13 @@
         <item>Auto detect</item>
         <item>Always show</item>
         <item>Never show</item>
+        <item>Touch screen phone</item>
     </string-array>
     <string-array name="softkey_values">
         <item>auto</item>
         <item>always</item>
         <item>never</item>
+        <item>touch</item>
     </string-array>
 
     <string-array name="vibrate_entries">

@@ -56,5 +56,9 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          # every build starts life as a tester prerelease; promoting to all
+          # users = unchecking "pre-release" on GitHub (the in-app updater
+          # follows releases/latest, which ignores prereleases)
+          prerelease: true
           files: NovaLox-${{ github.ref_name }}.apk
           generate_release_notes: true

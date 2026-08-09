@@ -116,6 +116,19 @@
                     android:text="@string/delete" />
             </LinearLayout>
 
+            <TextView
+                android:id="@+id/filterChip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:gravity="center"
+                android:padding="8dp"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:focusable="true"
+                android:clickable="true"
+                android:background="?attr/colorSurfaceContainerHigh" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/convoList"
                 android:layout_width="match_parent"

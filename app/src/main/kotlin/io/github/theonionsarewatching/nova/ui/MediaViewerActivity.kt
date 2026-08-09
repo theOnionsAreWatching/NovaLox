@@ -166,6 +166,17 @@ class MediaViewerActivity : BaseActivity() {
 
     private var zoomMode = false
     private var zoomScale = 1f
+    private var pinchAttached = false
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && !pinchAttached &&
+            io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode
+        ) {
+            pinchAttached = true
+            attachPinchZoom()
+        }
+    }
 
     private fun currentImageView(): android.widget.ImageView? {
         val rv = binding.pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
@@ -192,10 +203,47 @@ class MediaViewerActivity : BaseActivity() {
         updateMediaSoftkeys()
     }
 
-    private fun zoomStep(zoomIn: Boolean) {
+    /** Pinch zoom + one-finger pan for touch phones. Pinching outside zoom
+     *  mode enters it; the D-pad/softkey/star-pound paths are untouched. */
+    @Suppress("ClickableViewAccessibility")
+    private fun attachPinchZoom() {
         val iv = currentImageView() ?: return
-        zoomScale = if (zoomIn) (zoomScale * 1.5f).coerceAtMost(4f)
-        else (zoomScale / 1.5f).let { if (it < 1.15f) 1f else it }
+        val scaleDetector = android.view.ScaleGestureDetector(this,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
+                    if (!zoomMode) enterZoom()
+                    setZoomScale((zoomScale * d.scaleFactor).coerceIn(1f, 6f))
+                    return true
+                }
+            })
+        var lastX = 0f; var lastY = 0f; var panning = false
+        iv.setOnTouchListener { v, ev ->
+            scaleDetector.onTouchEvent(ev)
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    lastX = ev.x; lastY = ev.y; panning = zoomMode
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    if (panning && zoomMode && !scaleDetector.isInProgress) {
+                        panBy(ev.x - lastX, ev.y - lastY)
+                        lastX = ev.x; lastY = ev.y
+                    }
+                }
+            }
+            zoomMode || scaleDetector.isInProgress
+        }
+    }
+
+    private fun zoomStep(zoomIn: Boolean) {
+        setZoomScale(
+            if (zoomIn) (zoomScale * 1.5f).coerceAtMost(4f)
+            else (zoomScale / 1.5f).let { if (it < 1.15f) 1f else it }
+        )
+    }
+
+    private fun setZoomScale(v: Float) {
+        val iv = currentImageView() ?: return
+        zoomScale = v
         iv.scaleX = zoomScale
         iv.scaleY = zoomScale
         clampPan(iv)

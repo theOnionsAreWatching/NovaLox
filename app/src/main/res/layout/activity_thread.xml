@@ -264,7 +264,7 @@
             android:layout_marginStart="2dp"
             android:layout_marginEnd="2dp"
             android:hint="@string/compose_hint"
-            android:inputType="textCapSentences|textMultiLine|textShortMessage"
+            android:inputType="textCapSentences|textMultiLine"
             android:importantForAutofill="no" />
 
         <TextView

@@ -155,6 +155,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
         softkeys = Softkeys(this, binding.softkeyBar)
         applyComposeButtonLayout()
+        attachTouchDateBubble()
+        if (prefs.touchMode) {
+            // touch phones: focus lands in the box on entry, which popped the
+            // keyboard over half the thread. Show it only when the box is
+            // actually tapped.
+            binding.composeInput.showSoftInputOnFocus = false
+            binding.composeInput.setOnClickListener { v ->
+                (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                    .showSoftInput(v, 0)
+            }
+        }
         // On phones whose keyboard steals the right D-pad as Space (e.g. Kyocera
         // E4810) the user can't reach the on-screen Send button, and if the
         // softkey bar is off there's no softkey Send either. So when softkeys
@@ -272,6 +283,27 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     /** Floating date label shown while fast-scrolling with a held D-pad. */
+    /** Touch scrolling shows the same date bubble the D-pad hold-scroll uses.
+     *  Attached once from onCreate. */
+    private fun attachTouchDateBubble() {
+        binding.recycler.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            private var touching = false
+            override fun onScrollStateChanged(rv: androidx.recyclerview.widget.RecyclerView, state: Int) {
+                if (state == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_DRAGGING) touching = true
+                if (state == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE) {
+                    touching = false
+                    binding.dateBubble.removeCallbacks(hideBubble)
+                    binding.dateBubble.postDelayed(hideBubble, 600)
+                }
+            }
+            override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
+                if (touching || rv.scrollState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_SETTLING) {
+                    showDateBubble()
+                }
+            }
+        })
+    }
+
     private fun showDateBubble() {
         val v = binding.msgList.focusedChild ?: return
         val pos = binding.msgList.getChildAdapterPosition(v)
@@ -1047,7 +1079,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 getString(R.string.attach_menu_contact),
                 getString(R.string.attach_menu_audio),
                 getString(R.string.attach_menu_record),
-                getString(R.string.attach_menu_file)
+                getString(R.string.attach_menu_file),
+                getString(R.string.attach_menu_gallery)
             )) { _, which ->
                 when (which) {
                     0 -> pickMedia("image/*", cameraImageIntent())
@@ -1058,9 +1091,33 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                         Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
                     4 -> recordAudioAttachment()
                     5 -> pickFileAttachment()
+                    6 -> pickFromGalleryApp()
                 }
             }
             .show()
+    }
+
+    /** The gallery app's OWN picker, straight up (user request; on phones
+     *  whose GET_CONTENT chooser is broken — Schok — this is the reliable
+     *  route). Falls back to the pictures flow when no gallery responds.
+     *  Results come back through the same 201 handler as pickMedia. */
+    private fun pickFromGalleryApp() {
+        if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 71)
+        }
+        val pick = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/* video/*"
+            )
+        }
+        try {
+            startActivityForResult(pick, 201)
+        } catch (_: Exception) {
+            pickMedia("image/*", null)
+        }
     }
 
     /** Typed picker: gallery/file apps filtered to [mime], with a capture app
@@ -1457,7 +1514,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
         items += getString(R.string.forward) to { forward(row) }
         if (row.parts.isNotEmpty()) {
-            items += getString(R.string.save_attachment) to {
+            // already saves every part; the label just owns up to it now
+            items += getString(
+                if (row.parts.size > 1) R.string.save_all_attachments else R.string.save_attachment
+            ) to {
                 row.parts.forEach { savePart(it) }
             }
         }
@@ -1735,6 +1795,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private fun threadOptions() {
         val c = convo ?: return
+        lifecycleScope.launch { threadOptionsInner(c) }
+    }
+
+    private suspend fun threadOptionsInner(c: ConversationEntity) {
+        val hasMedia = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try { repo.db.messages().mediaCountForConvo(c.id) > 0 } catch (_: Exception) { true }
+        }
         val items = ArrayList<Pair<String, () -> Unit>>()
         // SAME item set and order as the list's long-press menu (user rule:
         // the two menus mirror each other) — except list-only actions like
@@ -1781,7 +1848,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 GroupParticipants.show(this, c)
             }
         }
-        items += getString(R.string.view_media) to {
+        if (hasMedia) items += getString(R.string.view_media) to {
             startActivity(Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, convoId))
         }

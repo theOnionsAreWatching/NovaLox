@@ -552,6 +552,7 @@ class MessageAdapter(
             holder.itemView.setOnTouchListener(null)
             holder.itemView.setOnKeyListener(null)
             holder.itemView.setOnLongClickListener {
+                it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 val pos = holder.bindingAdapterPosition
                 if (pos != androidx.recyclerview.widget.RecyclerView.NO_POSITION) onHold(rows[pos])
                 true
@@ -722,19 +723,44 @@ private fun onColor(fill: Int): Int =
  *  lines prefixed with small line icons (no emoji). */
 private fun vcardSummary(ctx: android.content.Context, part: PartEntity): CharSequence {
     return try {
-        val text = java.io.File(part.filePath).readText().take(4000)
+        val raw = java.io.File(part.filePath).readText().take(120000)
+        // unfold per RFC 6350: continuation lines start with a space/tab
+        val text = raw.replace("\r\n", "\n").replace("\n ", "").replace("\n\t", "")
         val name = text.lineSequence()
             .firstOrNull { it.startsWith("FN", ignoreCase = true) }
             ?.substringAfter(':')?.trim()
+        // every number and email on its own line (user request; was 2/1)
         val tels = text.lineSequence()
             .filter { it.startsWith("TEL", ignoreCase = true) }
             .mapNotNull { it.substringAfter(':').trim().takeIf { t -> t.isNotBlank() } }
-            .take(2).toList()
+            .take(8).toList()
         val emails = text.lineSequence()
             .filter { it.startsWith("EMAIL", ignoreCase = true) }
             .mapNotNull { it.substringAfter(':').trim().takeIf { e -> e.isNotBlank() } }
-            .take(1).toList()
+            .take(8).toList()
         val sb = android.text.SpannableStringBuilder()
+        // contact photo, when the card carries one (base64-embedded)
+        try {
+            val photoLine = text.lineSequence().firstOrNull {
+                it.startsWith("PHOTO", ignoreCase = true) &&
+                    (it.contains("ENCODING=B", true) || it.contains("BASE64", true) ||
+                     it.contains(";base64,", true))
+            }
+            val b64 = photoLine?.substringAfter(':')?.substringAfter("base64,")?.trim()
+            if (!b64.isNullOrBlank()) {
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bmp != null) {
+                    val size = (48 * ctx.resources.displayMetrics.density).toInt()
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(bmp, size, size, true)
+                    val at = sb.length
+                    sb.append("\u2000")
+                    sb.setSpan(android.text.style.ImageSpan(ctx, scaled),
+                        at, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    sb.append('\n')
+                }
+            }
+        } catch (_: Exception) { /* photo is decoration; the card still renders */ }
         sb.append(name ?: part.fileName)
         fun iconLine(iconRes: Int, value: String) {
             sb.append('\n')

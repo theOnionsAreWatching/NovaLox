@@ -31,6 +31,9 @@ object TonePicker {
         val values = ArrayList<String>()
         labels.add(activity.getString(defaultLabelRes)); values.add("")
         labels.add(activity.getString(R.string.tone_silent)); values.add("silent")
+        // any audio file via SAF — kept above the system list so it's
+        // reachable in two presses on a keypad
+        labels.add(activity.getString(R.string.tone_pick_file)); values.add("__file__")
 
         try {
             val rm = RingtoneManager(activity)
@@ -74,7 +77,11 @@ object TonePicker {
                     } catch (_: Exception) {}
                 }
             }
-            .setPositiveButton(R.string.save) { _, _ -> onPicked(values.getOrElse(selected) { "" }) }
+            .setPositiveButton(R.string.save) { _, _ ->
+                val v = values.getOrElse(selected) { "" }
+                if (v == "__file__") activity.pickAudioFile { uri -> onPicked(uri) }
+                else onPicked(v)
+            }
             .setNegativeButton(android.R.string.cancel, null)
             .create()
         dialog.setOnDismissListener { stopPreview() }

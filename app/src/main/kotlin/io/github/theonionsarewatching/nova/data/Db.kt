@@ -361,6 +361,11 @@ interface MessageDao {
     @Query("UPDATE messages SET deliveryDebug = :v WHERE id = :id")
     suspend fun setDeliveryDebug(id: Long, v: String)
 
+    @Query("""SELECT COUNT(*) FROM parts JOIN messages ON parts.messageId = messages.id
+        WHERE messages.convoId = :convoId AND (parts.mimeType LIKE 'image/%'
+        OR parts.mimeType LIKE 'video/%' OR parts.mimeType LIKE 'audio/%')""")
+    suspend fun mediaCountForConvo(convoId: Long): Int
+
     @Query("UPDATE messages SET recipientStatuses = :v WHERE id = :id")
     suspend fun setRecipientStatuses(id: Long, v: String)
 

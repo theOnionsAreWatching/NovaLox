@@ -278,6 +278,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun loadConversations() {
         lifecycleScope.launch {
             var list = repo.db.conversations().visible()
+            updateFilterChip()
             list = when (prefs.filterMode) {
                 "unread" -> list.filter { it.unreadCount > 0 }
                 "unknown" -> list.filter { c -> c.nameList().all { it.isBlank() } }
@@ -431,6 +432,28 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 d.dismiss()
             }
             .show()
+    }
+
+    /** Visible banner while a filter is active: shows WHAT is filtered and
+     *  clears it on press (user request — the filter was invisible once set). */
+    private fun updateFilterChip() {
+        val mode = prefs.filterMode
+        if (mode == "all" || mode.isBlank()) {
+            binding.filterChip.visibility = View.GONE
+            return
+        }
+        val label = when (mode) {
+            "unread" -> getString(R.string.filter_unread)
+            "unknown" -> getString(R.string.filter_unknown)
+            "groups" -> getString(R.string.filter_groups)
+            else -> mode
+        }
+        binding.filterChip.text = getString(R.string.filter_active, label)
+        binding.filterChip.visibility = View.VISIBLE
+        binding.filterChip.setOnClickListener {
+            prefs.filterMode = "all"
+            loadConversations()
+        }
     }
 
     private fun pickFilter() {
@@ -661,6 +684,13 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     }
 
     private fun convoOptions(c: ConversationEntity) {
+        lifecycleScope.launch { convoOptionsInner(c) }
+    }
+
+    private suspend fun convoOptionsInner(c: ConversationEntity) {
+        val hasMedia = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try { repo.db.messages().mediaCountForConvo(c.id) > 0 } catch (_: Exception) { true }
+        }
         val items = ArrayList<Pair<String, () -> Unit>>()
         if (!c.isGroup) {
             if (!c.addressList().first().contains("@"))
@@ -732,7 +762,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 GroupParticipants.show(this, c)
             }
         }
-        items += getString(R.string.view_media) to {
+        if (hasMedia) items += getString(R.string.view_media) to {
             startActivity(Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, c.id))
         }
