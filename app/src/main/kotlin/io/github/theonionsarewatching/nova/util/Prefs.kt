@@ -138,6 +138,9 @@ class Prefs(context: Context) {
     // center D-pad key = Send while the cursor is in the message box
     val sendOnLeft: Boolean get() = sp.getBoolean("send_on_left", false)
     val saveToSd: Boolean get() = sp.getBoolean("save_to_sd", false)
+    var learnedNumbersReset: Boolean
+        get() = sp.getBoolean("learned_numbers_reset_v99", false)
+        set(v) = sp.edit().putBoolean("learned_numbers_reset_v99", v).apply()
     // typed digits in the recipient box also match names by keypad letters
     val t9ContactMatch: Boolean get() = sp.getBoolean("t9_contact_match", true)
     // per-conversation compose drafts, autosaved on leaving the thread

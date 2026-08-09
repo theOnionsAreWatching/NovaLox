@@ -79,6 +79,17 @@ object SystemMmsSender {
             context, "mms-send",
             "from=" + (selfNumber ?: "insert-address-token")
         )
+        // authoritative own-number learning: this From came from the
+        // subscription itself, not from a message row someone else wrote
+        if (selfNumber != null) {
+            try {
+                val p = io.github.theonionsarewatching.nova.util.Prefs.get(context)
+                val n = io.github.theonionsarewatching.nova.util.PhoneUtils.normalize(selfNumber)
+                if (n.isNotBlank() && n !in p.learnedOwnNumbers) {
+                    p.learnedOwnNumbers = p.learnedOwnNumbers + n
+                }
+            } catch (_: Exception) {}
+        }
         // TO: emails pass through; phone numbers are stripped of spaces,
         // dashes and parentheses — formatted numbers are another resp=132
         // trigger on strict MMSCs.

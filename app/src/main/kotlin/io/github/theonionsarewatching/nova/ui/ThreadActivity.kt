@@ -1506,8 +1506,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 .append(Sender.statusLabel(this, m.status)).append('\n')
             if (m.recipientStatuses.isNotBlank()) {
                 // the field carries two formats: numeric per-recipient statuses
-                // (SMS broadcast) and D/R letters (MMS reports)
-                m.recipientStatuses.split(",").filter { it.contains("=") }.forEach { e ->
+                // (SMS broadcast) and D/R letters (MMS reports).
+                // Own-number entries are filtered: new sends no longer create
+                // them, and old messages that carry one (user report: "the
+                // sender's number shows in message details") stay clean.
+                val own = repo.ownNumbersForDisplay()
+                m.recipientStatuses.split(",").filter { it.contains("=") }
+                    .filterNot { it.substringBeforeLast("=") in own }
+                    .forEach { e ->
                     val addr = e.substringBeforeLast("=")
                     val vRaw = e.substringAfterLast("=")
                     val label = when (vRaw) {

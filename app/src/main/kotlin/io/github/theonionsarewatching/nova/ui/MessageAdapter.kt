@@ -656,8 +656,12 @@ private fun groupAwareStatus(
     val rs = m.recipientStatuses
     if (rs.isBlank()) return Sender.statusLabel(ctx, m.status)
     // two formats share this field: D/R letters (MMS reports) and numeric
-    // per-recipient statuses (SMS broadcast) — count both
-    val marks = rs.split(",").filter { it.contains("=") }.map { it.substringAfterLast("=") }
+    // per-recipient statuses (SMS broadcast) — count both. Own-number entries
+    // (legacy sends put the sender into the map) don't count as recipients.
+    val own = io.github.theonionsarewatching.nova.data.Repo.get(ctx).ownNumbersForDisplay()
+    val marks = rs.split(",").filter { it.contains("=") }
+        .filterNot { it.substringBeforeLast("=") in own }
+        .map { it.substringAfterLast("=") }
     if (marks.isEmpty()) return Sender.statusLabel(ctx, m.status)
     val dSt = io.github.theonionsarewatching.nova.data.MsgStatus.DELIVERED
     val rSt = io.github.theonionsarewatching.nova.data.MsgStatus.READ_BY_RECIPIENT

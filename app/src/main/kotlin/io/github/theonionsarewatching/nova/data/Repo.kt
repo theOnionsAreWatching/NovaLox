@@ -261,6 +261,28 @@ class Repo private constructor(private val context: Context) {
     }
 
     /** Record a number as belonging to THIS phone (learned from sent messages). */
+    init {
+        // one-time repair for devices polluted by the old per-row learning:
+        // wipe the learned set and let the trustworthy sources (send path,
+        // import majority vote) rebuild it. SIM-reported numbers are separate
+        // and unaffected.
+        try {
+            val prefs = Prefs.get(context)
+            if (!prefs.learnedNumbersReset) {
+                val old = prefs.learnedOwnNumbers
+                prefs.learnedOwnNumbers = emptySet()
+                prefs.learnedNumbersReset = true
+                if (old.isNotEmpty()) {
+                    io.github.theonionsarewatching.nova.util.DiagLog.log(
+                        context, "mms-ingest",
+                        "learned own-numbers reset (were: ${old.joinToString()}) — " +
+                            "will re-learn from send path / import vote"
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun learnOwnNumbers(addresses: Collection<String>) {
         if (addresses.isEmpty()) return
         val prefs = Prefs.get(context)
@@ -276,6 +298,9 @@ class Repo private constructor(private val context: Context) {
     /** Restore needs the combined own-number set to write correct system rows. */
     suspend fun ownNumbersForRestore(): Set<String> =
         withContext(Dispatchers.IO) { ownNumbers }
+
+    /** Cheap synchronous copy for display filtering (prefs + cached SIM set). */
+    fun ownNumbersForDisplay(): Set<String> = ownNumbers
 
     /** This phone's own numbers per the SIM — best effort, empty on many SIMs. */
     private val simOwnNumbers: Set<String> by lazy {
@@ -730,8 +755,15 @@ class Repo private constructor(private val context: Context) {
         //   * received with 2+ other recipients -> a real group: sender + the others
         //     (minus our own number when the SIM reports it; when it doesn't, keeping
         //     it is still deterministic, so the group stays ONE conversation).
-        if (isMine && from.isNotEmpty()) learnOwnNumbers(from)
-
+        // NO learning here. Own numbers used to be learned from every
+        // non-inbox row's From — but rows written by a previous SMS app, a
+        // restore's own-number guess, or carrier oddities put OTHER PEOPLE'S
+        // numbers there. Field log 07-29: learned contained a group member,
+        // the dry-run echo detector flagged their real incoming message as
+        // "self", and participant math split their group into 1:1 threads.
+        // Learning now happens only where the number is authoritative: the
+        // send path (we computed the From ourselves) and the import-time
+        // majority vote across all sent rows.
         val participants = if (isMine) {
             to.filter { PhoneUtils.normalize(it) !in ownNumbers }.ifEmpty { to }.ifEmpty { from }
         } else {
@@ -1158,10 +1190,24 @@ class Repo private constructor(private val context: Context) {
 
     // ============================== Sending ==============================
 
+    /** Outgoing recipient list for a conversation: the participants MINUS this
+     *  phone's own number(s). Groups derived from received messages keep the
+     *  own number as a participant (deterministic threading on SIMs that
+     *  don't report a line number) — but SENDING to yourself makes the
+     *  carrier hand your own message back, and it put the own number into the
+     *  per-recipient status map (user report 07-29: "the sender's number
+     *  shows in message details"). Mirrors the engine's EXCLUDE_MY_NUMBER
+     *  recipient handling. Falls back to the raw list if filtering would
+     *  empty it (a self-conversation stays sendable). */
+    private fun sendTargets(convo: ConversationEntity): List<String> =
+        convo.addressList().let { all ->
+            all.filter { PhoneUtils.normalize(it) !in ownNumbers }.ifEmpty { all }
+        }
+
     /** Send text to a conversation, honoring its group mode. Returns our message id. */
     suspend fun sendText(convoId: Long, text: String): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
-        val addresses = convo.addressList()
+        val addresses = sendTargets(convo)
         if (addresses.isEmpty() || text.isBlank()) return null
 
         // email addresses can only be reached over MMS; SMS to them fails silently
@@ -1214,7 +1260,7 @@ class Repo private constructor(private val context: Context) {
         convoId: Long, text: String, attachments: List<Triple<String, String, String>>
     ): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
-        val addresses = convo.addressList()
+        val addresses = sendTargets(convo)
         if (addresses.isEmpty() || attachments.isEmpty()) return null
         val now = System.currentTimeMillis()
         val msg = MessageEntity(
@@ -1747,7 +1793,7 @@ class Repo private constructor(private val context: Context) {
     suspend fun retry(messageId: Long) = withContext(Dispatchers.IO) {
         val m = db.messages().byId(messageId) ?: return@withContext
         val convo = db.conversations().byId(m.convoId) ?: return@withContext
-        val addresses = convo.addressList()
+        val addresses = sendTargets(convo)
         db.messages().setStatus(messageId, MsgStatus.SENDING)
         // A retry is a NEW send: sever the link to the failed store copy (and
         // delete that dead row), and move the message's date to now. Both are
@@ -1816,8 +1862,8 @@ class Repo private constructor(private val context: Context) {
         db.messages().update(m.copy(status = MsgStatus.SENDING, date = now, scheduledAt = null))
         extractElements(messageId, m.body)
         refreshAndPing(m.convoId)
-        if (m.isMms) Sender.sendMms(context, messageId, m.body, convo.addressList(), emptyList())
-        else Sender.sendSmsToAll(context, messageId, m.body, convo.addressList())
+        if (m.isMms) Sender.sendMms(context, messageId, m.body, sendTargets(convo), emptyList())
+        else Sender.sendSmsToAll(context, messageId, m.body, sendTargets(convo))
     }
 
     fun rescheduleAllAlarms() {
@@ -2026,7 +2072,12 @@ class Repo private constructor(private val context: Context) {
                 Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_BOX),
                 "${Telephony.Mms.MESSAGE_BOX} != ${Telephony.Mms.MESSAGE_BOX_INBOX}", null, null
             )?.use { c -> while (c.moveToNext()) sentIds.add(c.getLong(0)) }
-            val learned = ArrayList<String>()
+            // MAJORITY VOTE: the true own number appears as From on nearly
+            // every sent row; a wrong address (foreign app's rows, a restore's
+            // bad guess) appears on few. Only addresses on >=3 rows AND >=20%
+            // of observations are trusted — one-off pollution can't get in.
+            val tally = HashMap<String, Int>()
+            var observations = 0
             for (id in sentIds) {
                 resolver.query(
                     Uri.parse("content://mms/$id/addr"), arrayOf("address", "type"),
@@ -2034,11 +2085,22 @@ class Repo private constructor(private val context: Context) {
                 )?.use { c ->
                     while (c.moveToNext()) {
                         val a = c.getString(0) ?: continue
-                        if (a.isNotBlank() && a != "insert-address-token") learned.add(a)
+                        if (a.isNotBlank() && a != "insert-address-token") {
+                            val n = PhoneUtils.normalize(a)
+                            if (n.isNotBlank()) { tally[n] = (tally[n] ?: 0) + 1; observations++ }
+                        }
                     }
                 }
             }
-            learnOwnNumbers(learned)
+            val trusted = tally.filter { (_, n) -> n >= 3 && n * 5 >= observations }.keys
+            if (trusted.isNotEmpty()) learnOwnNumbers(trusted)
+            if (tally.size > trusted.size) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "own-number vote: trusted=${trusted.joinToString()} " +
+                        "rejected=${(tally.keys - trusted).joinToString()}"
+                )
+            }
         } catch (_: Exception) {}
 
         var smsTotal = 0
@@ -2202,6 +2264,16 @@ class Repo private constructor(private val context: Context) {
                             }
                             continue
                         }
+                        // BROADCAST-MMS FAN-OUT RACE (same as the SMS one): the
+                        // engine inserts each copy's pdu row, and this pass can
+                        // land before linkRow registers it — ingesting the copy
+                        // as a duplicate 1:1 message ("MMS shows in the group
+                        // AND individually", user report). Fresh outgoing rows
+                        // are mid-fan-out: next pass sees them registered.
+                        val boxNow = c.getInt(2)
+                        if (boxNow != Telephony.Mms.MESSAGE_BOX_INBOX &&
+                            System.currentTimeMillis() - c.getLong(1) * 1000 < 15_000L
+                        ) continue
                         // a bare notification row (130) whose real message has
                         // already been downloaded and ingested under a different
                         // _id: skip it, or the "Tap to download" stub reappears
