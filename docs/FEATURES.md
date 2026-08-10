@@ -14,7 +14,8 @@
 | Chat backgrounds, per-convo tones | Customize menu (both menus), `SoundDialog` |
 | Group modes (group-MMS vs broadcast) | set at compose; `Repo.sendText/sendAttachment`, `Sender` |
 | Per-recipient delivered/read | `recipientStatuses` (see MESSAGING-PIPELINE) |
-| Attachments (photo/video/contact/audio/file) | `AttachOrPaste`, `ThreadActivity.pickAttachment`, `util/MimeExt` |
+| Attachments (photo/video/contact/audio/file/gallery/emoji) | `AttachOrPaste`, `ThreadActivity.pickAttachment`, `ui/EmojiPicker`, `util/MimeExt` |
+| Video compression (auto, fits carrier MMS cap) | `util/VideoCompressor` (surface-to-surface MediaCodec; AAC passthrough; failure = original path) |
 | Picture viewer + zoom | `ui/MediaViewerActivity.kt` |
 | Save to gallery/Downloads/SD | `ui/Saver.kt` (+ MMS settings switch) |
 | Scheduled send, locked messages, recycle bin | `Repo` (alarms), entity flags |

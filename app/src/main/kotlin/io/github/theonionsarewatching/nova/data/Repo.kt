@@ -436,9 +436,14 @@ class Repo private constructor(private val context: Context) {
                         )
                     }
                     if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX &&
-                        sb.contains("MAILER-DAEMON", ignoreCase = true) &&
-                        bounceProcessed.add(mmsId) && !bounceRowDone(mmsId)
+                        sb.contains("MAILER-DAEMON", ignoreCase = true)
                     ) {
+                        // SUPPRESSION is unconditional — the 0.9.106 gate
+                        // wrapped it together with the side effects, so an
+                        // already-processed bounce row fell through to normal
+                        // ingest and appeared as a blank MAILER-DAEMON message
+                        // (08-09 21:51 log, msg=1065). Side effects run once.
+                        if (bounceProcessed.add(mmsId) && !bounceRowDone(mmsId)) {
                         markBounceRowDone(mmsId)
                         // the carrier bounced an email-MMS (spam rejection).
                         // The bounce PDU has no displayable text — ingesting it
@@ -454,7 +459,13 @@ class Repo private constructor(private val context: Context) {
                         db.messages().ownEmailSince(cutoff)
                             .firstOrNull {
                                 it.status == MsgStatus.SENT ||
-                                    it.status == MsgStatus.DELIVERED
+                                    it.status == MsgStatus.DELIVERED ||
+                                    // a send whose conf never came (builder
+                                    // fallback limbo) may only exist as a
+                                    // long-stuck SENDING — a bounce is
+                                    // allowed to fail it after a minute
+                                    (it.status == MsgStatus.SENDING &&
+                                        System.currentTimeMillis() - it.date > 60_000L)
                             }?.let { orig ->
                                 db.messages().setStatus(orig.id, MsgStatus.FAILED)
                                 db.messages().insert(
@@ -479,6 +490,7 @@ class Repo private constructor(private val context: Context) {
                                         "(${orig.address}) FAILED + note added"
                                 )
                             }
+                        }
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-email",
                             "carrier bounce tid=$mmsId suppressed (blank phantom)"
@@ -1305,6 +1317,25 @@ class Repo private constructor(private val context: Context) {
         val convo = db.conversations().byId(convoId) ?: return null
         val addresses = sendTargets(convo)
         if (addresses.isEmpty() || attachments.isEmpty()) return null
+        // videos over the carrier's MMS ceiling go through the compression
+        // engine first; a failed compression keeps the original path so
+        // nothing that used to send can break (engine logs every step)
+        val maxBytes = io.github.theonionsarewatching.nova.util.CarrierMms
+            .limits(context).maxBytes.toLong()
+        val prepared = attachments.map { a ->
+            val (path, mime, name) = a
+            if (mime.startsWith("video/")) {
+                val f = java.io.File(path)
+                val headroom = maxBytes * 9 / 10
+                if (f.exists() && f.length() > headroom) {
+                    io.github.theonionsarewatching.nova.util.VideoCompressor
+                        .compress(context, f, headroom)
+                        ?.let { Triple(it.absolutePath, "video/mp4",
+                            name.substringBeforeLast('.', name) + ".mp4") }
+                        ?: a
+                } else a
+            } else a
+        }
         val now = System.currentTimeMillis()
         val msg = MessageEntity(
             convoId = convoId, address = addresses.joinToString("|"), body = text, date = now,
@@ -1314,7 +1345,7 @@ class Repo private constructor(private val context: Context) {
             else ""
         )
         val id = db.messages().insert(msg)
-        for ((path, mime, name) in attachments) {
+        for ((path, mime, name) in prepared) {
             val dims = imageDims(mime, path)
             db.parts().insert(
                 PartEntity(messageId = id, mimeType = mime, filePath = path,

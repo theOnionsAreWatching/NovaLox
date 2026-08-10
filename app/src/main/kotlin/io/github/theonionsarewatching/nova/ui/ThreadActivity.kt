@@ -1087,7 +1087,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 getString(R.string.attach_menu_audio),
                 getString(R.string.attach_menu_record),
                 getString(R.string.attach_menu_file),
-                getString(R.string.attach_menu_gallery)
+                getString(R.string.attach_menu_gallery),
+                getString(R.string.attach_menu_emoji)
             )) { _, which ->
                 when (which) {
                     0 -> pickMedia("image/*", cameraImageIntent())
@@ -1099,6 +1100,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     4 -> recordAudioAttachment()
                     5 -> pickFileAttachment()
                     6 -> pickFromGalleryApp()
+                    7 -> EmojiPicker.show(this, binding.composeInput)
                 }
             }
             .show()
@@ -1115,14 +1117,34 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 71)
         }
-        val pick = Intent(Intent.ACTION_PICK).apply {
-            setDataAndType(
-                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/* video/*"
-            )
+        // pictures AND videos (user request). "image/* video/*" is not a
+        // valid single MIME — galleries ignored the video half. Layered:
+        // (1) GET_CONTENT */* with both types listed (galleries that honor
+        //     EXTRA_MIME_TYPES show one combined grid),
+        // (2) PICK on the media provider (many OEM galleries show all media),
+        // (3) the old image-only PICK as the floor.
+        // The chosen layer is logged so field logs tell us per phone.
+        fun tryStart(i: Intent, tag: String): Boolean = try {
+            startActivityForResult(i, 201)
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                this, "attach", "gallery picker via $tag")
+            true
+        } catch (_: Exception) { false }
+        val both = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        try {
-            startActivityForResult(pick, 201)
-        } catch (_: Exception) {
+        val pickAll = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "*/*")
+        }
+        val pickImages = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+        }
+        if (!(both.resolveActivity(packageManager) != null && tryStart(both, "get-content-both")) &&
+            !tryStart(pickAll, "pick-all-media") &&
+            !tryStart(pickImages, "pick-images")
+        ) {
             pickMedia("image/*", null)
         }
     }

@@ -136,7 +136,12 @@ object SystemMmsSender {
             // the email body. Phone-to-phone sends keep the filename —
             // handsets expect it.
             if (hasEmailRecipient) {
-                size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "")
+                // extensionless: a null Content-Location NPE'd the composer
+                // (08-09 21:51 log — the whole send fell back to the engine
+                // and the experiment never reached the wire). The gateway
+                // attaches parts by filename EXTENSION; "text_body" gives it
+                // no .txt to attach-as while keeping the composer fed.
+                size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_body")
             } else {
                 size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_$index.txt")
             }
@@ -251,13 +256,9 @@ object SystemMmsSender {
         val part = PduPart()
         if (mime.startsWith("text")) part.charset = CharacterSets.UTF_8
         part.contentType = mime.toByteArray()
-        if (name.isNotBlank()) {
-            part.contentLocation = name.toByteArray()
-            val dot = name.lastIndexOf('.')
-            part.contentId = (if (dot == -1) name else name.substring(0, dot)).toByteArray()
-        } else {
-            part.contentId = "text_body".toByteArray()
-        }
+        part.contentLocation = name.toByteArray()
+        val dot = name.lastIndexOf('.')
+        part.contentId = (if (dot == -1) name else name.substring(0, dot)).toByteArray()
         part.data = bytes
         pb.addPart(part)
         return bytes.size

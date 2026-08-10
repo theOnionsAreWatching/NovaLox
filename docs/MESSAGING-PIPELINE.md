@@ -15,7 +15,14 @@ recipient; each row registered via `linkRow` the moment it exists, plus a
 subscription number when clean, else the insert-address-token (strict MMSCs
 reject anything else with resp=132). `d_rpt` follows the user setting;
 `r_rpt` request is honest but incoming read handling never requests reports
-(see INVARIANTS.md).
+(see INVARIANTS.md). Email-destined sends: the From falls back to the trusted
+learned number when the SIM is silent, a Subject (body excerpt) is set, and
+the text part ships with an EXTENSIONLESS Content-Location ("text_body") —
+the gateway attaches parts by filename extension, which is how texts arrived
+as .txt attachments. Bounce rows (MAILER-DAEMON) are ALWAYS suppressed from
+display; their fail-the-original side effect runs once per row (provider
+read flag). Oversize videos run through util/VideoCompressor before the
+parts are stored.
 
 ## Receive — MMS
 WAP push → `MmsPushReceiver` (persists indication, auto-downloads, sends

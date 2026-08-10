@@ -331,7 +331,8 @@ class ComposeActivity : BaseActivity() {
                 getString(R.string.attach_menu_contact),
                 getString(R.string.attach_menu_audio),
                 getString(R.string.attach_menu_record),
-                getString(R.string.attach_menu_file)
+                getString(R.string.attach_menu_file),
+                getString(R.string.attach_menu_emoji)
             )) { _, which ->
                 when (which) {
                     0 -> pickMedia("image/*", cameraImageIntent())
@@ -342,6 +343,7 @@ class ComposeActivity : BaseActivity() {
                         Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
                     4 -> recordAudioAttachment()
                     5 -> pickFileAttachment()
+                    6 -> EmojiPicker.show(this, binding.bodyInput)
                 }
             }
             .show()

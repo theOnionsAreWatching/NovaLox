@@ -445,17 +445,29 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
      *  options menu instantly (visible as a flash). Consuming DOWN silently
      *  and acting on UP means the dialog only exists after the keypress is
      *  fully over. */
+    // Sonim X320 (and friends): one physical softkey press emits BOTH the
+    // mapped code AND KEYCODE_MENU — firing the softkey action and the menu
+    // action together (field report: attach menu + conversation options
+    // opened at once). A MENU arriving within this window of another softkey
+    // action is the same press's echo and gets swallowed.
+    private var lastNonMenuActionAt = 0L
+
     fun handleKey(event: KeyEvent): Boolean {
         // softkeys act ONLY while the bar is shown. With the bar off the
         // physical keys used to keep firing their invisible actions (right
         // softkey silently sent) — user-reported as wrong. The capture screen
         // is unaffected: it reads raw key events in its own dispatch.
         if (!shouldShow()) return false
+        if (event.keyCode == KeyEvent.KEYCODE_MENU &&
+            event.keyCode != prefs.softkeyLeftCode &&
+            event.keyCode != prefs.softkeyRightCode &&
+            System.currentTimeMillis() - lastNonMenuActionAt < 400
+        ) return true  // consume the echo, fire nothing
         if (!codeMatches(event.keyCode)) return false
         if (event.action != KeyEvent.ACTION_UP) return true
         when (event.keyCode) {
-            prefs.softkeyLeftCode -> leftAction?.invoke()
-            prefs.softkeyRightCode -> rightAction?.invoke()
+            prefs.softkeyLeftCode -> { lastNonMenuActionAt = System.currentTimeMillis(); leftAction?.invoke() }
+            prefs.softkeyRightCode -> { lastNonMenuActionAt = System.currentTimeMillis(); rightAction?.invoke() }
             KeyEvent.KEYCODE_MENU -> menuAction?.invoke()
         }
         return true
