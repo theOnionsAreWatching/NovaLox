@@ -23,16 +23,19 @@ import java.nio.ByteBuffer
  */
 object VideoCompressor {
 
-    // resolution ladder: the bitrate the clip's length leaves us picks the
-    // size — long clips walk down to feature-phone territory rather than
-    // being refused (carriers limit BYTES, not duration; there is no
-    // duration key anywhere in the platform's MMS carrier config)
-    private val TIERS = listOf(
-        250_000 to 640, 120_000 to 480, 60_000 to 320, MIN_VIDEO_BPS_FLOOR to 192
-    )
     private const val MIN_VIDEO_BPS_FLOOR = 28_000
     private const val AUDIO_TRANSCODE_BPS = 24_000
     private const val ABSOLUTE_MAX_SEC = 300L  // user-set ceiling: 5 minutes
+
+    // resolution ladder: the bitrate the clip's length leaves us picks the
+    // size — long clips walk down to feature-phone territory rather than
+    // being refused (carriers limit BYTES, not duration; there is no
+    // duration key anywhere in the platform's MMS carrier config).
+    // Consts DECLARED FIRST: a Kotlin property initializer cannot forward-
+    // reference a const below it in the same object (CI, v0.9.113).
+    private val TIERS = listOf(
+        250_000 to 640, 120_000 to 480, 60_000 to 320, MIN_VIDEO_BPS_FLOOR to 192
+    )
 
     /** One source of truth for what a video must fit into: the SENDER's real
      *  enforcement cap (carrier max minus its header margin) minus room for
