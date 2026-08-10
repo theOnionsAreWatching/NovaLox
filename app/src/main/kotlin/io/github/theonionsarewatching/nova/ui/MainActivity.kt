@@ -372,6 +372,16 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         }
     }
 
+    private fun enterChip() {
+        binding.filterChip.isFocusable = true
+        if (!binding.filterChip.requestFocus()) binding.filterChip.isFocusable = false
+    }
+
+    private fun leaveChip() {
+        binding.convoList.requestFocus()
+        binding.filterChip.isFocusable = false
+    }
+
     private fun leaveHeader() {
         // ORDER MATTERS: move focus to the list FIRST, and only then lock the
         // header. Disabling the currently-focused view triggers the framework's
@@ -452,6 +462,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         binding.filterChip.visibility = View.VISIBLE
         binding.filterChip.setOnClickListener {
             prefs.filterMode = "all"
+            binding.filterChip.isFocusable = false
+            binding.convoList.requestFocus()
             loadConversations()
         }
     }
@@ -995,6 +1007,25 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (softkeys?.handleKey(event) == true) return true
+        // the filter banner sits between the list and the header in the focus
+        // chain: list-at-top + UP lands here first, UP again reaches the
+        // header, DOWN (or BACK) returns to the list, CENTER clears the filter
+        if (binding.filterChip.hasFocus()) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        binding.filterChip.isFocusable = false
+                        enterHeader()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> {
+                        leaveChip()
+                        return true
+                    }
+                }
+            }
+            return super.dispatchKeyEvent(event) // CENTER -> click (clears filter)
+        }
         if (headerHasFocus()) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when (event.keyCode) {
@@ -1021,6 +1052,9 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 }
             }
         }
+        else if (binding.filterChip.isFocusable && !binding.filterChip.hasFocus()) {
+            binding.filterChip.isFocusable = false
+        }
         else if (binding.btnSettings.isFocusable) {
             // focus left the header by other means (touch, dialogs): relock it,
             // so a list refresh can never park focus up there
@@ -1044,7 +1078,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_UP -> {
-                    enterHeader()
+                    if (binding.filterChip.isShown) enterChip() else enterHeader()
                     return true
                 }
             }

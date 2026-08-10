@@ -1321,7 +1321,25 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val m = row.msg
         when (m.status) {
             MsgStatus.FAILED -> {
-                stateDialog(row, R.string.retry) { lifecycleScope.launch { repo.retry(m.id) } }
+                // both retry paths, same as the long-press menu (user request)
+                AlertDialog.Builder(this)
+                    .setItems(arrayOf(
+                        getString(R.string.retry),
+                        getString(R.string.retry_on_service),
+                        getString(R.string.delete)
+                    )) { _, w ->
+                        when (w) {
+                            0 -> lifecycleScope.launch { repo.retry(m.id) }
+                            1 -> {
+                                io.github.theonionsarewatching.nova.util.AutoRetry.add(this, m.id)
+                                Toast.makeText(this, R.string.retry_on_service_armed,
+                                    Toast.LENGTH_SHORT).show()
+                            }
+                            2 -> deleteMessage(m)
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
                 return
             }
             MsgStatus.CANCELED -> {

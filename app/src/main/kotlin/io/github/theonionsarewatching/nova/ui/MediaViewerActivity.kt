@@ -156,7 +156,9 @@ class MediaViewerActivity : BaseActivity() {
         binding.softkeyBar.softCenter.typeface = binding.softkeyBar.softLeft.typeface
         // the viewer's bar shows even with softkeys off: pictures always
         // offer Zoom in the center, videos Play
-        binding.softkeyBar.root.visibility = View.VISIBLE
+        binding.softkeyBar.root.visibility =
+            if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode)
+                View.GONE else View.VISIBLE
     }
 
     // ---------------- zoom mode ----------------
@@ -166,16 +168,42 @@ class MediaViewerActivity : BaseActivity() {
 
     private var zoomMode = false
     private var zoomScale = 1f
-    private var pinchAttached = false
+    // pinch zoom lives at the ACTIVITY dispatch level: it survives page
+    // swipes, needs no laid-out view to attach to (the old per-view attach
+    // ran before the pager laid out its first page, burned its one-shot
+    // flag, and died), and only intercepts while a pinch is in progress or
+    // zoom mode is panning — pager swipes and video controls are untouched
+    private var panLastX = 0f
+    private var panLastY = 0f
+    private val pinchDetector by lazy {
+        android.view.ScaleGestureDetector(this,
+            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
+                    if (!zoomMode) enterZoom()
+                    val next = (zoomScale * d.scaleFactor).coerceIn(1f, 6f)
+                    setZoomScale(next)
+                    if (next <= 1.02f) exitZoom()   // pinching fully in leaves zoom
+                    return true
+                }
+            })
+    }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && !pinchAttached &&
-            io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode
-        ) {
-            pinchAttached = true
-            attachPinchZoom()
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode) {
+            pinchDetector.onTouchEvent(ev)
+            if (pinchDetector.isInProgress) return true
+            if (zoomMode) {
+                when (ev.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> { panLastX = ev.x; panLastY = ev.y }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        panBy(ev.x - panLastX, ev.y - panLastY)
+                        panLastX = ev.x; panLastY = ev.y
+                    }
+                }
+                return true
+            }
         }
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun currentImageView(): android.widget.ImageView? {
@@ -201,37 +229,6 @@ class MediaViewerActivity : BaseActivity() {
         }
         binding.pager.isUserInputEnabled = true
         updateMediaSoftkeys()
-    }
-
-    /** Pinch zoom + one-finger pan for touch phones. Pinching outside zoom
-     *  mode enters it; the D-pad/softkey/star-pound paths are untouched. */
-    @Suppress("ClickableViewAccessibility")
-    private fun attachPinchZoom() {
-        val iv = currentImageView() ?: return
-        val scaleDetector = android.view.ScaleGestureDetector(this,
-            object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
-                    if (!zoomMode) enterZoom()
-                    setZoomScale((zoomScale * d.scaleFactor).coerceIn(1f, 6f))
-                    return true
-                }
-            })
-        var lastX = 0f; var lastY = 0f; var panning = false
-        iv.setOnTouchListener { v, ev ->
-            scaleDetector.onTouchEvent(ev)
-            when (ev.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    lastX = ev.x; lastY = ev.y; panning = zoomMode
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    if (panning && zoomMode && !scaleDetector.isInProgress) {
-                        panBy(ev.x - lastX, ev.y - lastY)
-                        lastX = ev.x; lastY = ev.y
-                    }
-                }
-            }
-            zoomMode || scaleDetector.isInProgress
-        }
     }
 
     private fun zoomStep(zoomIn: Boolean) {
@@ -292,7 +289,9 @@ class MediaViewerActivity : BaseActivity() {
                 if (barOn) "" else "# ", R.drawable.ic_zoom_in, binding.softkeyBar.softRight
             )
         }
-        binding.softkeyBar.root.visibility = View.VISIBLE
+        binding.softkeyBar.root.visibility =
+            if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode)
+                View.GONE else View.VISIBLE
     }
 
     /** "<txt> [icon]" as one centered piece, icon sized off the label font. */

@@ -729,20 +729,34 @@ class Repo private constructor(private val context: Context) {
             } catch (_: Exception) { false }
             val echoByFrom = from.isNotEmpty() &&
                 from.all { PhoneUtils.normalize(it) in ownNumbers }
-            if (echoByMid || echoByFrom) {
-                // 0.9.94 REGRESSION ROLLBACK: 0.9.94 suppressed the match AND
-                // deleted the telephony row. The field immediately reported
-                // incoming group MMS not arriving, and deletion destroys the
-                // evidence along with the message. Until a field log proves
-                // the detection is precise, this is DETECTION ONLY: log and
-                // ingest normally. Do not re-enable suppression or deletion
-                // without a log showing dry-run lines firing ONLY on true
-                // echoes across normal group traffic.
+            if (echoByMid) {
+                // GRADUATED (post-0.9.99 field logs clean, pollution fixed):
+                // an incoming MMS whose Message-ID matches OUR OWN sent row is
+                // the relay handing our message back (Google Voice groups).
+                // The message already exists as our sent copy — skip creating
+                // a duplicate. NON-DESTRUCTIVE by hard rule: the provider row
+                // stays; only its read-report request is neutralized so the
+                // scanner never sends a read receipt to ourselves again.
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-ingest",
-                    "self-echo DETECTED tid=$mmsId (midMatch=$echoByMid " +
-                        "fromMatch=$echoByFrom from=${from.joinToString()}) — " +
-                        "DRY RUN, ingesting normally"
+                    "self-echo (m_id match) skipped tid=$mmsId — relay copy " +
+                        "of our own send; provider row kept, rr neutralized"
+                )
+                try {
+                    val cv = android.content.ContentValues(2).apply {
+                        put("rr", 0); put("read", 1)
+                    }
+                    resolver.update(Uri.parse("content://mms/$mmsId"), cv, null, null)
+                } catch (_: Exception) {}
+                return@withContext null
+            } else if (echoByFrom) {
+                // From-is-own without an m_id match has never been observed on
+                // a true echo in the field (the one time it fired alone, the
+                // own-number set was polluted). Stays detection-only.
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "self-echo candidate (from-only) tid=$mmsId " +
+                        "from=${from.joinToString()} — detection only, ingesting"
                 )
             }
         }
@@ -1664,7 +1678,16 @@ class Repo private constructor(private val context: Context) {
                             )
                         }
                     }
-                    if (!who.isNullOrBlank()) {
+                    // X-Mms-Status gate: 129 Retrieved and 134 Forwarded mean
+                    // the copy reached the recipient; 128 Expired, 130
+                    // Rejected, 135 Unreachable must NOT mark Delivered
+                    // (T-Mobile emits 134s in the field, 08-09 log)
+                    if (!isRead && st !in intArrayOf(129, 134)) {
+                        io.github.theonionsarewatching.nova.util.DiagLog.log(
+                            context, "mms-delivery",
+                            "delivery-ind st=$st is not a delivered state — no per-recipient mark"
+                        )
+                    } else if (!who.isNullOrBlank()) {
                         val key = PhoneUtils.normalize(who!!)
                         val map = m.recipientStatuses.split(",")
                             .filter { it.contains("=") }

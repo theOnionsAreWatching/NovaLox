@@ -125,7 +125,7 @@
                 android:padding="8dp"
                 android:textSize="13sp"
                 android:fontFamily="sans-serif-medium"
-                android:focusable="true"
+                android:focusable="false"
                 android:clickable="true"
                 android:background="?attr/colorSurfaceContainerHigh" />
 

@@ -69,9 +69,25 @@ object SystemMmsSender {
         // From doesn't match their records — the token path is immune to every
         // line-number quirk. (Bugle MmsUtils.createSendReq:2076-2079.)
         val rawSelf = try { Utils.getMyPhoneNumber(context) } catch (_: Exception) { null }
-        val selfNumber = rawSelf
+        var selfNumber = rawSelf
             ?.let { android.telephony.PhoneNumberUtils.stripSeparators(it) }
             ?.takeIf { n -> n.count { it.isDigit() } >= 7 }
+        val hasEmailRecipient = addresses.any { it.contains("@") }
+        if (selfNumber == null && hasEmailRecipient) {
+            // EMAIL GATEWAY: the carrier builds the email's From header out of
+            // our MMS From. The insert-address-token gives the gateway nothing
+            // usable — a classic reason gateway mail lands in spam. When the
+            // SIM won't say the number, the trustworthy learned set (send-path
+            // + majority vote since 0.9.99) can.
+            selfNumber = try {
+                io.github.theonionsarewatching.nova.util.Prefs.get(context)
+                    .learnedOwnNumbers.firstOrNull()?.takeIf { it.length >= 7 }
+            } catch (_: Exception) { null }
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-email",
+                "email send: SIM gave no number, learned supplied=" + (selfNumber != null)
+            )
+        }
         if (selfNumber != null) {
             req.from = EncodedStringValue(selfNumber)
         }
@@ -99,6 +115,14 @@ object SystemMmsSender {
             if (!clean.isNullOrBlank()) req.addTo(EncodedStringValue(clean))
         }
         req.date = System.currentTimeMillis() / 1000
+        if (hasEmailRecipient && text.isNotBlank()) {
+            // EMAIL GATEWAY: the MMS Subject becomes the email's Subject line.
+            // We never set one, so gateway mail went out subject-less — a top
+            // spam-score trigger (feature phones always sent a subject).
+            // First words of the body, ellipsized, like the old phones did.
+            val subj = text.take(40).let { if (text.length > 40) it + "\u2026" else it }
+            try { req.subject = EncodedStringValue(subj) } catch (_: Exception) {}
+        }
 
         val body = PduBody()
         var size = 0
