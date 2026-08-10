@@ -71,6 +71,15 @@ object VideoCompressor {
         try {
             extractor = MediaExtractor().apply { setDataSource(src.absolutePath) }
             muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            try {
+                val r = android.media.MediaMetadataRetriever()
+                r.setDataSource(src.absolutePath)
+                val rot = r.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                )?.toIntOrNull() ?: 0
+                r.release()
+                if (rot != 0) muxer.setOrientationHint(rot)
+            } catch (_: Exception) {}
             val trackMap = HashMap<Int, Int>()
             for (i in 0 until extractor.trackCount) {
                 val f = extractor.getTrackFormat(i)
@@ -165,6 +174,23 @@ object VideoCompressor {
 
             val srcW = srcFormat.getInteger(MediaFormat.KEY_WIDTH)
             val srcH = srcFormat.getInteger(MediaFormat.KEY_HEIGHT)
+            // ROTATION (08-09 field report: portrait clip came out landscape
+            // with the top cut): phones record a LANDSCAPE buffer plus a
+            // rotation flag in the container. We keep encoding in buffer
+            // orientation and stamp the same flag onto the output so players
+            // rotate it exactly like they rotated the original.
+            val rotation = try {
+                srcFormat.getInteger(MediaFormat.KEY_ROTATION)
+            } catch (_: Exception) {
+                try {
+                    val r = android.media.MediaMetadataRetriever()
+                    r.setDataSource(src.absolutePath)
+                    val v = r.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                    )?.toIntOrNull() ?: 0
+                    r.release(); v
+                } catch (_: Exception) { 0 }
+            }
             val durationUs = try { srcFormat.getLong(MediaFormat.KEY_DURATION) } catch (_: Exception) { 0L }
             if (durationUs <= 0) {
                 DiagLog.log(context, "video-compress", "unknown duration — skipping")
@@ -231,6 +257,10 @@ object VideoCompressor {
             decoder.start()
 
             muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            if (rotation != 0) {
+                muxer.setOrientationHint(rotation)
+                DiagLog.log(context, "video-compress", "orientation hint: $rotation deg")
+            }
             var muxVideoTrack = -1
             var muxAudioTrack = -1
             var muxerStarted = false
