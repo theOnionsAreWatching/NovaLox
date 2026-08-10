@@ -998,6 +998,80 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     // ============================== sending ==============================
 
+    /** A video too long for this carrier's MMS cap gets the CUTTER instead
+     *  of a refusal: cut to the computed max (with a typed start time), or
+     *  cancel. Returns the attachment list to send, or null when the user
+     *  bailed (the dialog re-sends through the same path). The limit is
+     *  computed per phone and per clip — carrier byte cap from the device's
+     *  own MMS config, audio share from the clip's real bitrate. */
+    private suspend fun offerVideoCutIfNeeded(
+        text: String, attachments: List<Triple<String, String, String>>
+    ): List<Triple<String, String, String>>? {
+        val vc = io.github.theonionsarewatching.nova.util.VideoCompressor
+        val over = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            attachments.firstOrNull { (path, mime, _) ->
+                mime.startsWith("video/") && try {
+                    val r = android.media.MediaMetadataRetriever()
+                    r.setDataSource(path)
+                    val ms = r.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
+                    )?.toLongOrNull() ?: 0L
+                    r.release()
+                    ms / 1000 > vc.maxDurationSecFor(this@ThreadActivity, java.io.File(path))
+                } catch (_: Exception) { false }
+            }
+        } ?: return attachments
+        val (path, _, name) = over
+        val maxS = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            vc.maxDurationSecFor(this@ThreadActivity, java.io.File(path))
+        }
+        val durMs = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val r = android.media.MediaMetadataRetriever()
+                r.setDataSource(path)
+                val d = r.extractMetadata(
+                    android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
+                r.release(); d
+            } catch (_: Exception) { 0L }
+        }
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.cut_start_hint)
+            setText("0")
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val wrap = android.widget.FrameLayout(this).apply {
+            setPadding(pad, pad / 2, pad, 0); addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.cut_video_title)
+            .setMessage(getString(R.string.cut_video_msg, durMs / 1000, maxS))
+            .setView(wrap)
+            .setPositiveButton(R.string.cut_and_send) { _, _ ->
+                val start = (input.text?.toString()?.toLongOrNull() ?: 0L)
+                    .coerceIn(0L, ((durMs / 1000 - maxS).coerceAtLeast(0L)))
+                lifecycleScope.launch {
+                    val cut = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        vc.trim(this@ThreadActivity, java.io.File(path), start * 1000, maxS * 1000)
+                    }
+                    if (cut == null) {
+                        Toast.makeText(this@ThreadActivity, R.string.cut_failed,
+                            Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    val swapped = attachments.map { a ->
+                        if (a.first == path) Triple(cut.absolutePath, "video/mp4",
+                            name.substringBeforeLast('.', name) + "_cut.mp4") else a
+                    }
+                    repo.sendAttachment(convoId, text, swapped)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+        return null
+    }
+
     private fun send() {
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
         val attachments = pendingAttachments.toList()
@@ -1008,7 +1082,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         lifecycleScope.launch {
             repo.db.conversations().setDraft(convoId, "")
             if (attachments.isNotEmpty()) {
-                repo.sendAttachment(convoId, text, attachments)
+                val ready = offerVideoCutIfNeeded(text, attachments) ?: return@launch
+                repo.sendAttachment(convoId, text, ready)
             } else {
                 repo.sendText(convoId, text)
             }

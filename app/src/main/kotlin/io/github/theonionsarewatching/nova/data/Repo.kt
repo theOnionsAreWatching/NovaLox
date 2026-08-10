@@ -1320,12 +1320,47 @@ class Repo private constructor(private val context: Context) {
         val convo = db.conversations().byId(convoId) ?: return null
         val addresses = sendTargets(convo)
         if (addresses.isEmpty() || attachments.isEmpty()) return null
-        val maxBytes = io.github.theonionsarewatching.nova.util.CarrierMms
-            .limits(context).maxBytes.toLong()
-        val headroom = maxBytes * 9 / 10
+        // ONE limit everywhere: the compressor and the sender now agree on
+        // the same number (the 08-09 field failure was a hit target the
+        // sender still refused)
+        val headroom = io.github.theonionsarewatching.nova.util.VideoCompressor
+            .targetBytes(context)
         val needsCompress = attachments.any { (path, mime, _) ->
             mime.startsWith("video/") &&
                 File(path).let { it.exists() && it.length() > headroom }
+        }
+        // a clip too long to EVER fit gets a clear refusal up front, not a
+        // doomed transcode ("carriers have a max video length" — effectively
+        // yes: the length that fits the byte cap at minimum quality)
+        if (needsCompress) {
+            val tooLong = attachments.firstOrNull { (path, mime, _) ->
+                mime.startsWith("video/") && try {
+                    val r = android.media.MediaMetadataRetriever()
+                    r.setDataSource(path)
+                    val ms = r.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
+                    )?.toLongOrNull() ?: 0L
+                    r.release()
+                    ms / 1000 > io.github.theonionsarewatching.nova.util.VideoCompressor
+                        .maxDurationSec(headroom)
+                } catch (_: Exception) { false }
+            }
+            if (tooLong != null) {
+                val maxS = io.github.theonionsarewatching.nova.util.VideoCompressor
+                    .maxDurationSec(headroom)
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "video-compress", "refused before send: clip over ~${maxS}s"
+                )
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        context,
+                        context.getString(
+                            io.github.theonionsarewatching.nova.R.string.video_too_long, maxS),
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                return null
+            }
         }
         // the message appears IMMEDIATELY — as "Compressing…" when a video
         // needs shrinking — instead of the app looking dead until the
@@ -1343,6 +1378,18 @@ class Repo private constructor(private val context: Context) {
             else ""
         )
         val id = db.messages().insert(msg)
+        // parts stored NOW with the original files — the bubble shows the
+        // video's thumbnail while "Compressing…" runs (user request); the
+        // rows' paths are updated in place when the transcode lands
+        val partIds = HashMap<String, Long>()
+        for ((path, mime, name) in attachments) {
+            val dims = imageDims(mime, path)
+            partIds[path] = db.parts().insert(
+                PartEntity(messageId = id, mimeType = mime, filePath = path,
+                    fileName = name, size = File(path).length(),
+                    width = dims.first, height = dims.second)
+            )
+        }
         refreshConversation(convoId)
         ChangeBus.ping()
         withContext(Dispatchers.IO) {
@@ -1362,13 +1409,15 @@ class Repo private constructor(private val context: Context) {
                     } else a
                 } else a
             }
-            for ((path, mime, name) in prepared) {
-                val dims = imageDims(mime, path)
-                db.parts().insert(
-                    PartEntity(messageId = id, mimeType = mime, filePath = path,
-                        fileName = name, size = File(path).length(),
-                        width = dims.first, height = dims.second)
-                )
+            // swap in the compressed files where compression happened
+            attachments.forEachIndexed { i, (origPath, _, _) ->
+                val (newPath, newMime, newName) = prepared[i]
+                if (newPath != origPath) {
+                    partIds[origPath]?.let { pid ->
+                        db.parts().updateFile(pid, newPath, newMime, newName,
+                            File(newPath).length())
+                    }
+                }
             }
             if (text.isNotBlank()) extractElements(id, text)
             if (needsCompress) db.messages().setStatus(id, MsgStatus.SENDING)

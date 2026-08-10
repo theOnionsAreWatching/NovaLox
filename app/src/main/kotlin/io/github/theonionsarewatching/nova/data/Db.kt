@@ -525,6 +525,10 @@ interface MessageDao {
 
 @Dao
 interface PartDao {
+
+    @Query("UPDATE parts SET filePath = :path, mimeType = :mime, fileName = :name, size = :size WHERE id = :id")
+    suspend fun updateFile(id: Long, path: String, mime: String, name: String, size: Long)
+
     @Insert
     suspend fun insert(p: PartEntity): Long
 

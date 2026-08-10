@@ -89,7 +89,24 @@ object SystemMmsSender {
             )
         }
         if (selfNumber != null) {
-            req.from = EncodedStringValue(selfNumber)
+            // EMAIL: the gateway constructs the email sender as
+            // <10-digit>@vtext.com. A "+1"-prefixed From gives it an address
+            // that doesn't match its own mail domain records — our bounced
+            // sends carried from=+1732..., while the engine-path send that
+            // DELIVERED did not. National format for email recipients.
+            val fromVal = if (hasEmailRecipient && selfNumber.length == 12 &&
+                selfNumber.startsWith("+1")
+            ) selfNumber.substring(2)
+            else if (hasEmailRecipient && selfNumber.length == 11 &&
+                selfNumber.startsWith("1")
+            ) selfNumber.substring(1)
+            else selfNumber
+            req.from = EncodedStringValue(fromVal)
+            if (fromVal != selfNumber) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-email", "email From normalized: $selfNumber -> $fromVal"
+                )
+            }
         }
         io.github.theonionsarewatching.nova.util.DiagLog.log(
             context, "mms-send",
@@ -135,12 +152,11 @@ object SystemMmsSender {
             // which is the best available lever for getting it inlined as
             // the email body. Phone-to-phone sends keep the filename —
             // handsets expect it.
+            // EMAIL EXPERIMENT round 3 (user's call): national From is the
+            // strongest lever found — test it WITH the extensionless part so
+            // one clean result answers both delivery AND body inlining. If
+            // this bounces, text_N.txt (the once-delivered shape) returns.
             if (hasEmailRecipient) {
-                // extensionless: a null Content-Location NPE'd the composer
-                // (08-09 21:51 log — the whole send fell back to the engine
-                // and the experiment never reached the wire). The gateway
-                // attaches parts by filename EXTENSION; "text_body" gives it
-                // no .txt to attach-as while keeping the composer fed.
                 size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_body")
             } else {
                 size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_$index.txt")
