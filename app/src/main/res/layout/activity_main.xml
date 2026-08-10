@@ -127,7 +127,7 @@
                 android:fontFamily="sans-serif-medium"
                 android:focusable="false"
                 android:clickable="true"
-                android:background="?attr/colorSurfaceContainerHigh" />
+                android:background="@drawable/filter_chip_bg" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/convoList"

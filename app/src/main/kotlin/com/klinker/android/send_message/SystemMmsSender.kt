@@ -128,7 +128,18 @@ object SystemMmsSender {
         var size = 0
         var index = 0
         if (text.isNotBlank()) {
-            size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_$index.txt")
+            // EMAIL EXPERIMENT (08-09 log: the one email that got through
+            // carried the text as an attached text_0.txt): the gateway names
+            // the email attachment after our Content-Location. Sending the
+            // text part WITHOUT a filename gives it nothing to attach-as,
+            // which is the best available lever for getting it inlined as
+            // the email body. Phone-to-phone sends keep the filename —
+            // handsets expect it.
+            if (hasEmailRecipient) {
+                size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "")
+            } else {
+                size += addPart(body, text.toByteArray(Charsets.UTF_8), "text/plain", "text_$index.txt")
+            }
             index++
         }
         for ((bytes, mime, name) in attachments) {
@@ -147,6 +158,16 @@ object SystemMmsSender {
         }
         body.addPart(0, smil)
 
+        if (hasEmailRecipient) {
+            val partDesc = (0 until body.partsNum).joinToString(", ") { i ->
+                val pp = body.getPart(i)
+                String(pp.contentType ?: ByteArray(0)) + ":" +
+                    (pp.contentLocation?.let { String(it) } ?: "<no-name>")
+            }
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "mms-email", "email pdu parts: $partDesc"
+            )
+        }
         req.body = body
         req.messageSize = size.toLong()
         req.messageClass = PduHeaders.MESSAGE_CLASS_PERSONAL_STR.toByteArray()
@@ -230,9 +251,13 @@ object SystemMmsSender {
         val part = PduPart()
         if (mime.startsWith("text")) part.charset = CharacterSets.UTF_8
         part.contentType = mime.toByteArray()
-        part.contentLocation = name.toByteArray()
-        val dot = name.lastIndexOf('.')
-        part.contentId = (if (dot == -1) name else name.substring(0, dot)).toByteArray()
+        if (name.isNotBlank()) {
+            part.contentLocation = name.toByteArray()
+            val dot = name.lastIndexOf('.')
+            part.contentId = (if (dot == -1) name else name.substring(0, dot)).toByteArray()
+        } else {
+            part.contentId = "text_body".toByteArray()
+        }
         part.data = bytes
         pb.addPart(part)
         return bytes.size

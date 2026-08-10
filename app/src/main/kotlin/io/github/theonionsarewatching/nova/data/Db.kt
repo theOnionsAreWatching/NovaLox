@@ -26,6 +26,8 @@ object MsgStatus {
     const val SCHEDULED = 6
     /** the recipient's phone reported the MMS as read (read-orig-ind) */
     const val READ_BY_RECIPIENT = 7
+    /** parked for auto-retry when service returns */
+    const val RETRYING = 8
 }
 
 object GroupMode {

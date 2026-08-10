@@ -79,6 +79,29 @@ class Repo private constructor(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    // bounce rows whose side effects (FAIL the original + system line)
+    // already ran. The 08-09 field log shows one bounce row re-running FIVE
+    // times across sync passes — spamming rejection notes and failing the
+    // NEXT email message. Memory set for this run; the provider row's read
+    // flag makes it restart-proof.
+    private val bounceProcessed =
+        java.util.Collections.synchronizedSet(HashSet<Long>())
+
+    private fun bounceRowDone(mmsId: Long): Boolean = try {
+        var done = false
+        context.contentResolver.query(
+            Uri.parse("content://mms/$mmsId"), arrayOf("read"), null, null, null
+        )?.use { c -> if (c.moveToFirst()) done = c.getInt(0) == 1 }
+        done
+    } catch (_: Exception) { false }
+
+    private fun markBounceRowDone(mmsId: Long) {
+        try {
+            val cv = android.content.ContentValues(1).apply { put("read", 1) }
+            context.contentResolver.update(Uri.parse("content://mms/$mmsId"), cv, null, null)
+        } catch (_: Exception) {}
+    }
+
     private fun logIngestDrop(mmsId: Long, reason: String) {
         if (ingestDropLogged.add("$mmsId:$reason")) {
             io.github.theonionsarewatching.nova.util.DiagLog.log(
@@ -413,8 +436,10 @@ class Repo private constructor(private val context: Context) {
                         )
                     }
                     if (msgBox == Telephony.Mms.MESSAGE_BOX_INBOX &&
-                        sb.contains("MAILER-DAEMON", ignoreCase = true)
+                        sb.contains("MAILER-DAEMON", ignoreCase = true) &&
+                        bounceProcessed.add(mmsId) && !bounceRowDone(mmsId)
                     ) {
+                        markBounceRowDone(mmsId)
                         // the carrier bounced an email-MMS (spam rejection).
                         // The bounce PDU has no displayable text — ingesting it
                         // produced a BLANK message "from unknown". Instead:
@@ -422,10 +447,14 @@ class Repo private constructor(private val context: Context) {
                         // into ITS conversation saying why, and suppress the
                         // bounce entirely.
                         val cutoff = System.currentTimeMillis() - 2L * 3600 * 1000
+                        // only messages the carrier CONFIRMED (post send-conf)
+                        // can be failed by a bounce — the 08-09 log shows a
+                        // stale bounce re-run marking a message FAILED while
+                        // it was still SENDING, before its own conf arrived
                         db.messages().ownEmailSince(cutoff)
                             .firstOrNull {
-                                it.status != MsgStatus.FAILED &&
-                                    it.status != MsgStatus.CANCELED
+                                it.status == MsgStatus.SENT ||
+                                    it.status == MsgStatus.DELIVERED
                             }?.let { orig ->
                                 db.messages().setStatus(orig.id, MsgStatus.FAILED)
                                 db.messages().insert(

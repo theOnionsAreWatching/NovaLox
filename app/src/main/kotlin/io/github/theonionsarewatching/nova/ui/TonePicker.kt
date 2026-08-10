@@ -59,10 +59,17 @@ object TonePicker {
 
         val dialog = AlertDialog.Builder(activity)
             .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.tone_title)))
-            .setSingleChoiceItems(labels.toTypedArray(), selected) { _, which ->
+            .setSingleChoiceItems(labels.toTypedArray(), selected) { d, which ->
                 selected = which
                 stopPreview()
                 val v = values[which]
+                if (v == "__file__") {
+                    // its own entry: picking it opens the file chooser right
+                    // away — no Save step involved (user request)
+                    d.dismiss()
+                    activity.pickAudioFile { uri -> onPicked(uri) }
+                    return@setSingleChoiceItems
+                }
                 if (v.isNotBlank() && v != "silent") {
                     try {
                         preview = RingtoneManager.getRingtone(
@@ -78,9 +85,7 @@ object TonePicker {
                 }
             }
             .setPositiveButton(R.string.save) { _, _ ->
-                val v = values.getOrElse(selected) { "" }
-                if (v == "__file__") activity.pickAudioFile { uri -> onPicked(uri) }
-                else onPicked(v)
+                onPicked(values.getOrElse(selected) { "" })
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()

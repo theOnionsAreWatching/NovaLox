@@ -27,6 +27,17 @@ object AutoRetry {
         val p = Prefs.get(context)
         p.autoRetryIds = p.autoRetryIds + messageId.toString()
         DiagLog.log(context, "sms-send", "auto-retry armed for msg=$messageId")
+        // the bubble reads "Retrying…" while parked, not "Failed"
+        val repo = io.github.theonionsarewatching.nova.data.Repo.get(context)
+        repo.scope.launch(Dispatchers.IO) {
+            val m = repo.db.messages().byId(messageId)
+            if (m != null && m.status == io.github.theonionsarewatching.nova.data.MsgStatus.FAILED) {
+                repo.db.messages().setStatus(
+                    messageId, io.github.theonionsarewatching.nova.data.MsgStatus.RETRYING)
+                repo.refreshConversation(m.convoId)
+                io.github.theonionsarewatching.nova.data.ChangeBus.ping()
+            }
+        }
         register(context.applicationContext)
     }
 
@@ -43,7 +54,11 @@ object AutoRetry {
         repo.scope.launch(Dispatchers.IO) {
             for (id in ids) {
                 val m = repo.db.messages().byId(id)
-                if (m == null || m.status != io.github.theonionsarewatching.nova.data.MsgStatus.FAILED) {
+                val st = m?.status
+                if (m == null ||
+                    (st != io.github.theonionsarewatching.nova.data.MsgStatus.FAILED &&
+                     st != io.github.theonionsarewatching.nova.data.MsgStatus.RETRYING)
+                ) {
                     remove(context, id); continue
                 }
                 DiagLog.log(context, "sms-send", "auto-retry firing for msg=$id")

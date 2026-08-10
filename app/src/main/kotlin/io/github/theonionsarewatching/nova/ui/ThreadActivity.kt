@@ -1327,7 +1327,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         if (selecting) { toggleSelected(row); return }
         val m = row.msg
         when (m.status) {
-            MsgStatus.FAILED -> {
+            MsgStatus.FAILED, MsgStatus.RETRYING -> {
                 // both retry paths, same as the long-press menu (user request)
                 AlertDialog.Builder(this)
                     .setItems(arrayOf(
@@ -1517,7 +1517,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         items += getString(R.string.select_messages) to { enterSelection(row) }
 
         when (m.status) {
-            MsgStatus.FAILED -> {
+            MsgStatus.FAILED, MsgStatus.RETRYING -> {
                 items += getString(R.string.retry) to { lifecycleScope.launch { repo.retry(m.id) } }
                 items += getString(R.string.retry_on_service) to {
                     io.github.theonionsarewatching.nova.util.AutoRetry.add(this, m.id)
