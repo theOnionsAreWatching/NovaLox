@@ -286,7 +286,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Touch scrolling shows the same date bubble the D-pad hold-scroll uses.
      *  Attached once from onCreate. */
     private fun attachTouchDateBubble() {
-        binding.recycler.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+        binding.msgList.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             private var touching = false
             override fun onScrollStateChanged(rv: androidx.recyclerview.widget.RecyclerView, state: Int) {
                 if (state == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_DRAGGING) touching = true
