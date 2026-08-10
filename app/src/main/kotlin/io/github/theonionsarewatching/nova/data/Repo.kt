@@ -84,6 +84,9 @@ class Repo private constructor(private val context: Context) {
     // times across sync passes — spamming rejection notes and failing the
     // NEXT email message. Memory set for this run; the provider row's read
     // flag makes it restart-proof.
+    private val readRecScanLogged =
+        java.util.Collections.synchronizedSet(HashSet<Long>())
+
     private val bounceProcessed =
         java.util.Collections.synchronizedSet(HashSet<Long>())
 
@@ -1317,46 +1320,65 @@ class Repo private constructor(private val context: Context) {
         val convo = db.conversations().byId(convoId) ?: return null
         val addresses = sendTargets(convo)
         if (addresses.isEmpty() || attachments.isEmpty()) return null
-        // videos over the carrier's MMS ceiling go through the compression
-        // engine first; a failed compression keeps the original path so
-        // nothing that used to send can break (engine logs every step)
         val maxBytes = io.github.theonionsarewatching.nova.util.CarrierMms
             .limits(context).maxBytes.toLong()
-        val prepared = attachments.map { a ->
-            val (path, mime, name) = a
-            if (mime.startsWith("video/")) {
-                val f = java.io.File(path)
-                val headroom = maxBytes * 9 / 10
-                if (f.exists() && f.length() > headroom) {
-                    io.github.theonionsarewatching.nova.util.VideoCompressor
-                        .compress(context, f, headroom)
-                        ?.let { Triple(it.absolutePath, "video/mp4",
-                            name.substringBeforeLast('.', name) + ".mp4") }
-                        ?: a
-                } else a
-            } else a
+        val headroom = maxBytes * 9 / 10
+        val needsCompress = attachments.any { (path, mime, _) ->
+            mime.startsWith("video/") &&
+                File(path).let { it.exists() && it.length() > headroom }
         }
+        // the message appears IMMEDIATELY — as "Compressing…" when a video
+        // needs shrinking — instead of the app looking dead until the
+        // transcode finishes (user report). And the whole prep runs on IO:
+        // the 08-09 log caught the transcoder blocking the MAIN thread for
+        // 8 s (STALL stack straight through MediaCodec).
         val now = System.currentTimeMillis()
         val msg = MessageEntity(
             convoId = convoId, address = addresses.joinToString("|"), body = text, date = now,
-            isMine = true, status = MsgStatus.SENDING, isMms = true,
+            isMine = true,
+            status = if (needsCompress) MsgStatus.COMPRESSING else MsgStatus.SENDING,
+            isMms = true,
             recipientStatuses = if (convo.isGroup)
                 addresses.joinToString(",") { "${PhoneUtils.normalize(it)}=${MsgStatus.SENDING}" }
             else ""
         )
         val id = db.messages().insert(msg)
-        for ((path, mime, name) in prepared) {
-            val dims = imageDims(mime, path)
-            db.parts().insert(
-                PartEntity(messageId = id, mimeType = mime, filePath = path,
-                    fileName = name, size = File(path).length(),
-                    width = dims.first, height = dims.second)
-            )
-        }
-        if (text.isNotBlank()) extractElements(id, text)
         refreshConversation(convoId)
         ChangeBus.ping()
-        Sender.sendMms(context, id, text, addresses, attachments)
+        withContext(Dispatchers.IO) {
+            // videos over the carrier ceiling go through the compression
+            // engine; a failed compression keeps the original path so nothing
+            // that used to send can break (engine logs every step)
+            val prepared = attachments.map { a ->
+                val (path, mime, name) = a
+                if (mime.startsWith("video/")) {
+                    val f = java.io.File(path)
+                    if (f.exists() && f.length() > headroom) {
+                        io.github.theonionsarewatching.nova.util.VideoCompressor
+                            .compress(context, f, headroom)
+                            ?.let { Triple(it.absolutePath, "video/mp4",
+                                name.substringBeforeLast('.', name) + ".mp4") }
+                            ?: a
+                    } else a
+                } else a
+            }
+            for ((path, mime, name) in prepared) {
+                val dims = imageDims(mime, path)
+                db.parts().insert(
+                    PartEntity(messageId = id, mimeType = mime, filePath = path,
+                        fileName = name, size = File(path).length(),
+                        width = dims.first, height = dims.second)
+                )
+            }
+            if (text.isNotBlank()) extractElements(id, text)
+            if (needsCompress) db.messages().setStatus(id, MsgStatus.SENDING)
+            refreshConversation(convoId)
+            ChangeBus.ping()
+            // the SENDER gets the PREPARED list — the 08-09 log shows the
+            // refusal sizing the ORIGINAL 26 MB file while the compressed
+            // 1.1 MB result sat unused
+            Sender.sendMms(context, id, text, addresses, prepared)
+        }
         return id
     }
 
@@ -1471,7 +1493,9 @@ class Repo private constructor(private val context: Context) {
                     }
                 }
                 if (rr != 128 || mid.isNullOrBlank()) {
-                    if (rr != -1) {
+                    // once per tid per process — the finite ring buffer was
+                    // filling with dozens of copies of this line (08-09 log)
+                    if (rr != -1 && readRecScanLogged.add(tid)) {
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-delivery",
                             "read-rec scan: tid=$tid rr=$rr mid=${mid ?: "<none>"} — no response due"

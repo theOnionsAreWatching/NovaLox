@@ -60,6 +60,7 @@
     <string name="tone_pick_system">System sounds</string>
     <string name="tone_pick_file">Choose a file\u2026</string>
     <string name="status_retrying">Retrying\u2026</string>
+    <string name="status_compressing">Compressing\u2026</string>
     <string name="filter_active">Filtered: %1$s \u2715 </string>
     <string name="save_all_attachments">Save all attachments</string>
     <string name="retry_on_service">Retry when service returns</string>

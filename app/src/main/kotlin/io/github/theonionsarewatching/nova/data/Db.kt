@@ -28,6 +28,8 @@ object MsgStatus {
     const val READ_BY_RECIPIENT = 7
     /** parked for auto-retry when service returns */
     const val RETRYING = 8
+    /** video transcode in progress before the send */
+    const val COMPRESSING = 9
 }
 
 object GroupMode {

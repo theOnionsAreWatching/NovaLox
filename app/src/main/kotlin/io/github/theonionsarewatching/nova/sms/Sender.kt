@@ -327,6 +327,7 @@ object Sender {
 
     fun statusLabel(context: Context, status: Int): String = when (status) {
         MsgStatus.RETRYING -> context.getString(R.string.status_retrying)
+        MsgStatus.COMPRESSING -> context.getString(R.string.status_compressing)
         MsgStatus.SENDING -> context.getString(io.github.theonionsarewatching.nova.R.string.status_sending)
         MsgStatus.SENT -> context.getString(io.github.theonionsarewatching.nova.R.string.status_sent)
         MsgStatus.DELIVERED -> context.getString(io.github.theonionsarewatching.nova.R.string.status_delivered)

@@ -1141,8 +1141,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val pickImages = Intent(Intent.ACTION_PICK).apply {
             setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
         }
-        if (!(both.resolveActivity(packageManager) != null && tryStart(both, "get-content-both")) &&
-            !tryStart(pickAll, "pick-all-media") &&
+        // ORDER MATTERS (08-09 log: "via get-content-both" opened the Files
+        // UI, not the gallery): ACTION_PICK is the gallery's verb — it goes
+        // first; GET_CONTENT-with-both-types is the fallback for phones whose
+        // gallery ignores PICK; image-only PICK is the floor.
+        if (!tryStart(pickAll, "pick-all-media") &&
+            !(both.resolveActivity(packageManager) != null && tryStart(both, "get-content-both")) &&
             !tryStart(pickImages, "pick-images")
         ) {
             pickMedia("image/*", null)

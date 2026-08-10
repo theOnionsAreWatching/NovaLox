@@ -181,7 +181,12 @@ object SystemMmsSender {
             req.priority = DEFAULT_PRIORITY
             // THE line the engine got wrong:
             req.deliveryReport =
-                if (requestDeliveryReport) PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
+                if (requestDeliveryReport && !hasEmailRecipient)
+                    PduHeaders.VALUE_YES else PduHeaders.VALUE_NO
+            // email sends never request a delivery report: stock apps don't,
+            // the report is meaningless for a mail hop anyway (the gateway's
+            // 129 arrives before the mail is even accepted), and it's one of
+            // the few remaining wire differences vs apps that get through
             // Read reports default to VALUE_NO and the default must stay NO.
             // Field evidence: requesting them made recipient phones emit
             // read-rec PDUs that some carriers deliver back as ordinary MMS —

@@ -451,6 +451,11 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
     // opened at once). A MENU arriving within this window of another softkey
     // action is the same press's echo and gets swallowed.
     private var lastNonMenuActionAt = 0L
+    private var pendingMenu: Runnable? = null
+
+    private fun cancelPendingMenu() {
+        pendingMenu?.let { binding.root.removeCallbacks(it); pendingMenu = null }
+    }
 
     fun handleKey(event: KeyEvent): Boolean {
         // softkeys act ONLY while the bar is shown. With the bar off the
@@ -466,9 +471,31 @@ class Softkeys(private val activity: BaseActivity, private val binding: ViewSoft
         if (!codeMatches(event.keyCode)) return false
         if (event.action != KeyEvent.ACTION_UP) return true
         when (event.keyCode) {
-            prefs.softkeyLeftCode -> { lastNonMenuActionAt = System.currentTimeMillis(); leftAction?.invoke() }
-            prefs.softkeyRightCode -> { lastNonMenuActionAt = System.currentTimeMillis(); rightAction?.invoke() }
-            KeyEvent.KEYCODE_MENU -> menuAction?.invoke()
+            prefs.softkeyLeftCode -> {
+                lastNonMenuActionAt = System.currentTimeMillis()
+                cancelPendingMenu()   // Sonim MENU-first order: swallow its pair
+                leftAction?.invoke()
+            }
+            prefs.softkeyRightCode -> {
+                lastNonMenuActionAt = System.currentTimeMillis()
+                cancelPendingMenu()
+                rightAction?.invoke()
+            }
+            KeyEvent.KEYCODE_MENU -> {
+                if (prefs.softkeyLeftCode == KeyEvent.KEYCODE_MENU ||
+                    prefs.softkeyRightCode == KeyEvent.KEYCODE_MENU
+                ) {
+                    menuAction?.invoke()  // MENU IS a mapped softkey: immediate
+                } else {
+                    // Sonim X320: one softkey press emits its code AND MENU,
+                    // in either order. MENU waits a beat; the softkey action
+                    // landing inside the window cancels it. Real MENU presses
+                    // just feel imperceptibly delayed.
+                    val r = Runnable { pendingMenu = null; menuAction?.invoke() }
+                    pendingMenu = r
+                    binding.root.postDelayed(r, 280)
+                }
+            }
         }
         return true
     }

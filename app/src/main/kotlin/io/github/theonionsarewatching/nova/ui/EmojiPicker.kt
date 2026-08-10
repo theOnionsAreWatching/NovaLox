@@ -47,9 +47,11 @@ object EmojiPicker {
     }
 
     private fun showCategories(activity: BaseActivity, target: EditText) {
+        // each category leads with a representative emoji (user request)
+        val labels = categories.map { (name, emojis) -> emojis.first() + "  " + name }
         AlertDialog.Builder(activity)
             .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.attach_menu_emoji)))
-            .setItems(categories.map { it.first }.toTypedArray()) { _, which ->
+            .setItems(labels.toTypedArray()) { _, which ->
                 showGrid(activity, target, which)
             }
             .setNegativeButton(android.R.string.cancel, null)
@@ -59,7 +61,14 @@ object EmojiPicker {
     private fun showGrid(activity: BaseActivity, target: EditText, index: Int) {
         val (name, emojis) = categories[index]
         val grid = GridView(activity).apply {
-            numColumns = 6
+            // adapt to the screen instead of a fixed 6 columns — narrow
+            // QVGA displays clipped the last column (user report)
+            val dm = activity.resources.displayMetrics
+            numColumns = GridView.AUTO_FIT
+            columnWidth = (44 * dm.density).toInt()
+            stretchMode = GridView.STRETCH_COLUMN_WIDTH
+            val pad = (6 * dm.density).toInt()
+            setPadding(pad, pad, pad, pad)
             adapter = android.widget.ArrayAdapter(
                 activity, R.layout.item_emoji, emojis
             )

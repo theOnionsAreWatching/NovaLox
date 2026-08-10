@@ -4,5 +4,4 @@
     android:layout_height="wrap_content"
     android:gravity="center"
     android:padding="10dp"
-    android:textSize="24sp"
-    android:focusable="true" />
+    android:textSize="24sp" />
