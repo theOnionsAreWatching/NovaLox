@@ -305,8 +305,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun showDateBubble() {
-        val v = binding.msgList.focusedChild ?: return
-        val pos = binding.msgList.getChildAdapterPosition(v)
+        // D-pad scrolling has a focused row; touch flings do NOT — the old
+        // focusedChild-or-return meant the bubble could never appear for
+        // touch (field report). Fall back to the first visible row.
+        val pos = binding.msgList.focusedChild
+            ?.let { binding.msgList.getChildAdapterPosition(it) }
+            ?.takeIf { it >= 0 }
+            ?: (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
+                ?.findFirstVisibleItemPosition()?.takeIf { it >= 0 }
+            ?: return
         val row = rows.getOrNull(pos) ?: return
         binding.dateBubble.text = Formatters.listStamp(row.msg.date)
         binding.dateBubble.visibility = View.VISIBLE
@@ -1949,61 +1956,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     /** Mute / block / archive / hide, grouped. */
     private fun blockAndMenu(c: ConversationEntity) {
-        val items = ArrayList<Pair<String, () -> Unit>>()
-        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
-            lifecycleScope.launch { repo.setMuted(c.id, !c.muted); refreshConvoState() }
-        }
-        items += (if (c.notifBlocked) getString(R.string.unblock_notifications)
-        else getString(R.string.block_notifications)) to {
-            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); refreshConvoState() }
-        }
-        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, convoId) }
-        items += getString(R.string.hide_conversation) to {
-            AlertDialog.Builder(this)
-                .setMessage(R.string.hide_confirm)
-                .setPositiveButton(R.string.hide) { _, _ ->
-                    lifecycleScope.launch {
-                        repo.db.conversations().setHidden(c.id, true); ChangeBus.ping(); finish()
-                    }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
-        if (!c.isGroup) {
-            val number = c.addressList().firstOrNull().orEmpty()
-            val blocked = number.isNotBlank() && repo.isNumberBlocked(number)
-            items += (if (blocked) getString(R.string.unblock_number)
-            else getString(R.string.block_number)) to {
-                if (blocked) {
-                    lifecycleScope.launch {
-                        repo.unblockNumber(number)
-                        Toast.makeText(this@ThreadActivity, R.string.number_unblocked,
-                            Toast.LENGTH_SHORT).show()
-                        refreshConvoState()
-                    }
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.block_number)
-                        .setMessage(R.string.block_number_warning)
-                        .setPositiveButton(R.string.block_number) { _, _ ->
-                            lifecycleScope.launch {
-                                val systemOk = repo.blockNumber(number)
-                                Toast.makeText(this@ThreadActivity,
-                                    if (systemOk) R.string.number_blocked
-                                    else R.string.number_blocked_local,
-                                    Toast.LENGTH_SHORT).show()
-                                refreshConvoState()
-                            }
-                        }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
-                }
-            }
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.block_and_menu)
-            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
-            .show()
+        ConvoMenus.notifications(this, repo, c,
+            onChanged = { refreshConvoState() },
+            onHidden = { finish() })
     }
 
     /** Sound, background, style and colors for this look. */

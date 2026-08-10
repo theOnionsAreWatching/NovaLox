@@ -175,6 +175,18 @@ class MediaViewerActivity : BaseActivity() {
     // zoom mode is panning — pager swipes and video controls are untouched
     private var panLastX = 0f
     private var panLastY = 0f
+    private val tapDetector by lazy {
+        android.view.GestureDetector(this,
+            object : android.view.GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+                    // double tap toggles zoom: in at 2x, back out to fit
+                    if (zoomMode) exitZoom()
+                    else { enterZoom(); setZoomScale(2f) }
+                    return true
+                }
+            })
+    }
+
     private val pinchDetector by lazy {
         android.view.ScaleGestureDetector(this,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -190,6 +202,7 @@ class MediaViewerActivity : BaseActivity() {
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode) {
+            tapDetector.onTouchEvent(ev)
             pinchDetector.onTouchEvent(ev)
             if (pinchDetector.isInProgress) return true
             if (zoomMode) {

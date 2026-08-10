@@ -67,9 +67,12 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 if (down) {
                     true // bottom: stay put
                 } else {
-                    // top: selection bar first when it's showing, else the header
+                    // top: selection bar first when it's showing, then the
+                    // filter banner when a filter is active, then the header
                     if (selectingConvos && binding.mainSelectionBar.isShown) {
                         binding.btnSelCancelMain.requestFocus()
+                    } else if (binding.filterChip.isShown) {
+                        enterChip()
                     } else {
                         enterHeader()
                     }
@@ -523,59 +526,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     /** Same grouping as the thread's options menu. */
     private fun blockAndMenu(c: ConversationEntity) {
-        val items = ArrayList<Pair<String, () -> Unit>>()
-        items += (if (c.muted) getString(R.string.unmute) else getString(R.string.mute)) to {
-            lifecycleScope.launch { repo.setMuted(c.id, !c.muted); ChangeBus.ping() }
-        }
-        items += (if (c.notifBlocked) getString(R.string.unblock_notifications)
-        else getString(R.string.block_notifications)) to {
-            lifecycleScope.launch { repo.setNotifBlocked(c.id, !c.notifBlocked); ChangeBus.ping() }
-        }
-        items += getString(R.string.sound_and_vibration) to { SoundDialog.show(this, c.id) }
-        items += getString(R.string.hide_conversation) to {
-            AlertDialog.Builder(this)
-                .setMessage(R.string.hide_confirm)
-                .setPositiveButton(R.string.hide) { _, _ ->
-                    lifecycleScope.launch {
-                        repo.db.conversations().setHidden(c.id, true); ChangeBus.ping()
-                    }
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
-        }
-        if (!c.isGroup) {
-            val number = c.addressList().firstOrNull().orEmpty()
-            val blocked = number.isNotBlank() && repo.isNumberBlocked(number)
-            items += (if (blocked) getString(R.string.unblock_number)
-            else getString(R.string.block_number)) to {
-                if (blocked) {
-                    lifecycleScope.launch {
-                        repo.unblockNumber(number)
-                        android.widget.Toast.makeText(this@MainActivity,
-                            R.string.number_unblocked, android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    AlertDialog.Builder(this)
-                        .setTitle(R.string.block_number)
-                        .setMessage(R.string.block_number_warning)
-                        .setPositiveButton(R.string.block_number) { _, _ ->
-                            lifecycleScope.launch {
-                                val systemOk = repo.blockNumber(number)
-                                android.widget.Toast.makeText(this@MainActivity,
-                                    if (systemOk) R.string.number_blocked
-                                    else R.string.number_blocked_local,
-                                    android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
-                }
-            }
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.block_and_menu)
-            .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
-            .show()
+        ConvoMenus.notifications(this, repo, c,
+            onChanged = { ChangeBus.ping() })
     }
 
     /** Same grouping as the thread's options menu. */
@@ -1078,7 +1030,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_UP -> {
-                    if (binding.filterChip.isShown) enterChip() else enterHeader()
+                    enterHeader()
                     return true
                 }
             }

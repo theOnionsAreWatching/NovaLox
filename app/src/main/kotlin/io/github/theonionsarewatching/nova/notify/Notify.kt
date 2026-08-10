@@ -146,11 +146,20 @@ object NotificationHelper {
             context, (convo.id + 100_000).toInt(), markRead, flags
         )
 
+        // MessagingStyle is required for Android Auto to read messages
+        // aloud; phones render it like the old BigText, so nothing is lost
+        val sender = androidx.core.app.Person.Builder().setName(title).build()
+        val style = NotificationCompat.MessagingStyle(
+            androidx.core.app.Person.Builder()
+                .setName(context.getString(R.string.app_name)).build()
+        )
+            .setConversationTitle(if (convo.isGroup) title else null)
+            .addMessage(text, msg.date, sender)
         val builder = NotificationCompat.Builder(context, ensureChannel(context, convo))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setStyle(style)
             .setContentIntent(contentPi)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -173,6 +182,29 @@ object NotificationHelper {
                     0, context.getString(R.string.action_reply), riPi
                 ).addRemoteInput(remote).build()
             })
+            .addInvisibleAction(run {
+                // Android Auto: semantic reply, no UI on the phone
+                val remote = androidx.core.app.RemoteInput.Builder(ReplyReceiver.KEY_TEXT)
+                    .setLabel(context.getString(R.string.action_reply)).build()
+                val ri = Intent(context, ReplyReceiver::class.java)
+                    .putExtra("convo_id", convo.id)
+                val riFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                NotificationCompat.Action.Builder(
+                    0, context.getString(R.string.action_reply),
+                    PendingIntent.getBroadcast(context, (convo.id + 910000).toInt(), ri, riFlags)
+                ).addRemoteInput(remote)
+                    .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                    .setShowsUserInterface(false)
+                    .build()
+            })
+            .addInvisibleAction(
+                NotificationCompat.Action.Builder(
+                    0, context.getString(R.string.action_mark_read), markReadPi
+                ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                    .setShowsUserInterface(false)
+                    .build()
+            )
         builder.setLights(android.graphics.Color.WHITE, 500, 500)
         if (Build.VERSION.SDK_INT < 26) {
             builder.setSound(soundUri(effectiveTone(context, convo)))
