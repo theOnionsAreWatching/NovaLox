@@ -196,6 +196,7 @@ object MimeExt {
             m.contains("mkv") || m.contains("matroska") -> "mkv"
             m.contains("mpeg") && m.startsWith("audio") -> "mp3"
             m.contains("mp3") -> "mp3"
+            m.contains("amr-wb") || m.contains("awb") -> "awb"
             m.contains("amr") -> "amr"
             m.contains("ogg") || m.contains("opus") -> "ogg"
             m.contains("wav") -> "wav"
@@ -237,6 +238,9 @@ object AudioSniff {
             when {
                 startsWith("#!AMR-WB") -> ".awb" to "audio/amr-wb"
                 startsWith("#!AMR") -> ".amr" to "audio/amr"
+                // 3GPP brands (3gp4/3gp5/3gp6/3g2a…) usually carry AMR voice
+                // notes; keep the container honest so players pick the right one
+                startsWith("ftyp", 4) && startsWith("3g", 8) -> ".3gp" to "audio/3gpp"
                 startsWith("ftyp", 4) -> ".m4a" to "audio/mp4"
                 startsWith("RIFF") && startsWith("QLCM", 8) -> ".qcp" to "audio/qcelp"
                 startsWith("QLCM", 8) -> ".qcp" to "audio/qcelp"
@@ -244,6 +248,11 @@ object AudioSniff {
                 startsWith("OggS") -> ".ogg" to "audio/ogg"
                 startsWith("fLaC") -> ".flac" to "audio/flac"
                 startsWith("ID3") -> ".mp3" to "audio/mpeg"
+                // raw ADTS AAC: 12-bit sync 0xFFF with layer bits 00 (FF F1 /
+                // FF F9). Must precede the MP3 check, whose 11-bit sync also
+                // matches these bytes; MP3 frames never have layer 00.
+                (head[0].toInt() and 0xFF) == 0xFF &&
+                    (head[1].toInt() and 0xF6) == 0xF0 -> ".aac" to "audio/aac"
                 (head[0].toInt() and 0xFF) == 0xFF &&
                     (head[1].toInt() and 0xE0) == 0xE0 -> ".mp3" to "audio/mpeg"
                 else -> null

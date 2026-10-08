@@ -351,6 +351,8 @@ class SettingsActivity : BaseActivity() {
                 findPreference<androidx.preference.EditTextPreference>("mms_custom_ua")
             val customUaProfPref =
                 findPreference<androidx.preference.EditTextPreference>("mms_custom_uaprof")
+            val customAcceptPref =
+                findPreference<androidx.preference.EditTextPreference>("mms_custom_accept")
             val profilePref =
                 findPreference<androidx.preference.ListPreference>("mms_client_profile")
             // the custom fields belong to the picker: shown only when Custom is chosen
@@ -358,6 +360,7 @@ class SettingsActivity : BaseActivity() {
                 val custom = value == "custom"
                 customUaPref?.isVisible = custom
                 customUaProfPref?.isVisible = custom
+                customAcceptPref?.isVisible = custom
             }
             showCustomFields(profilePref?.value)
             val reseedIdentity = androidx.preference.Preference.OnPreferenceChangeListener { pref, newValue ->
@@ -371,6 +374,7 @@ class SettingsActivity : BaseActivity() {
             }
             profilePref?.onPreferenceChangeListener = reseedIdentity
             customUaPref?.onPreferenceChangeListener = reseedIdentity
+            customAcceptPref?.onPreferenceChangeListener = reseedIdentity
             customUaProfPref?.onPreferenceChangeListener = reseedIdentity
             findPreference<androidx.preference.SwitchPreferenceCompat>("softkeys_focusable")
                 ?.setOnPreferenceChangeListener { pref, newValue ->

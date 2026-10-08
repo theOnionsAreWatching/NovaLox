@@ -23,6 +23,12 @@
         android:key="mms_custom_uaprof"
         android:title="@string/pref_mms_custom_uaprof"
         android:summary="@string/pref_mms_custom_uaprof_summary" />
+    <EditTextPreference
+        app:singleLineTitle="false"
+        app:iconSpaceReserved="false"
+        android:key="mms_custom_accept"
+        android:title="@string/pref_mms_custom_accept"
+        android:summary="@string/pref_mms_custom_accept_summary" />
     <ListPreference
         app:iconSpaceReserved="false"
         android:key="voice_format"

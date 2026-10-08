@@ -21,10 +21,15 @@
     </string-array>
 
     <string-array name="mms_profile_entries">
-        <item>Off</item>
+        <item>Off (default system identity)</item>
         <item>Carrier app (Verizon SIMs)</item>
         <item>Android default</item>
         <item>Samsung Galaxy</item>
+        <item>TCL Flip (Verizon, T408DL) \u2014 proven for voice notes</item>
+        <item>TCL Flip Pro (Verizon, 4058G)</item>
+        <item>TCL Flip Pro (other carriers)</item>
+        <item>Samsung Galaxy S10 (Verizon)</item>
+        <item>iPhone</item>
         <item>Custom\u2026</item>
     </string-array>
     <string-array name="mms_profile_values">
@@ -32,6 +37,11 @@
         <item>carrier</item>
         <item>aosp</item>
         <item>samsung</item>
+        <item>tcl_t408dl_vzw</item>
+        <item>tcl_4058g_vzw</item>
+        <item>tcl_4058g</item>
+        <item>vzw_samsung</item>
+        <item>iphone</item>
         <item>custom</item>
     </string-array>
 
