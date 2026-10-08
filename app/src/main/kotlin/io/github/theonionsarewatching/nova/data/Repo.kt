@@ -992,12 +992,16 @@ class Repo private constructor(private val context: Context) {
                     var finalFile = outFile
                     var finalMime = p.ct
                     val nameLc = (p.name ?: "").lowercase()
-                    val looksAudio = p.ct.startsWith("audio", ignoreCase = true) ||
+                    // declared video is never relabeled: a .3gp video clip
+                    // also sniffs as an ftyp container
+                    val looksAudio = !p.ct.startsWith("video", ignoreCase = true) && (
+                        p.ct.startsWith("audio", ignoreCase = true) ||
                         p.ct.contains("octet", ignoreCase = true) ||
                         p.ct.contains("qcelp", ignoreCase = true) ||
                         p.ct.contains("qcp", ignoreCase = true) ||
                         nameLc.endsWith(".qcp") || nameLc.endsWith(".amr") ||
-                        nameLc.endsWith(".3gp") || nameLc.endsWith(".dat")
+                        nameLc.endsWith(".awb") || nameLc.endsWith(".aac") ||
+                        nameLc.endsWith(".3gp") || nameLc.endsWith(".dat"))
                     if (looksAudio) {
                         val sniffed = io.github.theonionsarewatching.nova.util.AudioSniff.sniff(outFile)
                         io.github.theonionsarewatching.nova.util.DiagLog.log(

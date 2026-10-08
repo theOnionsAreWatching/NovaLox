@@ -329,7 +329,7 @@ class MmsPushReceiver : BroadcastReceiver() {
         )
 
         val overrides = Bundle()
-        MmsUserAgent.applyToOverrides(context, overrides)
+        MmsUserAgent.applyToOverrides(context, overrides, subId)
 
         try {
             context.grantUriPermission(

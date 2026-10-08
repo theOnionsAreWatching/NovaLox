@@ -622,5 +622,7 @@
     <string name="pref_mms_custom_ua_summary">Used when the identity above is Custom. Example: vzmmms1.0</string>
     <string name="pref_mms_custom_uaprof">Custom identity \u2014 profile URL</string>
     <string name="pref_mms_custom_uaprof_summary">Optional capability profile URL (x-wap-profile) sent with the custom identity.</string>
+    <string name="pref_mms_custom_accept">Custom identity \u2014 Accept header</string>
+    <string name="pref_mms_custom_accept_summary">Optional. Content types the custom identity says it accepts. Leave blank to keep the phone\u2019s standard Accept. Example: application/vnd.wap.mms-message, application/vnd.wap.sic, audio/*, */*</string>
     <string name="pref_voice_format">Voice note format</string>
 </resources>

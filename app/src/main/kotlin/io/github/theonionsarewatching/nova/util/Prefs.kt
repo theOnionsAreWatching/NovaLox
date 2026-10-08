@@ -190,6 +190,9 @@ class Prefs(context: Context) {
         get() = sp.getString("mms_custom_ua", "") ?: ""
     val mmsCustomUaProf: String
         get() = sp.getString("mms_custom_uaprof", "") ?: ""
+    /** Accept header sent with the custom identity; blank = keep the platform's. */
+    val mmsCustomAccept: String
+        get() = sp.getString("mms_custom_accept", "") ?: ""
     var phantomsPurged: Boolean
         get() = sp.getBoolean("phantoms_purged", false)
         set(v) { sp.edit().putBoolean("phantoms_purged", v).apply() }
