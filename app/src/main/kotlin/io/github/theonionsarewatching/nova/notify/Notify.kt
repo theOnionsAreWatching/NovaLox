@@ -160,7 +160,18 @@ object NotificationHelper {
         val text = when {
             io.github.theonionsarewatching.nova.data.MmsStub.isStub(msg.body) ->
                 context.getString(R.string.snippet_mms_pending)
-            msg.body.isNotBlank() -> msg.body
+            msg.body.isNotBlank() -> {
+                // Matched reaction texts get a short form ("Alice 👍 your message").
+                // Leave channel / vibration code untouched.
+                val preview = try {
+                    if (io.github.theonionsarewatching.nova.util.ReactionParser.parse(msg.body) != null)
+                        kotlinx.coroutines.runBlocking {
+                            Repo.get(context).reactionPreviewText(msg)
+                        }
+                    else null
+                } catch (_: Exception) { null }
+                preview ?: msg.body
+            }
             else -> context.getString(if (msg.isMms) R.string.snippet_attachment else R.string.app_name)
         }
 

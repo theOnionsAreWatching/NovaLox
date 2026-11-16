@@ -15,8 +15,11 @@ import io.github.theonionsarewatching.nova.sms.ScheduledSendReceiver
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.ContactsHelper
 import io.github.theonionsarewatching.nova.util.ElementExtractor
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.util.Prefs
+import io.github.theonionsarewatching.nova.util.ReactionParser
+import io.github.theonionsarewatching.nova.util.ReactionSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -208,10 +211,63 @@ class Repo private constructor(private val context: Context) {
         }
     }
 
+    private fun senderNameOf(m: MessageEntity, convo: ConversationEntity?): String {
+        if (m.isMine) return ""
+        val addrs = convo?.addressList().orEmpty()
+        val names = convo?.nameList().orEmpty()
+        val want = PhoneUtils.normalize(m.address)
+        val i = addrs.indexOfFirst { PhoneUtils.normalize(it) == want }
+        return names.getOrNull(i)?.takeIf { it.isNotBlank() } ?: m.address
+    }
+
+    private fun toReactionItem(
+        m: MessageEntity,
+        parts: List<PartEntity>,
+        convo: ConversationEntity?
+    ): MessageReactions.Item {
+        val skip = m.status == MsgStatus.SCHEDULED || m.status == MsgStatus.NOTE ||
+            MmsStub.isStub(m.body)
+        return MessageReactions.Item(
+            id = m.id,
+            body = m.body,
+            date = m.date,
+            isMine = m.isMine,
+            address = m.address,
+            senderName = senderNameOf(m, convo),
+            eligible = !skip,
+            mimeTypes = parts.map { it.mimeType }
+        )
+    }
+
+    /**
+     * Short chat-list / notification text when [m] is a matched incoming
+     * reaction. Null if it should stay a normal snippet. Looks at a small
+     * recent window only — not a per-row scan of the whole thread.
+     */
+    suspend fun reactionPreviewText(m: MessageEntity): String? {
+        if (!ReactionSettings.enabled(context) || m.body.isBlank()) return null
+        val parsed = ReactionParser.parse(m.body) ?: return null
+        if (parsed.kind == ReactionParser.Kind.EDIT) return null
+        val recent = db.messages().latest(m.convoId, 80).reversed()
+        if (recent.isEmpty()) return null
+        val parts = db.parts().byMessages(recent.map { it.id }).groupBy { it.messageId }
+        val convo = db.conversations().byId(m.convoId)
+        val items = recent.map { toReactionItem(it, parts[it.id].orEmpty(), convo) }
+        val preview = MessageReactions.preview(m.id, items) ?: return null
+        return MessageReactions.formatPreview(
+            preview,
+            context.getString(io.github.theonionsarewatching.nova.R.string.reaction_you),
+            context.getString(io.github.theonionsarewatching.nova.R.string.reaction_your_message)
+        )
+    }
+
     private suspend fun snippetFor(m: MessageEntity): String {
         if (MmsStub.isStub(m.body)) return context.getString(
             io.github.theonionsarewatching.nova.R.string.snippet_mms_pending)
-        if (m.body.isNotBlank()) return m.body.take(120)
+        if (m.body.isNotBlank()) {
+            reactionPreviewText(m)?.let { return it.take(120) }
+            return m.body.take(120)
+        }
         if (m.isMms) {
             val parts = db.parts().byMessage(m.id)
             val p = parts.firstOrNull()

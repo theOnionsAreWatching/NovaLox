@@ -27,8 +27,10 @@ import io.github.theonionsarewatching.nova.databinding.ActivityThreadBinding
 import io.github.theonionsarewatching.nova.notify.NotificationHelper
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.Formatters
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.Perf
 import io.github.theonionsarewatching.nova.util.PhoneUtils
+import io.github.theonionsarewatching.nova.util.ReactionSettings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import java.io.File
@@ -62,6 +64,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private var convoId = -1L
     private var convo: ConversationEntity? = null
     private var rows = ArrayList<MessageRow>()
+    /** Unfiltered loaded window, including reaction fallback texts hidden in [rows]. */
+    private var loadedRows = ArrayList<MessageRow>()
+    /** Hidden reaction message id -> the message it was attached to. */
+    private var hiddenTargets = emptyMap<Long, Long>()
+    private var hiddenIds = emptySet<Long>()
     private var hasMoreOlder = true
     private var hasMoreNewer = false
     private var loading = false
@@ -335,7 +342,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // was on top; rebind so they take effect on return without reopening
         if (::adapter.isInitialized) {
             applyChatBackground()
-            adapter.notifyDataSetChanged()
+            // Re-apply reaction hiding in case "Show reactions" changed in Settings.
+            if (loadedRows.isNotEmpty()) publishWindow(loadedRows, useSubmit = true)
+            else adapter.notifyDataSetChanged()
         }
     }
 
@@ -609,17 +618,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
         val lastVis = lm?.findLastVisibleItemPosition() ?: -1
         val snapshot = rows
+        val loadedSnapshot = loadedRows
+        val hiddenSnap = hiddenTargets
         val anchor = snapshot.getOrNull(lastVis)?.msg
         val rowCount = snapshot.size
         val moreNewer = hasMoreNewer
-        val lastLoadedId = snapshot.lastOrNull()?.msg?.id
+        val lastLoadedId = loadedSnapshot.lastOrNull()?.msg?.id ?: snapshot.lastOrNull()?.msg?.id
         val cid = convoId
         val app = applicationContext
         lifecycleScope.launch {
             if (!dividerCaptured) {
                 dividerCaptured = true
-                adapter.newDividerMessageId =
-                    repo.db.messages().firstUnreadId(cid) ?: -1L
+                val firstUnread = repo.db.messages().firstUnreadId(cid)
+                adapter.newDividerMessageId = firstUnread?.let { hiddenSnap[it] ?: it } ?: -1L
             }
             val left = repo.scope.async {
                 val msgs = repo.db.messages()
@@ -630,7 +641,25 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     io.github.theonionsarewatching.nova.util.ReadMarking.Mode.ALL ->
                         msgs.markThreadReadCount(cid)
                     io.github.theonionsarewatching.nova.util.ReadMarking.Mode.UP_TO ->
-                        if (anchor != null) msgs.markReadUpTo(cid, anchor.date, anchor.id) else 0
+                        if (anchor != null) {
+                            // Hidden reaction texts sit after their target; if
+                            // that target is already on screen, mark them read too.
+                            var date = anchor.date
+                            var id = anchor.id
+                            for (row in loadedSnapshot) {
+                                val targetId = hiddenSnap[row.msg.id] ?: continue
+                                val target = loadedSnapshot.find { it.msg.id == targetId }?.msg
+                                    ?: continue
+                                val targetAtOrBefore = target.date < anchor.date ||
+                                    (target.date == anchor.date && target.id <= anchor.id)
+                                if (targetAtOrBefore && (row.msg.date > date ||
+                                        (row.msg.date == date && row.msg.id > id))) {
+                                    date = row.msg.date
+                                    id = row.msg.id
+                                }
+                            }
+                            msgs.markReadUpTo(cid, date, id)
+                        } else 0
                     else -> 0
                 }
                 // answer any read-report requests now that these are read
@@ -747,6 +776,36 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     }
 
+    /** Hide matched reaction texts and attach pills. Nothing is deleted from the store. */
+    private fun displayFrom(raw: List<MessageRow>): ArrayList<MessageRow> {
+        if (raw.isEmpty() || !ReactionSettings.enabled(this)) {
+            hiddenTargets = emptyMap()
+            hiddenIds = emptySet()
+            return ArrayList(raw.map { if (it.reactions.isEmpty()) it else it.copy(reactions = emptyList()) })
+        }
+        val result = MessageReactions.resolve(raw.map { it.toReactionItem() })
+        hiddenIds = result.hidden.map { it.id }.toSet()
+        hiddenTargets = result.targets.entries.associate { it.key.id to it.value.id }
+        return ArrayList(raw.mapNotNull { row ->
+            if (row.msg.id in hiddenIds) null
+            else {
+                val rx = result.reactions[MessageReactions.Key(row.msg.id)].orEmpty()
+                if (rx == row.reactions) row else row.copy(reactions = rx)
+            }
+        })
+    }
+
+    private fun publishWindow(raw: List<MessageRow>, useSubmit: Boolean) {
+        loadedRows = ArrayList(raw)
+        rows = displayFrom(raw)
+        if (!::adapter.isInitialized) return
+        if (useSubmit) adapter.submit(rows)
+        else {
+            adapter.rows = rows
+            adapter.notifyDataSetChanged()
+        }
+    }
+
     /** Opened straight into this thread (notification, dialer)? Back should
      *  land on the conversation list, not exit the app. */
     override fun onClipboardChanged() {
@@ -767,9 +826,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private suspend fun updateScrollExtent() {
         val lm = binding.msgList.layoutManager as? BoundedLinearLayoutManager ?: return
-        if (rows.isEmpty()) { lm.totalBefore = 0; lm.totalAfter = 0; return }
-        val first = rows.first().msg
-        val last = rows.last().msg
+        val extent = if (loadedRows.isNotEmpty()) loadedRows else rows
+        if (extent.isEmpty()) { lm.totalBefore = 0; lm.totalAfter = 0; return }
+        val first = extent.first().msg
+        val last = extent.last().msg
         lm.totalBefore = repo.db.messages().countOlderThan(convoId, first.date, first.id)
         lm.totalAfter = repo.db.messages().countNewerThan(convoId, last.date, last.id)
         binding.msgList.invalidate()
@@ -783,13 +843,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val latest = repo.db.messages().latest(convoId, PAGE).reversed()
             val tQuery = System.currentTimeMillis() - t0
             val t1 = System.currentTimeMillis()
-            rows = ArrayList(buildRows(latest))
+            publishWindow(buildRows(latest), useSubmit = false)
             val tBuild = System.currentTimeMillis() - t1
             hasMoreOlder = latest.size >= PAGE
             hasMoreNewer = false
             val t2 = System.currentTimeMillis()
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
             val tNotify = System.currentTimeMillis() - t2
             Perf.logLoad(this@ThreadActivity, rows, tQuery, tBuild, tNotify, t0)
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -808,45 +866,42 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun loadOlder() {
-        if (loading || !hasMoreOlder || rows.isEmpty()) return
+        if (loading || !hasMoreOlder || loadedRows.isEmpty()) return
         loading = true
         binding.loadingBanner.visibility = View.VISIBLE
         lifecycleScope.launch {
             val t0 = System.currentTimeMillis()
-            val first = rows.first().msg
+            val first = loadedRows.first().msg
             val older = repo.db.messages()
                 .olderThan(convoId, first.date, first.id, PAGE_MORE).reversed()
             val tQuery = System.currentTimeMillis() - t0
             hasMoreOlder = older.size >= PAGE_MORE
             if (older.isNotEmpty()) {
-                // keep the exact scroll position AND the focused view: capture the
-                // current anchor, insert above, then restore the anchor shifted by
-                // the insert count — the focused view instance survives untouched,
-                // so focus can never blip up to the header during the re-layout
+                // Re-resolve reactions on the whole window, then restore the
+                // same message (a hidden reaction can change adapter indexes).
                 val hadFocus = binding.msgList.focusedChild != null
                 val anchorView = binding.msgList.focusedChild ?: binding.msgList.getChildAt(0)
                 val anchorPos = anchorView?.let { binding.msgList.getChildAdapterPosition(it) } ?: -1
                 val anchorOffset = anchorView?.top ?: 0
-                val newRows = buildRows(older)
-                rows.addAll(0, newRows)
-                adapter.rows = rows
-                adapter.notifyItemRangeInserted(0, newRows.size)
+                val anchorId = rows.getOrNull(anchorPos)?.msg?.id
+                val combined = ArrayList<MessageRow>(older.size + loadedRows.size)
+                combined.addAll(buildRows(older))
+                combined.addAll(loadedRows)
+                publishWindow(combined, useSubmit = true)
                 updateScrollExtent()
-                if (anchorPos >= 0) {
+                val newPos = if (anchorId != null) rows.indexOfFirst { it.msg.id == anchorId } else -1
+                if (newPos >= 0) {
                     (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
-                        ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
+                        ?.scrollToPositionWithOffset(newPos, anchorOffset)
                 }
                 if (hadFocus) binding.msgList.post {
-                    // the insert can momentarily recycle the focused row; if
-                    // focus escaped the list (it lands on the top bar), bring
-                    // it back to the same message instead
-                    if (binding.msgList.focusedChild == null) {
-                        scroller?.focusPosition(anchorPos + newRows.size, false)
+                    if (binding.msgList.focusedChild == null && newPos >= 0) {
+                        scroller?.focusPosition(newPos, false)
                     }
                 }
                 Perf.log(
                     this@ThreadActivity, "loadOlder",
-                    "rows=${older.size} total=${rows.size} query=${tQuery}ms " +
+                    "rows=${older.size} total=${loadedRows.size} query=${tQuery}ms " +
                         "total=${System.currentTimeMillis() - t0}ms"
                 )
             }
@@ -856,18 +911,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun loadNewer() {
-        if (loading || !hasMoreNewer || rows.isEmpty()) return
+        if (loading || !hasMoreNewer || loadedRows.isEmpty()) return
         loading = true
         lifecycleScope.launch {
-            val last = rows.last().msg
+            val last = loadedRows.last().msg
             val newer = repo.db.messages().newerThan(convoId, last.date, last.id, PAGE)
             hasMoreNewer = newer.size >= PAGE
             if (newer.isNotEmpty()) {
-                val newRows = buildRows(newer)
-                val start = rows.size
-                rows.addAll(newRows)
-                adapter.rows = rows
-                adapter.notifyItemRangeInserted(start, newRows.size)
+                val combined = ArrayList<MessageRow>(loadedRows.size + newer.size)
+                combined.addAll(loadedRows)
+                combined.addAll(buildRows(newer))
+                publishWindow(combined, useSubmit = true)
                 updateScrollExtent()
             }
             loading = false
@@ -888,11 +942,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val newer = repo.db.messages().newerThan(convoId, target.date, target.id, PAGE / 2)
             hasMoreOlder = older.size >= PAGE / 2
             hasMoreNewer = newer.size >= PAGE / 2
-            rows = ArrayList(buildRows(older + target + newer))
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
+            publishWindow(buildRows(older + target + newer), useSubmit = false)
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-            val pos = rows.indexOfFirst { it.msg.id == targetId }.coerceAtLeast(0)
+            val focusId = hiddenTargets[targetId] ?: targetId
+            val pos = rows.indexOfFirst { it.msg.id == focusId }.coerceAtLeast(0)
             updateScrollExtent()
             enterScrollMode(focusPos = pos)
             // only what is actually on screen gets marked
@@ -919,20 +972,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // stall. Now: keep the older part as-is (if a cheap fingerprint
             // says nothing in it changed) and only re-load the newest PAGE
             // plus anything newer. Any doubt -> the old full reload.
-            val requested = maxOf(PAGE, rows.size)
+            val requested = maxOf(PAGE, loadedRows.size)
             val tailRows = refreshTailOnly()
             val tQuery = System.currentTimeMillis() - t0
             val t1 = System.currentTimeMillis()
             if (tailRows != null) {
-                rows = tailRows
+                publishWindow(tailRows, useSubmit = true)
             } else {
                 val latest = repo.db.messages().latest(convoId, requested).reversed()
-                rows = ArrayList(buildRows(latest))
+                publishWindow(buildRows(latest), useSubmit = true)
                 hasMoreOlder = latest.size >= requested
             }
             val tBuild = System.currentTimeMillis() - t1
             val t2 = System.currentTimeMillis()
-            adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
             Perf.logRefresh(
                 this@ThreadActivity, rows.size, requested, tQuery, tBuild,
                 System.currentTimeMillis() - t2, t0
@@ -956,17 +1008,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** Live-tail refresh for big windows: returns the new row list, or null
      *  when the caller should fall back to the full reload. */
     private suspend fun refreshTailOnly(): ArrayList<MessageRow>? {
-        val keep = rows.size - PAGE
+        val keep = loadedRows.size - PAGE
         if (keep <= 0) return null                     // small window: full reload is cheap
-        val first = rows.first().msg
-        val cut = rows[keep - 1].msg
+        val first = loadedRows.first().msg
+        val cut = loadedRows[keep - 1].msg
         // 1) is the kept (older) part unchanged? fingerprints only, no bodies
         val stamps = try {
             repo.db.messages().stampsBetween(convoId, first.date, first.id, cut.date, cut.id)
         } catch (_: Exception) { return null }
         if (stamps.size != keep) return null
         for (i in 0 until keep) {
-            val r = rows[i]
+            val r = loadedRows[i]
             val st = stamps[i]
             val m = r.msg
             if (st.id != m.id || st.status != m.status || st.locked != m.locked ||
@@ -980,7 +1032,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val tail = repo.db.messages().newerThan(convoId, cut.date, cut.id, limit)
         if (tail.size >= limit) return null            // flood of new rows: full reload
         val out = ArrayList<MessageRow>(keep + tail.size)
-        out.addAll(rows.subList(0, keep))
+        out.addAll(loadedRows.subList(0, keep))
         out.addAll(buildRows(tail))
         return out
     }
@@ -1256,11 +1308,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         loading = true
         lifecycleScope.launch {
             val oldest = repo.db.messages().newerThan(convoId, Long.MIN_VALUE, Long.MIN_VALUE, PAGE)
-            rows = ArrayList(buildRows(oldest))
+            publishWindow(buildRows(oldest), useSubmit = false)
             hasMoreOlder = false
             hasMoreNewer = oldest.size >= PAGE
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
             updateScrollExtent()
             binding.msgList.scrollToPosition(0)
             binding.msgList.post { scroller?.focusPosition(0, false) }
@@ -2324,10 +2374,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         row.elements.forEach { e ->
             items += ElementActions.label(this, e) to { ElementActions.show(this, e) { n -> messageNumber(n) } }
         }
+        // reactions present (only when Show reactions is on): View reactions
+        // leads the menu, so it is the row that starts focused
+        val menu = MessageReactions.withViewReactionsFirst(
+            items, row.reactions.isNotEmpty(),
+            getString(R.string.view_reactions) to { showReactions(row) }
+        )
 
         DsmsAlertBuilder(this)
             .setCustomTitle(Dialogs.title(this, getString(R.string.message_options)))
-            .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .setItems(menu.map { it.first }.toTypedArray()) { _, which -> menu[which].second() }
             .show()
     }
 
@@ -2442,9 +2498,29 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     sb.append(Sender.statusLabel(this, m.status)).append('\n')
             }
         }
+        if (row.reactions.isNotEmpty()) {
+            sb.append('\n').append(getString(R.string.view_reactions)).append('\n')
+            val you = getString(R.string.reaction_you)
+            for (r in row.reactions) {
+                val who = if (r.isMine) you else r.senderName
+                sb.append(getString(R.string.reaction_from, who, r.emoji)).append('\n')
+            }
+        }
         DsmsAlertBuilder(this)
             .setTitle(R.string.details)
             .setMessage(sb.toString().trim())
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showReactions(row: MessageRow) {
+        val you = getString(R.string.reaction_you)
+        val lines = row.reactions.joinToString("\n") {
+            getString(R.string.reaction_from, if (it.isMine) you else it.senderName, it.emoji)
+        }
+        DsmsAlertBuilder(this)
+            .setTitle(R.string.view_reactions)
+            .setMessage(lines)
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }

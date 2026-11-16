@@ -15,6 +15,12 @@
         android:title="@string/st_unread_top"
         android:summary="@string/st_unread_top_sum"
         android:defaultValue="true" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="show_reactions"
+        android:title="@string/st_show_reactions"
+        android:summary="@string/st_show_reactions_sum"
+        android:defaultValue="true" />
     <ListPreference
         app:iconSpaceReserved="false"
         android:key="default_group_mode"

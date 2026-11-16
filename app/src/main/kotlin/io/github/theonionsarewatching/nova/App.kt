@@ -17,6 +17,19 @@ class App : Application(), ImageLoaderFactory {
 
     private val handler = Handler(Looper.getMainLooper())
     private var pendingSync: Runnable? = null
+    // Kept as a field: SharedPreferences listeners are weakly held.
+    private val reactionPrefListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == io.github.theonionsarewatching.nova.util.ReactionSettings.KEY) {
+                val repoR = Repo.get(this)
+                repoR.scope.launch {
+                    try {
+                        repoR.refreshAllConversationSummaries()
+                        io.github.theonionsarewatching.nova.data.ChangeBus.ping()
+                    } catch (_: Exception) {}
+                }
+            }
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -99,6 +112,7 @@ class App : Application(), ImageLoaderFactory {
                 } catch (_: Exception) {}
             }
         }
+        prefs0.sp.registerOnSharedPreferenceChangeListener(reactionPrefListener)
         io.github.theonionsarewatching.nova.util.DiagLog.installCrashHandler(this)
         NotificationHelper.createChannels(this)
 

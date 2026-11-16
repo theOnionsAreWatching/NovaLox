@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="st_show_reactions">Show reactions</string>
+    <string name="st_show_reactions_sum">Show "Liked …" texts as a mark on the original message</string>
+    <string name="view_reactions">View reactions</string>
+    <string name="reaction_your_message">your message</string>
+    <string name="reaction_removed">%1$s removed %2$s</string>
+    <string name="reaction_from">%1$s  %2$s</string>
+    <string name="reaction_you">You</string>
+</resources>

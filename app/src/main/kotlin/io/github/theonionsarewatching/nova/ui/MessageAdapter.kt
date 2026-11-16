@@ -19,6 +19,8 @@ import io.github.theonionsarewatching.nova.data.PartEntity
 import io.github.theonionsarewatching.nova.databinding.ItemMessageBinding
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.Formatters
+import io.github.theonionsarewatching.nova.util.MessageReaction
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.Prefs
 import java.io.File
 
@@ -26,7 +28,8 @@ data class MessageRow(
     val msg: MessageEntity,
     val parts: List<PartEntity>,
     val elements: List<ElementEntity>,
-    val senderName: String
+    val senderName: String,
+    val reactions: List<MessageReaction> = emptyList()
 ) {
     val isSystemLine: Boolean get() = msg.address == SYSTEM_ADDRESS
 
@@ -143,6 +146,7 @@ class MessageAdapter(
             holder.b.thumb.visibility = View.GONE
             holder.b.attachLabel.visibility = View.GONE
             holder.b.metaRow.visibility = View.GONE
+            holder.b.reactionsLine.visibility = View.GONE
             holder.b.accentBar.visibility = View.GONE
             holder.b.bubbleBox.background = null
             val lp = holder.b.bubbleBox.layoutParams as LinearLayout.LayoutParams
@@ -307,9 +311,16 @@ class MessageAdapter(
         val bgPad = android.graphics.Rect()
         val hasBgPad = holder.b.bubbleBox.background?.getPadding(bgPad) == true
         if (!hasBgPad) bgPad.set(0, 0, 0, 0)
+        // reaction badge: a fixed-height pill that overlaps the bubble's
+        // bottom edge by half its height. Its size is known at bind time, so
+        // the bubble gets just enough extra bottom room to keep the text clear
+        // and nothing resizes later (no jump while scrolling or re-entering).
+        val rxBadgeH = if (row.reactions.isNotEmpty()) reactionBadgeHeight(holder, prefs, dp) else 0
+        val rxOverlap = rxBadgeH / 2
+        val rxExtraPad = if (rxBadgeH > 0) (rxOverlap - dp(3)).coerceAtLeast(0) else 0
         holder.b.bubbleBox.setPadding(
             dp(8) + bgPad.left, dp(6) + bgPad.top,
-            dp(8) + bgPad.right, dp(6) + bgPad.bottom
+            dp(8) + bgPad.right, dp(6) + bgPad.bottom + rxExtraPad
         )
 
         // ---- body ----
@@ -498,6 +509,44 @@ class MessageAdapter(
             holder.b.attachLabel.visibility = View.GONE
         }
 
+        // ---- reaction badge (display-only; the fallback SMS stays in the store) ----
+        // A "drop" overlapping the bubble's bottom edge, half on / half below:
+        // bottom-left on incoming, bottom-right on sent. Opaque fill with a
+        // ring in the chat background color so it separates from the bubble.
+        if (rxBadgeH > 0) {
+            val v = holder.b.reactionsLine
+            v.visibility = View.VISIBLE
+            v.text = MessageReactions.summarize(row.reactions)
+            val backdrop = backdropColor()
+            val fill = androidx.core.graphics.ColorUtils.compositeColors(
+                withAlpha(accent, if (ThemeUtils.isNight(ctx)) 0x55 else 0x2E), backdrop
+            )
+            val textColor = if (androidx.core.graphics.ColorUtils.calculateContrast(
+                    accent, fill) >= 3.0) accent
+                else ThemeUtils.attrColor(ctx, R.attr.dsmsText, R.color.text_primary)
+            v.setTextColor(textColor)
+            v.background = GradientDrawable().apply {
+                cornerRadius = rxBadgeH / 2f
+                setColor(fill)
+                setStroke(reactionRing(dp), backdrop)
+            }
+            val ring = reactionRing(dp)
+            v.setPadding(dp(5) + ring, 0, dp(5) + ring, 0)
+            val rlp = v.layoutParams as LinearLayout.LayoutParams
+            val full = prefs.messageStyle in setOf("blocks", "lines")
+            val mine = m.isMine && !full
+            rlp.height = rxBadgeH
+            rlp.topMargin = -rxOverlap
+            rlp.gravity = if (mine) Gravity.END else Gravity.START
+            // inset past the tail / bar so the badge sits under the bubble's
+            // corner, not on the tail
+            rlp.marginStart = if (mine) dp(28) + dp(8) else bgPad.left + dp(6)
+            rlp.marginEnd = if (mine) bgPad.right + dp(6) else dp(28) + dp(8)
+            v.layoutParams = rlp
+        } else {
+            holder.b.reactionsLine.visibility = View.GONE
+        }
+
         // ---- meta line: time + status ----
         holder.b.metaRow.visibility = View.VISIBLE
         holder.b.iconAttach.visibility =
@@ -652,7 +701,8 @@ fun MessageRow.signature(): String = buildString {
     append(msg.date); append('|')
     append(msg.locked); append('|')
     append(msg.scheduledAt ?: 0L); append('|')
-    append(parts.size)
+    append(parts.size); append('|')
+    append(MessageReactions.summarize(reactions))
 }
 
 /** Signature of everything the full bind renders EXCEPT the meta line, so a
@@ -661,7 +711,49 @@ fun MessageRow.bodySignature(): String = buildString {
     append(msg.body); append('|')
     append(msg.locked); append('|')
     append(parts.size); append('|')
-    append(msg.isMine)
+    append(msg.isMine); append('|')
+    append(MessageReactions.summarize(reactions))
+}
+
+fun MessageRow.toReactionItem(): MessageReactions.Item {
+    val skip = isSystemLine ||
+        msg.status == MsgStatus.SCHEDULED ||
+        msg.status == MsgStatus.NOTE ||
+        io.github.theonionsarewatching.nova.data.MmsStub.isStub(msg.body)
+    return MessageReactions.Item(
+        id = msg.id,
+        body = msg.body,
+        date = msg.date,
+        isMine = msg.isMine,
+        address = msg.address,
+        senderName = senderName,
+        eligible = !skip,
+        mimeTypes = parts.map { it.mimeType }
+    )
+}
+
+/** Ring width around the reaction badge (about 1.5dp, at least 1px). */
+private fun reactionRing(dp: (Int) -> Int): Int = maxOf(1, (dp(3) + 1) / 2)
+
+/**
+ * Fixed height of the reaction badge for the current text size: one line of
+ * text (no font padding, no emoji fallback spacing) plus a small vertical pad
+ * and the ring. Also applies those text settings to the badge view.
+ */
+private fun reactionBadgeHeight(
+    holder: MessageAdapter.VH,
+    prefs: io.github.theonionsarewatching.nova.util.Prefs,
+    dp: (Int) -> Int
+): Int {
+    val v = holder.b.reactionsLine
+    v.textSize = prefs.timeTextSp.coerceAtLeast(11f)
+    v.includeFontPadding = false
+    if (android.os.Build.VERSION.SDK_INT >= 28) v.isFallbackLineSpacing = false
+    v.maxLines = 1
+    v.ellipsize = android.text.TextUtils.TruncateAt.END
+    v.gravity = Gravity.CENTER_VERTICAL
+    val fm = v.paint.fontMetricsInt
+    return (fm.descent - fm.ascent) + dp(2) * 2 + reactionRing(dp) * 2
 }
 
 private fun withAlpha(color: Int, alpha: Int): Int =
