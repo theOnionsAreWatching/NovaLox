@@ -66,7 +66,46 @@ class BoundedLinearLayoutManager(
 
         val cap = maxStepPx().coerceAtLeast(24)
         dy = dy.coerceIn(-cap, cap)
-        if (immediate) parent.scrollBy(0, dy) else parent.smoothScrollBy(0, dy)
+        if (immediate) parent.scrollBy(0, dy) else parent.smoothScrollBy(0, dy, GLIDE, glideMs(dy, child))
+        return true
+    }
+}
+
+/**
+ * layout manager for the chat list. Keeps the focused row in
+ * view with ONE scroll at a time: a single press glides (smoothScrollBy),
+ * but while a scroll is already running (key held) it stops that animation
+ * and moves at once, so two animations never fight and the highlight never
+ * lags or jumps back. It also lays out half a screen of extra rows above and
+ * below, so the next row always exists when focus moves to it (no
+ * scroll-to-position jumps).
+ */
+class SteadyLinearLayoutManager(context: Context) : LinearLayoutManager(context) {
+    override fun calculateExtraLayoutSpace(state: RecyclerView.State, extraLayoutSpace: IntArray) {
+        val extra = height / 2
+        extraLayoutSpace[0] = extra
+        extraLayoutSpace[1] = extra
+    }
+
+    override fun requestChildRectangleOnScreen(
+        parent: RecyclerView, child: View, rect: Rect, immediate: Boolean, focusedChildVisible: Boolean
+    ): Boolean {
+        val parentTop = parent.paddingTop
+        val parentBottom = parent.height - parent.paddingBottom
+        val childTop = child.top + rect.top
+        val childBottom = child.top + rect.bottom
+        val dy = when {
+            childTop < parentTop -> childTop - parentTop
+            childBottom > parentBottom -> childBottom - parentBottom
+            else -> 0
+        }
+        if (dy == 0) return false
+        if (immediate || parent.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
+            parent.stopScroll()
+            parent.scrollBy(0, dy)
+        } else {
+            parent.smoothScrollBy(0, dy, GLIDE, glideMs(dy, child))
+        }
         return true
     }
 }
@@ -85,9 +124,10 @@ class DpadScroller(
     private val rv: RecyclerView,
     private val subScrollTallItems: Boolean,
     private val lineStepPx: () -> Int,
-    private val onEdge: ((down: Boolean) -> Boolean)? = null
+    private val onEdge: ((down: Boolean) -> Boolean)? = null,
+    /** most rows one key repeat may move (the chat list uses 2: steady) */
+    private val maxStep: Int = 6
 ) {
-    private val maxStep = 6
 
     fun onKey(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return false
@@ -204,4 +244,11 @@ class DpadScroller(
             }
         }
     }
+}
+
+/** Short decelerating glide for one D-pad step: ~80-120 ms per row. */
+internal val GLIDE = android.view.animation.DecelerateInterpolator(1.6f)
+internal fun glideMs(dy: Int, child: View): Int {
+    val row = child.height.coerceAtLeast(1)
+    return (80 + 40 * kotlin.math.abs(dy) / row).coerceIn(80, 180)
 }

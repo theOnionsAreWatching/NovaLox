@@ -11,7 +11,26 @@
     <color name="accent_purple">#BA68C8</color>
     <color name="accent_pink">#F06292</color>
     <color name="accent_gray">#90A4AE</color>
+    <color name="accent_amber">#FFD54F</color>
+    <color name="accent_gold">#FFE082</color>
+    <color name="accent_coral">#FF8A65</color>
+    <color name="accent_crimson">#EF5350</color>
+    <color name="accent_rose">#F48FB1</color>
+    <color name="accent_violet">#B39DDB</color>
+    <color name="accent_indigo">#9FA8DA</color>
+    <color name="accent_sky">#81D4FA</color>
+    <color name="accent_cyan">#4DD0E1</color>
+    <color name="accent_mint">#80E0C0</color>
+    <color name="accent_lime">#C5E1A5</color>
+    <color name="accent_olive">#D4D48A</color>
+    <color name="accent_brown">#BCAAA4</color>
+    <color name="accent_slate">#B0BEC5</color>
     <color name="divider">#42FFFFFF</color>
     <color name="compose_pill">#1AFFFFFF</color>
     <color name="focus_fill">#52FFFFFF</color>
+    <!-- pop-ups: night accents are light, so text on them is dark -->
+    <color name="dialog_surface">#FF2A2A2F</color>
+    <color name="dialog_rim">#1FFFFFFF</color>
+    <color name="on_accent">#E6000000</color>
+    <color name="dialog_text_disabled">#61FFFFFF</color>
 </resources>

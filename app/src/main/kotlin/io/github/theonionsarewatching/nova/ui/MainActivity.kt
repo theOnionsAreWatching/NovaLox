@@ -35,12 +35,35 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private lateinit var repo: Repo
     private var scroller: DpadScroller? = null
     private val changeListener: () -> Unit = { loadConversations() }
+    /** the next list load lands on the top row. Armed on
+     *  launch and whenever a conversation (or New message) is opened, so
+     *  coming back shows the newest chats; consumed by that one load. */
+    private var scrollTopOnNextLoad = true
+    private var restoreListState: android.os.Parcelable? = null
+    private var restoreFocusPosition = -1
+    /** Instead of "always back to the top" after a chat:
+     *  the chat just left keeps the cursor. If it moved to the top (a
+     *  message sent / arrived), the list goes to the top with it; if it
+     *  stayed where it was, the list stays put. Followed for the loads in
+     *  the first few seconds after returning (the chat's new snippet may
+     *  land a moment later). */
+    private var followConvoId: Long? = null
+    private var followUntil = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            restoreListState = savedInstanceState.getParcelable("chat_list_state")
+            restoreFocusPosition = savedInstanceState.getInt("chat_list_focus", -1)
+            scrollTopOnNextLoad = false
+        }
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         repo = Repo.get(this)
+        // Sort and Filter left the Options menu; nothing can
+        // set them any more, so a value saved earlier must not stay stuck
+        if (prefs.sortMode != "recent") prefs.sortMode = "recent"
+        if (prefs.filterMode != "all") prefs.filterMode = "all"
 
         adapter = ConversationAdapter(
             onOpen = { c ->
@@ -52,17 +75,17 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             isSelected = { id -> selectingConvos && id in selectedConvoIds },
             hasScheduled = { id -> id in scheduledConvoIds }
         )
-        binding.convoList.layoutManager = LinearLayoutManager(this)
+        // steady scrolling (one scroll at a time, extra rows
+        // laid out) and no change cross-fade, so the highlight stays put
+        binding.convoList.layoutManager = SteadyLinearLayoutManager(this)
         binding.convoList.adapter = adapter
-        val divider = androidx.recyclerview.widget.DividerItemDecoration(
-            this, androidx.recyclerview.widget.DividerItemDecoration.VERTICAL
-        )
-        androidx.core.content.ContextCompat.getDrawable(this, R.drawable.divider_hairline)
-            ?.let { divider.setDrawable(it) }
-        binding.convoList.addItemDecoration(divider)
+        (binding.convoList.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)
+            ?.supportsChangeAnimations = false
+        // rows are separate rounded cards now, no hairline divider
         binding.convoList.isFocusable = true
         scroller = DpadScroller(
             binding.convoList, subScrollTallItems = false, lineStepPx = { 60 },
+            maxStep = 2,
             onEdge = { down ->
                 if (down) {
                     true // bottom: stay put
@@ -81,8 +104,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             }
         )
 
+        // header icons are hidden (GONE) now; the soft keys do
+        // New / Options. Listeners kept so nothing else has to change.
         binding.btnSettings.setOnClickListener { optionsMenu() }
-        binding.btnCompose.setOnClickListener { startActivity(Intent(this, ComposeActivity::class.java)) }
+        binding.btnCompose.setOnClickListener { scrollTopOnNextLoad = true; followConvoId = null; startActivity(Intent(this, ComposeActivity::class.java)) }
         binding.gateButton.setOnClickListener { requestDefaultSmsRole() }
 
         binding.searchInput.setOnTouchListener { v, _ ->
@@ -105,6 +130,19 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         ThemeUtils.applyFocusHighlight(binding.searchInput)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelable("chat_list_state", binding.convoList.layoutManager?.onSaveInstanceState())
+        outState.putInt("chat_list_focus", binding.convoList.focusedChild?.let { binding.convoList.getChildAdapterPosition(it) } ?: -1)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onPause() {
+        // Arrivals already displayed while foregrounded must not cause a later jump.
+        val arrivals = getSharedPreferences("arrivals", MODE_PRIVATE)
+        arrivals.edit().putLong("list_seen", arrivals.getLong("generation", 0L)).apply()
+        super.onPause()
+    }
+
     override fun onStart() {
         super.onStart()
         ChangeBus.register(changeListener)
@@ -117,6 +155,22 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     override fun onResume() {
         super.onResume()
+        val arrivals = getSharedPreferences("arrivals", MODE_PRIVATE)
+        val generation = arrivals.getLong("generation", 0L)
+        if (generation > arrivals.getLong("list_seen", generation)) {
+            scrollTopOnNextLoad = true
+            restoreListState = null
+            followConvoId = null
+        }
+        arrivals.edit().putLong("list_seen", generation).apply()
+        if (followConvoId != null) followUntil = android.os.SystemClock.uptimeMillis() + 4000
+        // back on the chat list with no text box in use:
+        // no keyboard / "[ English ]" badge left over from New message
+        if (currentFocus !is android.widget.EditText) {
+            window.decorView.post {
+                if (currentFocus !is android.widget.EditText) hideInputMode()
+            }
+        }
         // failed sends parked as "retry when service returns" also get a
         // chance whenever the user comes back to the app
         io.github.theonionsarewatching.nova.util.AutoRetry.sweep(this)
@@ -128,6 +182,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             } catch (_: Exception) {}
         }
         binding.searchRow.visibility = if (prefs.showSearchBar) View.VISIBLE else View.GONE
+        applyListLook()
         val isDefault = isDefaultSmsApp()
         binding.gateView.visibility = if (isDefault) View.GONE else View.VISIBLE
         binding.contentView.visibility = if (isDefault) View.VISIBLE else View.GONE
@@ -147,7 +202,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             repo.cleanRecycleBin()
             repo.refreshContactNames()
             if (binding.gateView.visibility == View.GONE && binding.convoList.childCount == 0) {
-                binding.btnCompose.requestFocus()
+                // header icons are gone now; the list itself holds focus
+                binding.convoList.requestFocus()
             }
         } else {
             binding.gateButton.requestFocus()
@@ -214,7 +270,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             prefs.batteryPromptShown = true
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                AlertDialog.Builder(this)
+                DsmsAlertBuilder(this)
                     .setTitle(R.string.battery_title)
                     .setMessage(R.string.battery_message)
                     .setCancelable(false)
@@ -248,7 +304,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         if (prefs.importDone) {
             // DB may have been recreated (schema upgrade): re-import if it's empty
             lifecycleScope.launch {
-                if (repo.db.messages().count() == 0 && !bt.running) {
+                if (!repo.db.messages().hasAny() && !bt.running) {
                     prefs.importDone = false
                     maybeImport()
                 }
@@ -264,7 +320,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         TaskDialogs.attach(this)
         bt.scope.launch {
             try {
-                repo.importFromTelephony { p -> bt.report(p, null) }
+                repo.importFromTelephony(onProgress = { p -> bt.report(p, null) })
                 prefs.importDone = true
                 repo.runElementBacklog()
                 bt.finish(true)
@@ -278,43 +334,122 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     // ============================== list ==============================
 
+    /** perf: refreshes that arrive while one is running (a ping right after
+     *  onResume, several pings in a row) are folded into ONE more refresh. */
+    private var loadRunning = false
+    private var loadAgain = false
+
     private fun loadConversations() {
+        if (loadRunning) { loadAgain = true; return }
+        loadRunning = true
         lifecycleScope.launch {
-            var list = repo.db.conversations().visible()
+            try { loadConversationsOnce() } finally {
+                loadRunning = false
+                if (loadAgain) { loadAgain = false; loadConversations() }
+            }
+        }
+    }
+
+    private suspend fun loadConversationsOnce() {
+        run {
+            // perf: one read of the chat list per refresh (it was read twice)
+            // the "Note to self" chat joins (switch on) or leaves
+            // (switch off) here; it sorts like any other chat
+            val allVisible = io.github.theonionsarewatching.nova.data.NotesChat.applyToList(
+                this, repo.db, repo.db.conversations().visible())
+            var list = allVisible
             updateFilterChip()
             list = when (prefs.filterMode) {
                 "unread" -> list.filter { it.unreadCount > 0 }
-                "unknown" -> list.filter { c -> c.nameList().all { it.isBlank() } }
+                "unknown" -> list.filter { c -> !io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c) && c.nameList().all { it.isBlank() } }
                 "groups" -> list.filter { it.isGroup }
                 else -> list
             }
+            // pinned first; then (setting "Unread chats on top", default on)
+            // chats with unread messages, newest first, until read; then the
+            // rest in the chosen order. Notes never count as unread.
+            val unreadTop = prefs.unreadOnTop || prefs.sortMode == "unread"
+            val base = compareByDescending<ConversationEntity> { it.pinned }
+                .thenByDescending { unreadTop && it.unreadCount > 0 }
+                .thenByDescending { if (unreadTop && it.unreadCount > 0) it.snippetDate else 0L }
             list = when (prefs.sortMode) {
-                "unread" -> list.sortedWith(
-                    compareByDescending<ConversationEntity> { it.pinned }
-                        .thenByDescending { it.unreadCount > 0 }
-                        .thenByDescending { it.snippetDate })
-                "alpha" -> list.sortedWith(
-                    compareByDescending<ConversationEntity> { it.pinned }
-                        .thenBy { it.displayTitle().lowercase() })
-                "oldest" -> list.sortedWith(
-                    compareByDescending<ConversationEntity> { it.pinned }
-                        .thenBy { it.snippetDate })
-                else -> list.sortedWith(
-                    compareByDescending<ConversationEntity> { it.pinned }
-                        .thenByDescending { it.snippetDate })
+                "alpha" -> list.sortedWith(base.thenBy { it.displayTitle().lowercase() })
+                "oldest" -> list.sortedWith(base.thenBy { it.snippetDate })
+                else -> list.sortedWith(base.thenByDescending { it.snippetDate })
             }
+            // was the list resting on its top row before this
+            // refresh? Then a new message that lands above keeps it on top.
+            val lmTop = binding.convoList.layoutManager as? LinearLayoutManager
+            val focusedPos = binding.convoList.focusedChild
+                ?.let { binding.convoList.getChildAdapterPosition(it) } ?: -1
+            val wasAtTop = adapter.items.isEmpty() ||
+                ((lmTop?.findFirstVisibleItemPosition() ?: 0) <= 0 && focusedPos <= 0)
+            val oldTopId = adapter.items.firstOrNull()?.id
             adapter.submit(list)
-            // total unread across all conversations, shown on the title bar
-            val totalUnread = repo.db.conversations().visible().sumOf { it.unreadCount }
-            binding.mainTitle.text = if (totalUnread > 0)
-                getString(R.string.app_name) + "  (" + totalUnread + ")"
-            else getString(R.string.app_name)
+            val topChanged = list.firstOrNull()?.id != oldTopId
+            val follow = followConvoId
+            val followIdx = if (follow != null &&
+                android.os.SystemClock.uptimeMillis() < followUntil)
+                list.indexOfFirst { it.id == follow } else -1
+            val restored = restoreListState
+            if (restored != null && !scrollTopOnNextLoad && list.isNotEmpty()) {
+                binding.convoList.layoutManager?.onRestoreInstanceState(restored)
+                restoreListState = null
+                val pos = restoreFocusPosition
+                if (pos in list.indices) binding.convoList.post { scroller?.focusPosition(pos) }
+            } else if (followIdx >= 0 && !scrollTopOnNextLoad) {
+                val f = currentFocus
+                val listHasCursor = f == null || binding.convoList.hasFocus() || f === binding.convoList
+                if (followIdx == 0) {
+                    // it is (now) the top chat: top of the list, cursor on it
+                    binding.convoList.scrollToPosition(0)
+                    if (listHasCursor) binding.convoList.post { scroller?.focusPosition(0) }
+                } else if (listHasCursor && focusedPos != followIdx) {
+                    // same place as before: nothing scrolls; only if the
+                    // cursor drifted does it go back onto that chat
+                    binding.convoList.post { scroller?.focusPosition(followIdx) }
+                }
+            } else if (list.isNotEmpty() && (scrollTopOnNextLoad || (wasAtTop && topChanged))) {
+                scrollTopOnNextLoad = false
+                binding.convoList.scrollToPosition(0)
+                // only move the highlight when it is in the list (or
+                // nowhere): never pull focus out of the search box/header
+                val f = currentFocus
+                if (f == null || binding.convoList.hasFocus() || f === binding.convoList) {
+                    binding.convoList.post { scroller?.focusPosition(0) }
+                }
+            } else if (list.isNotEmpty()) {
+                scrollTopOnNextLoad = false
+            }
+            // header: chat count left, "All read" / "N new" right;
+            // the title in the middle never changes or moves
+            val totalUnread = allVisible.sumOf { it.unreadCount }
+            // perf: labels are only re-set when their text changes (each set
+            // re-lays-out the screen)
+            setIfChanged(binding.mainTitle, getString(R.string.app_name))
+            setIfChanged(binding.chatCount, resources.getQuantityString(
+                R.plurals.main_chats, allVisible.size, allVisible.size))
+            if (totalUnread > 0) {
+                setIfChanged(binding.unreadPill,
+                    if (totalUnread > 99) getString(R.string.unread_new_max)
+                    else getString(R.string.unread_new, totalUnread))
+                binding.unreadPill.visibility = View.VISIBLE
+                binding.allRead.visibility = View.GONE
+            } else {
+                binding.unreadPill.visibility = View.GONE
+                binding.allRead.visibility = View.VISIBLE
+            }
             refreshScheduledIds()
             binding.emptyLabel.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         }
     }
 
+    private fun setIfChanged(t: android.widget.TextView, s: String) {
+        if (t.text?.toString() != s) t.text = s
+    }
+
     private fun openThread(convoId: Long) {
+        followConvoId = convoId
         startActivity(Intent(this, ThreadActivity::class.java).putExtra(ThreadActivity.EXTRA_CONVO_ID, convoId))
     }
 
@@ -339,13 +474,13 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 // before showing: a prompt that dies without interaction
                 // (rotation, backgrounding) asks again next launch, and
                 // "Later" silences THIS version until a newer tag appears
-                AlertDialog.Builder(this@MainActivity)
+                DsmsAlertBuilder(this@MainActivity)
                     .setTitle(getString(R.string.update_available, release.tag))
                     .setMessage(R.string.update_prompt)
                     .setPositiveButton(R.string.download) { _, _ ->
                         prefs.lastNotifiedUpdateTag = release.tag
                         io.github.theonionsarewatching.nova.util.UpdateChecker.download(this@MainActivity, release)
-                        android.widget.Toast.makeText(this@MainActivity, R.string.update_downloading,
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this@MainActivity, R.string.update_downloading,
                             android.widget.Toast.LENGTH_LONG).show()
                     }
                     .setNegativeButton(R.string.later) { _, _ ->
@@ -367,9 +502,34 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         binding.btnSettings.hasFocus() || binding.btnCompose.hasFocus() ||
             binding.searchInput.hasFocus()
 
+    /** Main-screen look; every color derives from the accent and
+     *  light/dark, so it follows Settings on the next resume. */
+    /** the header's side-width listener is added once, not per resume */
+    private var headerFitHooked = false
+
+    private fun applyListLook() {
+        ThemeUtils.styleMainHeader(this, binding.headerBar, binding.unreadPill)
+        // side texts may use only the room left beside the centered title,
+        // so "1234 chats" / "99+ new" can never run into "D-SMS"
+        if (!headerFitHooked) binding.headerBar.addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
+            val gap = (6 * resources.displayMetrics.density).toInt()
+            val side = (((r - l) - binding.mainTitle.width) / 2 -
+                maxOf(v.paddingStart, v.paddingEnd) - gap).coerceAtLeast(0)
+            for (t in listOf(binding.chatCount, binding.allRead, binding.unreadPill)) {
+                if (t.maxWidth != side) t.maxWidth = side
+            }
+        }
+        headerFitHooked = true
+        binding.contentView.setBackgroundColor(ThemeUtils.pageColor(this))
+        ThemeUtils.styleSoftkeyBar(binding.softkeyBar)
+    }
+
     private fun enterHeader() {
         setHeaderFocusable(true)
-        if (!binding.btnCompose.requestFocus() && !binding.btnSettings.requestFocus()) {
+        // the + / menu icons are GONE now, so the only header stop left is
+        // the search bar (when it is shown); otherwise this reverts below
+        if (!binding.btnCompose.requestFocus() && !binding.btnSettings.requestFocus() &&
+            !(binding.searchInput.isShown && binding.searchInput.requestFocus())) {
             // couldn't take focus: revert instead of leaving a half-open header
             setHeaderFocusable(false)
         }
@@ -404,45 +564,25 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         val items = arrayOf(
             getString(R.string.menu_search),
             getString(R.string.menu_archived),
-            getString(R.string.menu_sort),
-            getString(R.string.menu_filter),
             getString(R.string.menu_mark_all_read),
             getString(R.string.menu_settings)
         )
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setCustomTitle(Dialogs.title(this, getString(R.string.softkey_options)))
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, SearchActivity::class.java))
                     1 -> showArchived()
-                    2 -> pickSort()
-                    3 -> pickFilter()
-                    4 -> lifecycleScope.launch {
+                    // Sort / Filter removed (list fits, no scrolling)
+                    2 -> lifecycleScope.launch {
                         repo.db.conversations().visible().forEach {
                             repo.db.messages().markThreadRead(it.id)
                             repo.refreshConversation(it.id)
                         }
                         ChangeBus.ping()
                     }
-                    5 -> startActivity(Intent(this, io.github.theonionsarewatching.nova.ui.settings.SettingsActivity::class.java))
+                    3 -> startActivity(Intent(this, io.github.theonionsarewatching.nova.ui.settings.SettingsActivity::class.java))
                 }
-            }
-            .show()
-    }
-
-    private fun pickSort() {
-        val values = arrayOf("recent", "unread", "alpha", "oldest")
-        val labels = arrayOf(
-            getString(R.string.sort_recent), getString(R.string.sort_unread),
-            getString(R.string.sort_alpha), getString(R.string.sort_oldest)
-        )
-        val current = values.indexOf(prefs.sortMode).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.menu_sort)
-            .setSingleChoiceItems(labels, current) { d, which ->
-                prefs.sortMode = values[which]
-                loadConversations()
-                d.dismiss()
             }
             .show()
     }
@@ -471,37 +611,21 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         }
     }
 
-    private fun pickFilter() {
-        val values = arrayOf("all", "unread", "unknown", "groups")
-        val labels = arrayOf(
-            getString(R.string.filter_all), getString(R.string.filter_unread),
-            getString(R.string.filter_unknown), getString(R.string.filter_groups)
-        )
-        val current = values.indexOf(prefs.filterMode).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.menu_filter)
-            .setSingleChoiceItems(labels, current) { d, which ->
-                prefs.filterMode = values[which]
-                loadConversations()
-                d.dismiss()
-            }
-            .show()
-    }
-
     private fun showArchived() {
         lifecycleScope.launch {
-            val archived = repo.db.conversations().archivedList()
+            val archived = io.github.theonionsarewatching.nova.data.NotesChat.filterOff(
+                this@MainActivity, repo.db.conversations().archivedList())
             if (archived.isEmpty()) {
-                AlertDialog.Builder(this@MainActivity)
+                DsmsAlertBuilder(this@MainActivity)
                     .setMessage(R.string.no_archived).setPositiveButton(android.R.string.ok, null).show()
                 return@launch
             }
             val labels = archived.map { it.displayTitle() }.toTypedArray()
-            AlertDialog.Builder(this@MainActivity)
+            DsmsAlertBuilder(this@MainActivity)
                 .setTitle(R.string.menu_archived)
                 .setItems(labels) { _, which ->
                     val convo = archived[which]
-                    AlertDialog.Builder(this@MainActivity)
+                    DsmsAlertBuilder(this@MainActivity)
                         .setCustomTitle(twoLineTitle(convo.displayTitle()))
                         .setItems(arrayOf(
                             getString(R.string.open), getString(R.string.unarchive)
@@ -540,7 +664,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             getString(R.string.pref_message_style) to { pickMessageStyleMain() },
             getString(R.string.pref_message_color) to { messageColorDialogMain(c) }
         )
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.customize_menu)
             .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
             .show()
@@ -550,7 +674,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         val values = resources.getStringArray(R.array.style_values)
         val labels = resources.getStringArray(R.array.style_entries)
         val current = values.indexOf(prefs.messageStyle).coerceAtLeast(0)
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.pref_message_style)
             .setSingleChoiceItems(labels, current) { d, w ->
                 d.dismiss()
@@ -599,7 +723,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         if (c.isGroup) {
             addSwitch(R.string.pref_group_colors, "group_member_colors", false) {}
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.pref_message_color)
             .setView(android.widget.ScrollView(this).apply { addView(column) })
             .setPositiveButton(android.R.string.ok, null)
@@ -609,14 +733,11 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun nameGroupDialog(c: ConversationEntity) {
         val input = android.widget.EditText(this).apply {
             setText(c.customName)
-            hint = getString(R.string.name_group_hint)
+            hint = getString(R.string.name_group_short_hint)
             setSingleLine(true)
         }
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val wrap = android.widget.FrameLayout(this).apply {
-            setPadding(pad, pad / 2, pad, 0); addView(input)
-        }
-        AlertDialog.Builder(this)
+        val wrap = Dialogs.inputPanel(this, input, getString(R.string.name_group_hint))
+        DsmsAlertBuilder(this)
             .setTitle(R.string.name_group)
             .setView(wrap)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -625,7 +746,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                     repo.db.conversations().setCustomName(c.id, name)
                     ChangeBus.ping()
                 }
-                android.widget.Toast.makeText(this,
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this,
                     if (name.isBlank()) R.string.group_name_removed else R.string.group_name_set,
                     android.widget.Toast.LENGTH_SHORT).show()
             }
@@ -656,13 +777,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             try { repo.db.messages().mediaCountForConvo(c.id) > 0 } catch (_: Exception) { true }
         }
         val items = ArrayList<Pair<String, () -> Unit>>()
-        if (!c.isGroup) {
-            if (!c.addressList().first().contains("@"))
-                items += getString(R.string.call_contact, c.displayTitle()) to {
-                try {
-                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
-                } catch (_: Exception) {}
-            }
+        val isNotes = io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c)
+        if (!c.isGroup && !isNotes) {
             // View the contact, or add the number when it isn't saved yet
             val number = c.addressList().firstOrNull().orEmpty()
             val lookupUri = ContactsHelper.lookupContactUri(this, number)
@@ -679,7 +795,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         getString(R.string.contact_create_new),
                         getString(R.string.contact_add_existing)
                     )
-                    androidx.appcompat.app.AlertDialog.Builder(this)
+                    DsmsAlertBuilder(this)
                         .setTitle(number)
                         .setItems(labels) { _, which ->
                             try {
@@ -719,8 +835,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                 repo.db.conversations().setArchived(c.id, !c.archived); ChangeBus.ping()
             }
         }
-        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
-        items += getString(R.string.customize_menu) to { customizeMenu(c) }
+        if (!isNotes) items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
         if (c.isGroup) {
             items += getString(R.string.participants_title, c.addressList().size) to {
                 GroupParticipants.show(this, c)
@@ -730,10 +845,11 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             startActivity(Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, c.id))
         }
-        items += getString(R.string.schedule_send) to { scheduleForConvo(c) }
+        if (!isNotes) items += getString(R.string.schedule_send) to { scheduleForConvo(c) }
         items += getString(R.string.select_conversations) to { enterConvoSelection(c.id) }
         val hasUnread = c.unreadCount > 0
-        items += (if (hasUnread) getString(R.string.mark_read) else getString(R.string.mark_unread)) to {
+        // notes never count as unread (no badge), so no Mark unread there
+        if (!isNotes) items += (if (hasUnread) getString(R.string.mark_read) else getString(R.string.mark_unread)) to {
             lifecycleScope.launch {
                 if (hasUnread) repo.db.messages().markThreadRead(c.id)
                 else repo.db.messages().newest(c.id)?.let { repo.db.messages().setRead(it.id, false) }
@@ -743,7 +859,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setCustomTitle(twoLineTitle(c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
@@ -764,7 +880,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             getString(R.string.softkey_new_message),
             if (binding.convoList.hasFocus()) getString(R.string.softkey_open) else null,
             getString(R.string.softkey_options),
-            onLeft = { startActivity(Intent(this, ComposeActivity::class.java)) },
+            onLeft = { scrollTopOnNextLoad = true; followConvoId = null; startActivity(Intent(this, ComposeActivity::class.java)) },
             onCenter = { (binding.convoList.focusedChild)?.performClick() },
             onRight = { optionsMenu() },
             onMenu = { optionsMenu() }
@@ -781,13 +897,13 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         val wrap = android.widget.FrameLayout(this).apply {
             setPadding(pad, pad / 2, pad, 0); addView(input)
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.schedule_send)
             .setView(wrap)
             .setPositiveButton(R.string.next) { _, _ ->
                 val body = input.text?.toString()?.trim().orEmpty()
                 if (body.isEmpty()) {
-                    android.widget.Toast.makeText(this, R.string.schedule_needs_text,
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.schedule_needs_text,
                         android.widget.Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
@@ -805,8 +921,9 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         lifecycleScope.launch {
             val ids = repo.db.messages().convoIdsWithScheduled().toHashSet()
             if (ids != scheduledConvoIds) {
+                val changed = (ids - scheduledConvoIds) + (scheduledConvoIds - ids)
                 scheduledConvoIds.clear(); scheduledConvoIds.addAll(ids)
-                adapter.notifyDataSetChanged()
+                adapter.refreshIds(changed)
             }
         }
     }
@@ -827,7 +944,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             }
             startActivityForResult(i, io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(this, R.string.no_file_picker,
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_file_picker,
                 android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -855,7 +972,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         selectingConvos = true
         selectedConvoIds.clear()
         selectedConvoIds.add(initialId)
-        adapter.notifyDataSetChanged()
+        adapter.rebindAll()
         updateSelectionSoftkeys()
         val showBar = softkeys?.shouldShow() != true
         binding.mainSelectionBar.visibility = if (showBar) View.VISIBLE else View.GONE
@@ -867,7 +984,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun exitConvoSelection() {
         selectingConvos = false
         selectedConvoIds.clear()
-        adapter.notifyDataSetChanged()
+        adapter.rebindAll()
         setupDefaultSoftkeys()
         binding.mainSelectionBar.visibility = View.GONE
         binding.searchRow.visibility = if (prefs.showSearchBar) View.VISIBLE else View.GONE
@@ -875,14 +992,14 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
 
     private fun toggleConvoSelection(id: Long) {
         if (id in selectedConvoIds) selectedConvoIds.remove(id) else selectedConvoIds.add(id)
-        adapter.notifyDataSetChanged()
+        adapter.refreshIds(listOf(id))
         updateSelectionSoftkeys()
         binding.btnSelDeleteMain.text = getString(R.string.delete_n, selectedConvoIds.size)
     }
 
     /** Long-press while selecting (touch users): the actions as a dialog. */
     private fun convoSelectionActions() {
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setItems(arrayOf(
                 getString(R.string.delete_n, selectedConvoIds.size),
                 getString(R.string.cancel_selection)
@@ -915,7 +1032,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
     private fun deleteSelectedConvos() {
         if (selectedConvoIds.isEmpty()) return
         val ids = selectedConvoIds.toList()
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(getString(R.string.delete_n, ids.size))
             .setMessage(R.string.delete_convos_confirm)
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -932,7 +1049,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
         lifecycleScope.launch {
             val locked = repo.db.messages().lockedCount(c.id)
             if (locked > 0) {
-                AlertDialog.Builder(this@MainActivity)
+                DsmsAlertBuilder(this@MainActivity)
                     .setTitle(R.string.delete_thread)
                     .setMessage(getString(R.string.delete_thread_locked, locked))
                     .setPositiveButton(R.string.delete_all) { _, _ ->
@@ -944,7 +1061,7 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             } else {
-                AlertDialog.Builder(this@MainActivity)
+                DsmsAlertBuilder(this@MainActivity)
                     .setMessage(getString(R.string.delete_thread_confirm, c.displayTitle()))
                     .setPositiveButton(R.string.delete) { _, _ ->
                         lifecycleScope.launch { repo.deleteThread(c.id, includeLocked = true) }
@@ -966,8 +1083,10 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_DPAD_UP -> {
-                        binding.filterChip.isFocusable = false
+                        // header icons are gone: only move up when the search
+                        // bar can take focus; otherwise stay on the banner
                         enterHeader()
+                        if (headerHasFocus()) binding.filterChip.isFocusable = false
                         return true
                     }
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> {
@@ -993,8 +1112,8 @@ class MainActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Chat
                         return true
                     }
                     KeyEvent.KEYCODE_DPAD_UP -> {
-                        if (binding.searchInput.hasFocus()) binding.btnCompose.requestFocus()
-                        return true // nothing above the header
+                        // nothing above the search bar any more (header icons are gone)
+                        return true
                     }
                     KeyEvent.KEYCODE_BACK -> {
                         // escape hatch: Back always drops from the header to the list

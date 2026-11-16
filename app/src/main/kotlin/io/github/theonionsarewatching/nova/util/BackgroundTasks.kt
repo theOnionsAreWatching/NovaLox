@@ -28,6 +28,25 @@ object BackgroundTasks {
     private var onDone: ((Boolean) -> Unit)? = null
     @Volatile var toastOk = 0; private set
     @Volatile var toastFail = 0; private set
+    /** Optional plain-English result text (e.g. where a backup was saved, or
+     *  why it failed). Shown instead of the stock ok/fail text when set. */
+    @Volatile var resultMessage: String? = null; private set
+    /** True when the task put settings back: the screen should be rebuilt. */
+    @Volatile var settingsApplied = false; private set
+
+    /** Set by the Cancel button; the task checks it between batches. */
+    @Volatile var cancelRequested = false; private set
+    /** False once the task reached a step that must not be cut short. */
+    @Volatile var cancellable = false
+    /** True when the task stopped early because of Cancel. */
+    @Volatile var wasCancelled = false; private set
+
+    /** Asks the task to stop; false when it can't stop any more. */
+    fun cancel(): Boolean {
+        if (!running || !cancellable) return false
+        cancelRequested = true
+        return true
+    }
 
     /** Returns false if another task is already running. */
     fun start(context: Context, title: Int, okRes: Int, failRes: Int): Boolean {
@@ -38,6 +57,11 @@ object BackgroundTasks {
         toastFail = failRes
         percent = -1
         detail = null
+        resultMessage = null
+        settingsApplied = false
+        cancelRequested = false
+        cancellable = false   // backup/restore turn this on after start()
+        wasCancelled = false
         running = true
         return true
     }
@@ -49,7 +73,11 @@ object BackgroundTasks {
         main.post { l(p, d ?: detail) }
     }
 
-    fun finish(ok: Boolean) {
+    fun finish(ok: Boolean, message: String? = null, settingsWereApplied: Boolean = false,
+               cancelled: Boolean = false) {
+        wasCancelled = cancelled
+        resultMessage = message
+        settingsApplied = settingsWereApplied
         running = false
         val l = onDone
         val ctx = appContext
@@ -58,7 +86,8 @@ object BackgroundTasks {
                 l(ok)
             } else if (ctx != null) {
                 val res = if (ok) toastOk else toastFail
-                if (res != 0) Toast.makeText(ctx, res, Toast.LENGTH_LONG).show()
+                if (message != null) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                else if (res != 0) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, res, Toast.LENGTH_LONG).show()
             }
         }
         onUpdate = null

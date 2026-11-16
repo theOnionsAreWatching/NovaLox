@@ -3,6 +3,7 @@ package io.github.theonionsarewatching.nova.ui
 import android.graphics.Typeface
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import coil.dispose
 import coil.load
@@ -18,7 +19,9 @@ class ConversationAdapter(
     private val onOpen: (ConversationEntity) -> Unit,
     private val onOptions: (ConversationEntity) -> Unit,
     private val isSelected: (Long) -> Boolean = { false },
-    private val hasScheduled: (Long) -> Boolean = { false }
+    private val hasScheduled: (Long) -> Boolean = { false },
+    /** "Send to" multi-pick: a selected row also gets an accent tick */
+    private val showTick: Boolean = false
 ) : RecyclerView.Adapter<ConversationAdapter.VH>() {
 
     init {
@@ -29,9 +32,44 @@ class ConversationAdapter(
 
     override fun getItemId(position: Int): Long = items[position].id
 
+    /** perf: blocked-number answers per address, so scrolling doesn't ask
+     *  the system blocked-number store again for every row bind. Cleared on
+     *  every refresh, so a block/unblock shows on the next list load. */
+    private val blockedCache = HashMap<String, Boolean>()
+
+    /** a refresh no longer resets the whole list
+     *  (notifyDataSetChanged threw away every row and re-resolved focus,
+     *  which made the highlight jump). DiffUtil sends exact inserts/moves/
+     *  removals; rows still showing are re-bound in place (change animations
+     *  are off on this list), so blocked/scheduled marks stay fresh. */
     fun submit(list: List<ConversationEntity>) {
+        val old = items
         items = list
-        notifyDataSetChanged()
+        blockedCache.clear()
+        if (old.isEmpty() || list.isEmpty()) {
+            notifyDataSetChanged()
+            return
+        }
+        DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = list.size
+            override fun areItemsTheSame(o: Int, n: Int) = old[o].id == list[n].id
+            override fun areContentsTheSame(o: Int, n: Int) = old[o] == list[n]
+        }, true).dispatchUpdatesTo(this)
+        notifyItemRangeChanged(0, list.size)
+    }
+
+    /** re-bind just the row(s) for these conversations (selection marks) */
+    fun refreshIds(ids: Collection<Long>) {
+        for (id in ids) {
+            val i = items.indexOfFirst { it.id == id }
+            if (i >= 0) notifyItemChanged(i)
+        }
+    }
+
+    /** re-bind every row in place, without resetting the list */
+    fun rebindAll() {
+        if (items.isNotEmpty()) notifyItemRangeChanged(0, items.size)
     }
 
     class VH(val b: ItemConversationBinding) : RecyclerView.ViewHolder(b.root)
@@ -41,12 +79,19 @@ class ConversationAdapter(
         val ctx = parent.context
         b.root.isFocusable = true
         b.root.isFocusableInTouchMode = false
-        // the row is a full-width rectangle; the shade must be one too —
-        // the old rounded inset shade looked like a floating pill
-        b.root.background = ThemeUtils.focusFillNeutral(ctx, radiusDp = 0)
-        b.root.foreground = ThemeUtils.focusStroke(ctx, radiusDp = 0)
+        // rounded card; focus = light accent tint + 2dp accent
+        // outline (colors from the accent + theme, see ThemeUtils)
+        b.root.background = ThemeUtils.convoCardBackground(ctx)
+        // perf: remember which accent/theme the card was built for, so the
+        // first bind doesn't build it a second time
+        b.root.setTag(R.id.convoAvatar,
+            ThemeUtils.accentColor(ctx) * 31 + if (ThemeUtils.isNight(ctx)) 1 else 0)
+        b.root.foreground = null
+        // Both photos and fallbacks own the selected badge silhouette.
+        b.convoAvatar.outlineProvider = null
+        b.convoAvatar.clipToOutline = false
         val pad = ThemeUtils.densityPad(ctx)
-        b.root.setPadding(b.root.paddingLeft, pad, b.root.paddingRight, pad)
+        b.root.setPaddingRelative(b.root.paddingStart, pad, b.root.paddingEnd, pad)
         return VH(b)
     }
 
@@ -61,80 +106,64 @@ class ConversationAdapter(
         // resize (density) and the text-size resize (fontScale)
         run {
             val px = (42 * holder.itemView.resources.displayMetrics.scaledDensity).toInt()
-            holder.b.avatarFrame.layoutParams = holder.b.avatarFrame.layoutParams.apply {
-                width = px; height = px
+            // perf: only touch the sizes when they differ — re-setting them
+            // re-measured the whole row on every bind
+            val fl = holder.b.avatarFrame.layoutParams
+            if (fl.width != px || fl.height != px) {
+                fl.width = px; fl.height = px; holder.b.avatarFrame.layoutParams = fl
             }
-            holder.b.convoAvatar.layoutParams = holder.b.convoAvatar.layoutParams.apply {
-                width = px; height = px
+            val al = holder.b.convoAvatar.layoutParams
+            if (al.width != px || al.height != px) {
+                al.width = px; al.height = px; holder.b.convoAvatar.layoutParams = al
             }
-            // the view clips itself to a circle: any bitmap, any density, any
-            // cache state renders as a filled circle of exactly this view's size
-            holder.b.convoAvatar.outlineProvider = object : android.view.ViewOutlineProvider() {
-                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
-                    outline.setOval(0, 0, view.width, view.height)
-                }
-            }
-            holder.b.convoAvatar.clipToOutline = true
+            // Initials circles and round photos share this 42dp footprint.
         }
 
-        // ---- avatar: contact photo, or colored letter circle ----
+        // Real photos: round cover-crop in the same circle as initials.
+        // Fallback rows keep a themed gradient circle with bold initials.
         val title = c.displayTitle()
-        if (c.cachedPhotoUri.isNotBlank()) {
-            holder.b.convoAvatar.visibility = android.view.View.VISIBLE
-            holder.b.avatarLetter.visibility = android.view.View.GONE
-            holder.b.convoAvatar.background = null
-            holder.b.convoAvatar.imageTintList = null
-            holder.b.convoAvatar.setPadding(0, 0, 0, 0)
-            holder.b.convoAvatar.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-            holder.b.convoAvatar.load(android.net.Uri.parse(c.cachedPhotoUri))
-        } else if (c.isGroup) {
-            // groups: a people glyph on the colored circle. A recycled row may
-            // still have a contact-photo load in flight — cancel it, or the
-            // stale bitmap lands AFTER this bind and the white tint renders it
-            // as a solid block until the next rebind.
-            holder.b.convoAvatar.dispose()
-            holder.b.convoAvatar.setImageDrawable(null)
-            holder.b.avatarLetter.visibility = android.view.View.GONE
-            holder.b.convoAvatar.visibility = android.view.View.VISIBLE
-            val color2 = run {
-                val palette2 = intArrayOf(
-                    0xFF1565C0.toInt(), 0xFF00796B.toInt(), 0xFF2E7D32.toInt(), 0xFFE65100.toInt(),
-                    0xFFC62828.toInt(), 0xFF6A1B9A.toInt(), 0xFFAD1457.toInt(), 0xFF546E7A.toInt()
-                )
-                palette2[kotlin.math.abs(c.convoKey.hashCode()) % palette2.size]
-            }
-            holder.b.convoAvatar.background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(color2)
-            }
-            holder.b.convoAvatar.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            val pad = (9 * holder.itemView.resources.displayMetrics.scaledDensity).toInt()
-            holder.b.convoAvatar.setPadding(pad, pad, pad, pad)
-            holder.b.convoAvatar.imageTintList =
-                android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
-            holder.b.convoAvatar.setImageResource(io.github.theonionsarewatching.nova.R.drawable.ic_group)
+        val avatar = holder.b.convoAvatar
+        holder.b.avatarLetter.visibility = android.view.View.GONE
+        avatar.visibility = android.view.View.VISIBLE
+        avatar.background = null
+        avatar.imageTintList = null // never tint photos or contrast-safe artwork
+        avatar.setPadding(0, 0, 0, 0)
+        avatar.clipToOutline = false
+        avatar.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        val identity = c.convoKey.ifBlank { "chat:${c.id}" }
+        val color = BadgeIdentity.color(identity)
+        val fallback = ContactBadgeDrawable(color,
+            BadgeIdentity.monogram(c.customName, c.nameList(), c.addressList().firstOrNull().orEmpty(), c.isGroup), c.isGroup)
+        val address = c.addressList().firstOrNull().orEmpty()
+        val canPhoto = !c.isGroup && address.isNotBlank() && !address.contains("@") &&
+            io.github.theonionsarewatching.nova.util.ContactsHelper.hasPermission(ctx)
+        val photoKey = if (canPhoto) ContactPhotoMemory.key(address, color) else null
+        val ready = photoKey?.let { ContactPhotoMemory.get(it) }
+        avatar.dispose()
+        if (ready != null) {
+            // Instant finished badge: no fallback frame on resume/rebind.
+            avatar.setImageBitmap(ready)
+            avatar.setTag(R.id.dsms_photo_key, photoKey)
         } else {
-            holder.b.convoAvatar.dispose()
-            holder.b.convoAvatar.setImageDrawable(null)
-            holder.b.convoAvatar.visibility = android.view.View.GONE
-            holder.b.avatarLetter.visibility = android.view.View.VISIBLE
-            // named contacts: first letter. Unsaved numbers: first digit of the
-            // NORMALIZED number (so "+1 212 444 1100" shows 2, not the country code)
-            val letter = title.firstOrNull { it.isLetter() }?.uppercaseChar()
-                ?: PhoneUtils.normalize(c.addressList().firstOrNull() ?: "")
-                    .firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
-                ?: '#'
-            holder.b.avatarLetter.text = letter.toString()
-            val palette = intArrayOf(
-                0xFF1565C0.toInt(), 0xFF00796B.toInt(), 0xFF2E7D32.toInt(), 0xFFE65100.toInt(),
-                0xFFC62828.toInt(), 0xFF6A1B9A.toInt(), 0xFFAD1457.toInt(), 0xFF546E7A.toInt()
-            )
-            val color = palette[kotlin.math.abs(c.convoKey.hashCode()) % palette.size]
-            val bg = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(color)
+            avatar.setImageDrawable(fallback)
+            avatar.setTag(R.id.dsms_photo_key, null)
+            if (canPhoto && photoKey != null) {
+                avatar.load(ContactPhotoRequest(address)) {
+                    diskCachePolicy(coil.request.CachePolicy.DISABLED)
+                    placeholder(fallback)
+                    error(fallback)
+                    crossfade(false)
+                    allowHardware(false)
+                    transformations(ContactBadgePhotoTransformation(color))
+                    listener(onSuccess = { _, result ->
+                        val bmp = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                        if (bmp != null && !bmp.isRecycled) {
+                            ContactPhotoMemory.put(photoKey, bmp)
+                            avatar.setTag(R.id.dsms_photo_key, photoKey)
+                        }
+                    })
+                }
             }
-            holder.b.avatarLetter.background = bg
         }
 
         holder.b.convoTitle.text = title
@@ -152,7 +181,11 @@ class ConversationAdapter(
         } else {
             holder.b.iconGroupMode.visibility = android.view.View.GONE
         }
-        val statusIcon = ConvoStatusIcon.forConversation(holder.itemView.context, c)
+        val statusIcon = ConvoStatusIcon.forConversation(holder.itemView.context, c) { a ->
+            blockedCache.getOrPut(a) {
+                io.github.theonionsarewatching.nova.data.Repo.get(ctx).isNumberBlocked(a)
+            }
+        }
         if (statusIcon == 0) {
             holder.b.iconStatus.visibility = android.view.View.GONE
         } else {
@@ -162,12 +195,19 @@ class ConversationAdapter(
         holder.b.iconScheduled.visibility =
             if (hasScheduled(c.id)) android.view.View.VISIBLE else android.view.View.GONE
         holder.b.convoTitle.textSize = prefs.msgTextSp
-        holder.b.convoTitle.setTypeface(null, if (c.unreadCount > 0) Typeface.BOLD else Typeface.NORMAL)
+        // names are always bold in the card layout
+        holder.b.convoTitle.setTypeface(null, Typeface.BOLD)
 
         val prefix = if (c.snippetIsMine) ctx.getString(R.string.you_prefix) + " " else ""
         val draft = c.draft.isNotBlank()
         holder.b.convoSnippet.text =
-            if (draft) ctx.getString(R.string.draft_prefix) + " " + c.draft.take(80)
+            if (draft) android.text.SpannableStringBuilder().apply {
+                val p = ctx.getString(R.string.draft_prefix)
+                append(p, android.text.style.ForegroundColorSpan(ThemeUtils.accentColor(ctx)),
+                    android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, p.length, 0)
+                append(" ").append(c.draft.take(80))
+            }
             else prefix + c.snippet
         holder.b.convoSnippet.textSize = prefs.msgTextSp - 2f
         val mediaWords = setOf("MMS", "Picture", "Video", "Audio", "Contact", "Attachment")
@@ -180,19 +220,60 @@ class ConversationAdapter(
         })
 
         holder.b.convoTime.text = if (c.snippetDate > 0) Formatters.listStamp(c.snippetDate) else ""
-        holder.b.convoTime.textSize = prefs.timeTextSp
-        holder.b.convoUnread.text = if (c.unreadCount > 0) "(${c.unreadCount})" else ""
-        holder.b.convoUnread.textSize = prefs.timeTextSp
-        holder.b.convoUnread.setTextColor(ThemeUtils.accentColor(ctx))
+        holder.b.convoTime.textSize = (prefs.timeTextSp - 1f).coerceAtLeast(10f)
+        // unread: accent count badge (was "(n)") + accent stripe on the start edge
+        val accent = ThemeUtils.accentColor(ctx)
+        // the app does not recreate this screen when the accent / theme
+        // changes, so the card is re-tinted on every bind (cheap drawables)
+        val bgTag = accent * 31 + if (ThemeUtils.isNight(ctx)) 1 else 0
+        if (holder.itemView.getTag(R.id.convoAvatar) != bgTag) {
+            holder.itemView.background = ThemeUtils.convoCardBackground(ctx)
+            holder.itemView.setTag(R.id.convoAvatar, bgTag)
+        }
+        if (c.unreadCount > 0) {
+            holder.b.convoUnread.text =
+                if (c.unreadCount > 99) "99+" else c.unreadCount.toString()
+            holder.b.convoUnread.textSize = (prefs.timeTextSp - 1f).coerceAtLeast(10f)
+            holder.b.convoUnread.setTextColor(ThemeUtils.onAccent(ctx))
+            // perf: each row keeps its own badge / stripe shapes and only
+            // re-colors them (they were rebuilt on every bind)
+            val badge = holder.b.convoUnread.background as? android.graphics.drawable.GradientDrawable
+                ?: android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = ThemeUtils.dp(ctx, 10).toFloat()
+                }.also { holder.b.convoUnread.background = it }
+            badge.setColor(accent)
+            holder.b.convoUnread.visibility = android.view.View.VISIBLE
+            val stripe = holder.b.unreadStripe.background as? android.graphics.drawable.GradientDrawable
+                ?: android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = ThemeUtils.dp(ctx, 2).toFloat()
+                }.also { holder.b.unreadStripe.background = it }
+            stripe.setColor(accent)
+            holder.b.unreadStripe.visibility = android.view.View.VISIBLE
+        } else {
+            holder.b.convoUnread.text = ""
+            holder.b.convoUnread.visibility = android.view.View.GONE
+            holder.b.unreadStripe.visibility = android.view.View.INVISIBLE
+        }
 
         // selection wash + outline over the focus shade (same scheme as messages)
         if (isSelected(c.id)) {
             val a = io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(holder.itemView.context)
             val strokePx = (3 * holder.itemView.resources.displayMetrics.density).toInt()
             holder.itemView.foreground = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = ThemeUtils.dp(holder.itemView.context, 14).toFloat()
                 setColor(android.graphics.Color.argb(96, android.graphics.Color.red(a),
                     android.graphics.Color.green(a), android.graphics.Color.blue(a)))
                 setStroke(strokePx, a)
+            }
+            if (showTick) {
+                // visible tick before the name, in the theme accent
+                val t = android.text.SpannableStringBuilder("\u2713 ")
+                t.setSpan(android.text.style.ForegroundColorSpan(a), 0, 1,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                t.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, 1,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                t.append(holder.b.convoTitle.text)
+                holder.b.convoTitle.text = t
             }
         } else {
             holder.itemView.foreground = null

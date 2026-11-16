@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="backup_now"
+        android:title="@string/st_backup_now" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="restore_backup"
+        android:title="@string/st_restore"
+        android:summary="@string/st_restore_sum" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="export_contacts"
+        android:title="@string/pref_export_contacts" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="save_settings"
+        android:title="@string/pref_save_settings" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="restore_settings"
+        android:title="@string/pref_restore_settings"
+        android:summary="@string/st_restore_settings_sum" />
+</PreferenceScreen>

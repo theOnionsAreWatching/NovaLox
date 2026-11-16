@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Short accent bar centered under a pop-up title (was bottom-start,
+     which looked lopsided). Fixed 28dp so it is the same at any title length. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="bottom|center_horizontal" android:width="28dp" android:height="3dp">
+        <shape android:shape="rectangle">
+            <solid android:color="?attr/colorPrimary" />
+            <corners android:radius="2dp" />
+        </shape>
+    </item>
+</layer-list>

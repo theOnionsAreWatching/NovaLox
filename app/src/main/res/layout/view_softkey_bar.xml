@@ -22,6 +22,16 @@
         android:textSize="13sp"
         android:fontFamily="sans-serif-medium" />
 
+    <!-- thin dividers between the labels; GONE by default, shown by
+         ThemeUtils.styleSoftkeyBar (main screen) -->
+    <View
+        android:id="@+id/softDivider1"
+        android:layout_width="1dp"
+        android:layout_height="14dp"
+        android:layout_gravity="center_vertical"
+        android:background="?attr/dsmsDivider"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/softCenter"
         android:focusable="false"
@@ -32,6 +42,14 @@
         android:paddingTop="5dp"
         android:paddingBottom="5dp"
         android:textSize="13sp" />
+
+    <View
+        android:id="@+id/softDivider2"
+        android:layout_width="1dp"
+        android:layout_height="14dp"
+        android:layout_gravity="center_vertical"
+        android:background="?attr/dsmsDivider"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/softRight"

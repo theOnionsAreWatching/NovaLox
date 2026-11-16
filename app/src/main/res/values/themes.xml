@@ -5,18 +5,103 @@
         <item name="colorAccent">@color/accent_blue</item>
         <item name="android:textColorLink">@color/accent_blue</item>
         <item name="alertDialogTheme">@style/DSMS.AlertDialog</item>
+        <!-- framework android.app.AlertDialog (attach list, recorder, ...)
+             gets the same look; it is applied on top of this activity theme,
+             so light/dark and the accent overlay carry over -->
+        <item name="android:alertDialogTheme">@style/DSMS.AlertDialog</item>
+        <!-- Settings rows: compact, left-aligned, accent focus -->
+        <item name="preferenceTheme">@style/DSMS.PreferenceTheme</item>
+        <!-- theme colours: Light/Dark defaults (full themes: ThemeFull_*) -->
+        <item name="dsmsText">@color/text_primary</item>
+        <item name="dsmsSurface">@color/dialog_surface</item>
+        <item name="dsmsDivider">@color/divider</item>
+        <item name="dsmsBubbleOther">@color/bubble_other</item>
+        <item name="dsmsPill">@color/compose_pill</item>
+        <item name="dsmsRim">@color/dialog_rim</item>
+        <item name="dsmsTextDisabled">@color/dialog_text_disabled</item>
+        <item name="dsmsFocusFill">@color/focus_fill</item>
     </style>
 
+    <style name="DSMS.PreferenceTheme" parent="PreferenceThemeOverlay">
+        <item name="preferenceStyle">@style/DSMS.Pref</item>
+        <item name="switchPreferenceCompatStyle">@style/DSMS.Pref.Switch</item>
+        <item name="preferenceCategoryStyle">@style/DSMS.Pref.Category</item>
+        <item name="dialogPreferenceStyle">@style/DSMS.Pref.Dialog</item>
+        <item name="editTextPreferenceStyle">@style/DSMS.Pref.EditText</item>
+    </style>
+    <style name="DSMS.Pref" parent="Preference.Material">
+        <item name="android:layout">@layout/pref_row</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+    <style name="DSMS.Pref.Switch" parent="Preference.SwitchPreferenceCompat.Material">
+        <item name="android:layout">@layout/pref_row</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+    <style name="DSMS.Pref.Category" parent="Preference.Category.Material">
+        <item name="android:layout">@layout/pref_category</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+    <style name="DSMS.Pref.Dialog" parent="Preference.DialogPreference.Material">
+        <item name="android:layout">@layout/pref_row</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+    <style name="DSMS.Pref.EditText" parent="Preference.DialogPreference.EditTextPreference.Material">
+        <item name="android:layout">@layout/pref_row</item>
+        <item name="iconSpaceReserved">false</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+
+    <!-- pop-up look: soft rounded card (bg_dialog), accent line
+         under the title, accent pill on the focused row / button, short
+         fade + scale in. Colors come from values / values-night (theme
+         setting) and ?attr/colorPrimary (the accent overlay). -->
     <style name="DSMS.AlertDialog" parent="ThemeOverlay.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="android:windowAnimationStyle">@style/DSMS.DialogAnimation</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.55</item>
+        <item name="android:windowTitleStyle">@style/DSMS.DialogTitle</item>
         <item name="buttonBarPositiveButtonStyle">@style/DSMS.DialogButton</item>
         <item name="buttonBarNegativeButtonStyle">@style/DSMS.DialogButton</item>
         <item name="buttonBarNeutralButtonStyle">@style/DSMS.DialogButton</item>
-        <item name="android:listChoiceBackgroundIndicator">@drawable/bg_focus_row</item>
+        <item name="android:buttonBarPositiveButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="android:buttonBarNegativeButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="android:buttonBarNeutralButtonStyle">@style/DSMS.DialogButton</item>
+        <item name="android:listChoiceBackgroundIndicator">@drawable/bg_dialog_item</item>
+        <item name="listChoiceBackgroundIndicator">@drawable/bg_dialog_item</item>
+        <item name="android:textColorAlertDialogListItem">@color/dialog_item_text</item>
+        <item name="textColorAlertDialogListItem">@color/dialog_item_text</item>
+    </style>
+
+    <style name="DSMS.DialogAnimation" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/dialog_in</item>
+        <item name="android:windowExitAnimation">@anim/dialog_out</item>
+    </style>
+
+    <style name="DSMS.DialogTitle" parent="RtlOverlay.DialogWindowTitle.AppCompat">
+        <item name="android:textStyle">bold</item>
+        <item name="android:background">@drawable/bg_dialog_title</item>
+        <!-- Framework title fallback reserves a full gap + bar below glyphs. -->
+        <item name="android:includeFontPadding">true</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:maxLines">2</item>
     </style>
 
     <style name="DSMS.DialogButton" parent="Widget.AppCompat.Button.ButtonBar.AlertDialog">
-        <item name="android:background">@drawable/bg_focus_pill</item>
-        <item name="android:textColor">?attr/colorPrimary</item>
+        <item name="android:background">@drawable/bg_dialog_button</item>
+        <item name="android:textColor">@color/dialog_button_text</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
     </style>
 
     <style name="Accent_Blue" parent="">
@@ -58,5 +143,197 @@
         <item name="colorAccent">@color/accent_gray</item>
         <item name="colorPrimary">@color/accent_gray</item>
         <item name="colorControlActivated">@color/accent_gray</item>
+    </style>
+    <style name="Accent_Amber" parent="">
+        <item name="colorAccent">@color/accent_amber</item>
+        <item name="colorPrimary">@color/accent_amber</item>
+        <item name="colorControlActivated">@color/accent_amber</item>
+    </style>
+    <style name="Accent_Gold" parent="">
+        <item name="colorAccent">@color/accent_gold</item>
+        <item name="colorPrimary">@color/accent_gold</item>
+        <item name="colorControlActivated">@color/accent_gold</item>
+    </style>
+    <style name="Accent_Coral" parent="">
+        <item name="colorAccent">@color/accent_coral</item>
+        <item name="colorPrimary">@color/accent_coral</item>
+        <item name="colorControlActivated">@color/accent_coral</item>
+    </style>
+    <style name="Accent_Crimson" parent="">
+        <item name="colorAccent">@color/accent_crimson</item>
+        <item name="colorPrimary">@color/accent_crimson</item>
+        <item name="colorControlActivated">@color/accent_crimson</item>
+    </style>
+    <style name="Accent_Rose" parent="">
+        <item name="colorAccent">@color/accent_rose</item>
+        <item name="colorPrimary">@color/accent_rose</item>
+        <item name="colorControlActivated">@color/accent_rose</item>
+    </style>
+    <style name="Accent_Violet" parent="">
+        <item name="colorAccent">@color/accent_violet</item>
+        <item name="colorPrimary">@color/accent_violet</item>
+        <item name="colorControlActivated">@color/accent_violet</item>
+    </style>
+    <style name="Accent_Indigo" parent="">
+        <item name="colorAccent">@color/accent_indigo</item>
+        <item name="colorPrimary">@color/accent_indigo</item>
+        <item name="colorControlActivated">@color/accent_indigo</item>
+    </style>
+    <style name="Accent_Sky" parent="">
+        <item name="colorAccent">@color/accent_sky</item>
+        <item name="colorPrimary">@color/accent_sky</item>
+        <item name="colorControlActivated">@color/accent_sky</item>
+    </style>
+    <style name="Accent_Cyan" parent="">
+        <item name="colorAccent">@color/accent_cyan</item>
+        <item name="colorPrimary">@color/accent_cyan</item>
+        <item name="colorControlActivated">@color/accent_cyan</item>
+    </style>
+    <style name="Accent_Mint" parent="">
+        <item name="colorAccent">@color/accent_mint</item>
+        <item name="colorPrimary">@color/accent_mint</item>
+        <item name="colorControlActivated">@color/accent_mint</item>
+    </style>
+    <style name="Accent_Lime" parent="">
+        <item name="colorAccent">@color/accent_lime</item>
+        <item name="colorPrimary">@color/accent_lime</item>
+        <item name="colorControlActivated">@color/accent_lime</item>
+    </style>
+    <style name="Accent_Olive" parent="">
+        <item name="colorAccent">@color/accent_olive</item>
+        <item name="colorPrimary">@color/accent_olive</item>
+        <item name="colorControlActivated">@color/accent_olive</item>
+    </style>
+    <style name="Accent_Brown" parent="">
+        <item name="colorAccent">@color/accent_brown</item>
+        <item name="colorPrimary">@color/accent_brown</item>
+        <item name="colorControlActivated">@color/accent_brown</item>
+    </style>
+    <style name="Accent_Slate" parent="">
+        <item name="colorAccent">@color/accent_slate</item>
+        <item name="colorPrimary">@color/accent_slate</item>
+        <item name="colorControlActivated">@color/accent_slate</item>
+    </style>
+    <!-- full themes: applied on top of Theme.DSMS + accent;
+         Midnight/Forest/Black run in dark mode, Paper in light mode -->
+    <style name="ThemeFull_Graphite" parent="">
+        <item name="android:windowBackground">#191F27</item>
+        <item name="android:colorBackground">#191F27</item>
+        <item name="colorSurface">#252D38</item>
+        <item name="colorSurfaceContainerLowest">#191F27</item>
+        <item name="colorSurfaceContainerLow">#252D38</item>
+        <item name="colorSurfaceContainer">#252D38</item>
+        <item name="colorSurfaceContainerHigh">#303B48</item>
+        <item name="colorSurfaceContainerHighest">#303B48</item>
+        <item name="colorSurfaceVariant">#303B48</item>
+        <item name="colorOnSurface">#F0F3F7</item>
+        <item name="colorOnBackground">#F0F3F7</item>
+        <item name="colorOnSurfaceVariant">#B6C3D3</item>
+        <item name="colorOutline">#B6C3D3</item>
+        <item name="colorOutlineVariant">#33B6C3D3</item>
+        <item name="android:textColorPrimary">#F0F3F7</item>
+        <item name="android:textColorSecondary">#B6C3D3</item>
+        <item name="android:textColorTertiary">#B6C3D3</item>
+        <item name="android:textColorHint">#B6C3D3</item>
+        <item name="android:statusBarColor">#191F27</item>
+        <item name="android:navigationBarColor">#191F27</item>
+        <item name="dsmsText">#F0F3F7</item>
+        <item name="dsmsSurface">#252D38</item>
+        <item name="dsmsDivider">#33B6C3D3</item>
+        <item name="dsmsBubbleOther">#303B48</item>
+        <item name="dsmsPill">#1AFFFFFF</item>
+        <item name="dsmsRim">#26FFFFFF</item>
+        <item name="dsmsTextDisabled">#61F0F3F7</item>
+        <item name="dsmsFocusFill">#52FFFFFF</item>
+    </style>
+    <style name="ThemeFull_Dusk" parent="">
+        <item name="android:windowBackground">#24212C</item>
+        <item name="android:colorBackground">#24212C</item>
+        <item name="colorSurface">#302C3B</item>
+        <item name="colorSurfaceContainerLowest">#24212C</item>
+        <item name="colorSurfaceContainerLow">#302C3B</item>
+        <item name="colorSurfaceContainer">#302C3B</item>
+        <item name="colorSurfaceContainerHigh">#3D354A</item>
+        <item name="colorSurfaceContainerHighest">#3D354A</item>
+        <item name="colorSurfaceVariant">#3D354A</item>
+        <item name="colorOnSurface">#F4EFF7</item>
+        <item name="colorOnBackground">#F4EFF7</item>
+        <item name="colorOnSurfaceVariant">#C5B7CE</item>
+        <item name="colorOutline">#C5B7CE</item>
+        <item name="colorOutlineVariant">#33C5B7CE</item>
+        <item name="android:textColorPrimary">#F4EFF7</item>
+        <item name="android:textColorSecondary">#C5B7CE</item>
+        <item name="android:textColorTertiary">#C5B7CE</item>
+        <item name="android:textColorHint">#C5B7CE</item>
+        <item name="android:statusBarColor">#24212C</item>
+        <item name="android:navigationBarColor">#24212C</item>
+        <item name="dsmsText">#F4EFF7</item>
+        <item name="dsmsSurface">#302C3B</item>
+        <item name="dsmsDivider">#33C5B7CE</item>
+        <item name="dsmsBubbleOther">#3D354A</item>
+        <item name="dsmsPill">#1AFFFFFF</item>
+        <item name="dsmsRim">#26FFFFFF</item>
+        <item name="dsmsTextDisabled">#61F4EFF7</item>
+        <item name="dsmsFocusFill">#52FFFFFF</item>
+    </style>
+    <style name="ThemeFull_Linen" parent="">
+        <item name="android:windowBackground">#F6F2EA</item>
+        <item name="android:colorBackground">#F6F2EA</item>
+        <item name="colorSurface">#FFFCF6</item>
+        <item name="colorSurfaceContainerLowest">#F6F2EA</item>
+        <item name="colorSurfaceContainerLow">#FFFCF6</item>
+        <item name="colorSurfaceContainer">#FFFCF6</item>
+        <item name="colorSurfaceContainerHigh">#EAE3D7</item>
+        <item name="colorSurfaceContainerHighest">#EAE3D7</item>
+        <item name="colorSurfaceVariant">#EAE3D7</item>
+        <item name="colorOnSurface">#322F29</item>
+        <item name="colorOnBackground">#322F29</item>
+        <item name="colorOnSurfaceVariant">#6C6357</item>
+        <item name="colorOutline">#6C6357</item>
+        <item name="colorOutlineVariant">#405B4630</item>
+        <item name="android:textColorPrimary">#322F29</item>
+        <item name="android:textColorSecondary">#6C6357</item>
+        <item name="android:textColorTertiary">#6C6357</item>
+        <item name="android:textColorHint">#6C6357</item>
+        <item name="android:statusBarColor">#F6F2EA</item>
+        <item name="android:navigationBarColor">#F6F2EA</item>
+        <item name="dsmsText">#322F29</item>
+        <item name="dsmsSurface">#FFFCF6</item>
+        <item name="dsmsDivider">#405B4630</item>
+        <item name="dsmsBubbleOther">#EAE3D7</item>
+        <item name="dsmsPill">#145B4630</item>
+        <item name="dsmsRim">#1F5B4630</item>
+        <item name="dsmsTextDisabled">#61322F29</item>
+        <item name="dsmsFocusFill">#3D5B4630</item>
+    </style>
+    <style name="ThemeFull_Black" parent="">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="colorSurface">#161618</item>
+        <item name="colorSurfaceContainerLowest">#000000</item>
+        <item name="colorSurfaceContainerLow">#161618</item>
+        <item name="colorSurfaceContainer">#161618</item>
+        <item name="colorSurfaceContainerHigh">#1E1E21</item>
+        <item name="colorSurfaceContainerHighest">#1E1E21</item>
+        <item name="colorSurfaceVariant">#1E1E21</item>
+        <item name="colorOnSurface">#DEFFFFFF</item>
+        <item name="colorOnBackground">#DEFFFFFF</item>
+        <item name="colorOnSurfaceVariant">#99FFFFFF</item>
+        <item name="colorOutline">#99FFFFFF</item>
+        <item name="colorOutlineVariant">#33FFFFFF</item>
+        <item name="android:textColorPrimary">#DEFFFFFF</item>
+        <item name="android:textColorSecondary">#99FFFFFF</item>
+        <item name="android:textColorTertiary">#99FFFFFF</item>
+        <item name="android:textColorHint">#99FFFFFF</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="dsmsText">#DEFFFFFF</item>
+        <item name="dsmsSurface">#161618</item>
+        <item name="dsmsDivider">#33FFFFFF</item>
+        <item name="dsmsBubbleOther">#232326</item>
+        <item name="dsmsPill">#1AFFFFFF</item>
+        <item name="dsmsRim">#26FFFFFF</item>
+        <item name="dsmsTextDisabled">#61FFFFFF</item>
+        <item name="dsmsFocusFill">#52FFFFFF</item>
     </style>
 </resources>

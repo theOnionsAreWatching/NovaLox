@@ -279,30 +279,41 @@ object ContactsHelper {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /** Full phone contact list (name + number + photo), used for auto-suggest and caches. */
-    fun loadAll(context: Context): List<Contact> {
-        if (!hasPermission(context)) return emptyList()
-        val out = ArrayList<Contact>()
-        val proj = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI
-        )
-        try {
-            context.contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI, proj, null, null,
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE"
-            )?.use { c ->
+    /** Null means provider/permission failure, NOT an authoritative empty address book. */
+    fun loadAllOrNull(context: Context): List<Contact>? {
+        if (!hasPermission(context)) return null
+        return try {
+            context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                null, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE")?.use { c ->
+                val out = ArrayList<Contact>()
                 while (c.moveToNext()) {
-                    val name = c.getString(0) ?: continue
-                    val number = c.getString(1) ?: continue
-                    val photo = c.getString(2) ?: ""
-                    out += Contact(name, number, photo)
+                    fun field(name: String): String { val i = c.getColumnIndex(name); return if (i < 0 || c.isNull(i)) "" else c.getString(i).orEmpty() }
+                    val number = field(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    if (number.isBlank()) continue
+                    out += Contact(field(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME), number,
+                        photoCandidates(c, ContactsContract.CommonDataKinds.Phone.CONTACT_ID, false).firstOrNull().orEmpty())
                 }
+                out.toList()
             }
-        } catch (_: Exception) {
-        }
-        return out
+        } catch (_: Exception) { null }
+    }
+    fun loadAll(context: Context): List<Contact> = loadAllOrNull(context).orEmpty()
+
+    private fun photoCandidates(c: android.database.Cursor, idColumn: String, probe: Boolean): List<String> {
+        fun field(name: String): String { val i = c.getColumnIndex(name); return if (i < 0 || c.isNull(i)) "" else c.getString(i).orEmpty() }
+        return ContactPhotoPolicy.candidates(field("photo_uri"), field("photo_thumb_uri"),
+            field(idColumn).toLongOrNull(), field("photo_id").toLongOrNull(), field("photo_file_id").toLongOrNull(), probe)
+    }
+    /** Fresh native PhoneLookup matching handles national/country-code formatting.
+     * Never resolve a restored/stale contact ID directly to somebody else's face. */
+    fun lookupPhotoCandidates(context: Context, address: String): List<String> {
+        if (!hasPermission(context) || address.isBlank() || address.contains("@")) return emptyList()
+        return try {
+            val uri = android.net.Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(address))
+            context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (c.moveToFirst()) photoCandidates(c, ContactsContract.PhoneLookup._ID, true) else emptyList()
+            }.orEmpty()
+        } catch (_: Exception) { emptyList() }
     }
 
     fun lookupName(context: Context, address: String): String? {
@@ -319,17 +330,5 @@ object ContactsHelper {
         }
     }
 
-    fun lookupPhoto(context: Context, address: String): String? {
-        if (!hasPermission(context) || address.isBlank() || address.contains("@")) return null
-        return try {
-            val uri = android.net.Uri.withAppendedPath(
-                ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(address)
-            )
-            context.contentResolver.query(
-                uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI), null, null, null
-            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-        } catch (_: Exception) {
-            null
-        }
-    }
+    fun lookupPhoto(context: Context, address: String): String? = lookupPhotoCandidates(context, address).firstOrNull()
 }

@@ -17,9 +17,16 @@ import io.github.theonionsarewatching.nova.data.Repo
  */
 object ConvoStatusIcon {
 
-    fun forConversation(context: Context, c: ConversationEntity): Int {
+    /** [isBlocked]: optional cached lookup (the chat list passes one so the
+     *  system blocked-number check is not repeated on every row bind). */
+    fun forConversation(
+        context: Context, c: ConversationEntity,
+        isBlocked: ((String) -> Boolean)? = null
+    ): Int {
         val numberBlocked = !c.isGroup &&
-            c.addressList().firstOrNull()?.let { Repo.get(context).isNumberBlocked(it) } == true
+            c.addressList().firstOrNull()?.let { a ->
+                isBlocked?.invoke(a) ?: Repo.get(context).isNumberBlocked(a)
+            } == true
         return when {
             numberBlocked -> R.drawable.ic_blocked
             c.notifBlocked -> R.drawable.ic_notif_blocked

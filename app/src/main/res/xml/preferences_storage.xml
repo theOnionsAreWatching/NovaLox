@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <Preference app:iconSpaceReserved="false" android:key="open_sim_messages"
+        android:title="SIM messages" android:summary="Read or delete messages stored on the SIM" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_bin"
+        android:title="@string/open_bin_pref" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="bin_retention"
+        android:title="@string/st_bin_after"
+        android:entries="@array/bin_entries"
+        android:entryValues="@array/bin_values"
+        android:defaultValue="30"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="keep_per_chat"
+        android:title="@string/st_keep"
+        android:summary="@string/st_keep_all" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="clear_mms_cache"
+        android:title="@string/st_clear_cache"
+        android:summary="@string/st_clear_cache_sum" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="save_to_sd"
+        android:title="@string/pref_save_to_sd"
+        android:summary="@string/pref_save_to_sd_summary"
+        android:defaultValue="false" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="hint_storage"
+        android:layout="@layout/pref_hint"
+        android:selectable="false"
+        android:persistent="false"
+        android:summary="@string/st_hint_storage" />
+</PreferenceScreen>

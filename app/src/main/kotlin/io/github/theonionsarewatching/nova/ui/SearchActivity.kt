@@ -64,7 +64,14 @@ class SearchActivity : BaseActivity() {
         if (query.isBlank()) return
         lifecycleScope.launch {
             val titles = HashMap<Long, String>()
-            repo.db.conversations().all().forEach { titles[it.id] = it.displayTitle() }
+            // notes are not searchable while the notes chat is off
+            var notesOffId = -1L
+            repo.db.conversations().all().forEach {
+                if (io.github.theonionsarewatching.nova.data.NotesChat.isNotes(it) && !io.github.theonionsarewatching.nova.data.NotesChat.enabled(this@SearchActivity)) {
+                    notesOffId = it.id; return@forEach
+                }
+                titles[it.id] = it.displayTitle()
+            }
             // body matches (FTS, prefix), guarded against FTS operator syntax errors
             val body = try {
                 repo.db.messages().search(sanitize(query))
@@ -76,7 +83,7 @@ class SearchActivity : BaseActivity() {
                     SearchRow(it.id, id, it.body, it.date, it.isMine)
                 }
             }
-            val combined = (convoRows + body).distinctBy { it.id }
+            val combined = (convoRows + body).distinctBy { it.id }.filter { it.convoId != notesOffId }
             adapter.submit(combined, titles, query)
             binding.emptyLabel.visibility =
                 if (combined.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE

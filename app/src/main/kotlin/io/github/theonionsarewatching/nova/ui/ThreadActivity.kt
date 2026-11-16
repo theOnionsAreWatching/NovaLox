@@ -11,7 +11,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import coil.dispose
 import coil.load
+import coil.request.videoFrameMillis
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.theonionsarewatching.nova.R
@@ -25,8 +27,11 @@ import io.github.theonionsarewatching.nova.databinding.ActivityThreadBinding
 import io.github.theonionsarewatching.nova.notify.NotificationHelper
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.Formatters
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.Perf
 import io.github.theonionsarewatching.nova.util.PhoneUtils
+import io.github.theonionsarewatching.nova.util.ReactionSettings
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -34,6 +39,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     companion object {
         const val EXTRA_CONVO_ID = "convo_id"
+        /** Shared from another app via the share target: text and
+         *  already-copied attachment files (paths/mimes/names, same order). */
+        const val EXTRA_SHARED_TEXT = "shared_text"
+        const val EXTRA_SHARED_PATHS = "shared_paths"
+        const val EXTRA_SHARED_MIMES = "shared_mimes"
+        const val EXTRA_SHARED_NAMES = "shared_names"
         private const val REQ_CHAT_BG = 207
         const val EXTRA_TARGET_MESSAGE_ID = "target_message_id"
         // ONE pager (rows + hasMoreOlder + loadOlder). The 8-at-a-time
@@ -53,6 +64,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private var convoId = -1L
     private var convo: ConversationEntity? = null
     private var rows = ArrayList<MessageRow>()
+    /** Unfiltered loaded window, including reaction fallback texts hidden in [rows]. */
+    private var loadedRows = ArrayList<MessageRow>()
+    /** Hidden reaction message id -> the message it was attached to. */
+    private var hiddenTargets = emptyMap<Long, Long>()
+    private var hiddenIds = emptySet<Long>()
     private var hasMoreOlder = true
     private var hasMoreNewer = false
     private var loading = false
@@ -123,6 +139,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             override fun onScrollStateChanged(rv: androidx.recyclerview.widget.RecyclerView, newState: Int) {
                 if (newState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE) markRead()
             }
+            // D-pad scrolling uses scrollBy (no idle event) and a new message
+            // appears through a layout pass; both report here (dx=dy=0 after layout)
+            override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {
+                scheduleMarkRead()
+            }
         })
         binding.btnOverflow.setOnClickListener { threadOptions() }
         binding.btnAttach.setOnClickListener {
@@ -142,6 +163,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         ThemeUtils.applyRowFocus(binding.attachmentRow)
 
         binding.composeInput.maxLines = prefs.composeMaxLines
+        // notice the system's own paste into the reply box
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.watch(binding.composeInput)
         binding.composeInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -154,6 +177,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         })
 
         softkeys = Softkeys(this, binding.softkeyBar)
+        applyTopBarSymbols()
         applyComposeButtonLayout()
         attachTouchDateBubble()
         if (prefs.touchMode) {
@@ -170,13 +194,35 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         // E4810) the user can't reach the on-screen Send button, and if the
         // softkey bar is off there's no softkey Send either. So when softkeys
         // are off, D-pad center sends while the compose box has focus.
-        binding.composeInput.setOnFocusChangeListener { _, _ ->
+        // the T9 word strip belongs to the phone's keyboard. Show it
+        // only while he is typing in the box; hide it the moment focus leaves.
+        if (!prefs.touchMode) binding.composeInput.showSoftInputOnFocus = false
+        binding.composeInput.setOnFocusChangeListener { v, has ->
             updateSendHint(); updateCharCounter()
+            if (has) {
+                setCompact(false)
+            } else {
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                try {
+                    imm.hideSoftInputFromWindow(v.windowToken, 0)
+                    // ends the half-typed T9 word cleanly (no stray underline)
+                    imm.restartInput(v)
+                } catch (_: Exception) {}
+            }
         }
         binding.composeInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: android.text.Editable?) { updateCharCounter() }
+            override fun afterTextChanged(s: android.text.Editable?) {
+                updateCharCounter()
+                // typing again: let the keyboard (and its T9 strip) come back
+                if (!prefs.touchMode && binding.composeInput.hasFocus()) {
+                    try {
+                        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                            .showSoftInput(binding.composeInput, 0)
+                    } catch (_: Exception) {}
+                }
+            }
         })
         if (binding.composeInput.text.isNullOrBlank()) {
             val draft = prefs.draft(convoId)
@@ -184,6 +230,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 binding.composeInput.setText(draft)
                 binding.composeInput.setSelection(draft.length)
             }
+        }
+        if (pendingAttachments.isEmpty()) {
+            DraftPrompt.decode(prefs.draftAttachments(convoId)).forEach { pendingAttachments.add(it) }
+            if (pendingAttachments.isNotEmpty()) updateAttachmentChip()
         }
         updateSendHint()
         updateSoftkeys()
@@ -197,6 +247,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     if (c.groupMode == GroupMode.GROUP_MMS) R.string.subtitle_group
                     else R.string.subtitle_broadcast
                 )
+                else if (io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c)) getString(R.string.notes_subtitle)
                 else c.addressList().firstOrNull() ?: ""
             updateNotifStatusIcon(c)
             adapter = MessageAdapter(
@@ -210,9 +261,23 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             applyChatBackground()
             binding.composeInput.setText(c.draft)
             if (c.draft.isNotBlank()) binding.composeInput.setSelection(c.draft.length)
+            // shared/forwarded content means the user wants to send: open at the box
+            val hadShared = intent.hasExtra(EXTRA_SHARED_TEXT) || intent.hasExtra(EXTRA_SHARED_PATHS)
+            applySharedContent()
 
+            // find the first unread BEFORE anything can mark it read,
+            // so the "New messages" line and the landing spot are right.
+            val firstUnread = repo.db.messages().firstUnreadId(convoId) ?: -1L
+            dividerCaptured = true
+            adapter.newDividerMessageId = firstUnread
             val target = intent.getLongExtra(EXTRA_TARGET_MESSAGE_ID, -1L)
-            if (target > 0) loadAround(target) else loadLatest(focusBottom = true)
+            when {
+                target > 0 -> loadAround(target)
+                // unread waiting: land on the first one (top of the screen),
+                // loading the page around it even in a very long thread
+                firstUnread > 0 && !hadShared -> loadAround(firstUnread)
+                else -> loadLatest(focusBottom = true)
+            }
             markRead()
         }
     }
@@ -220,6 +285,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     override fun onStart() {
         super.onStart()
         ChangeBus.register(changeListener)
+        // messages that arrived while stopped (flip closed / screen off) were
+        // never loaded — the listener was off. Catch up now.
+        onDataChanged()
     }
 
     override fun onStop() {
@@ -264,19 +332,28 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 updateNotifStatusIcon(it)
             }
         }
+        applyTopBarSymbols()
         applyComposeButtonLayout()
         updateSoftkeys()
-        markRead()
+        threadShown = true
+        fullReadCheckDue = true
+        scheduleMarkRead()
         // color / style / thumbnail settings can change while a settings screen
         // was on top; rebind so they take effect on return without reopening
         if (::adapter.isInitialized) {
             applyChatBackground()
-            adapter.notifyDataSetChanged()
+            // Re-apply reaction hiding in case "Show reactions" changed in Settings.
+            if (loadedRows.isNotEmpty()) publishWindow(loadedRows, useSubmit = true)
+            else adapter.notifyDataSetChanged()
         }
     }
 
     override fun onPause() {
         prefs.setDraft(convoId, binding.composeInput.text?.toString().orEmpty())
+        // last look before leaving (BACK / Home / screen off)
+        markRead()
+        threadShown = false
+        binding.msgList.removeCallbacks(markReadSoon)
         super.onPause()
         visibleConvoId = -1L
         saveDraft()
@@ -340,17 +417,109 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     /** Long-press while selecting (touch users): the actions as a dialog. */
     private fun selectionActionsDialog() {
-        AlertDialog.Builder(this)
+        val n = selectedIds.size
+        DsmsAlertBuilder(this)
+            .setCustomTitle(Dialogs.title(this, getString(R.string.n_selected, n)))
             .setItems(arrayOf(
-                getString(R.string.delete_n, selectedIds.size),
+                getString(R.string.forward_n, n),
+                getString(R.string.copy_n, n),
+                getString(R.string.delete_n, n),
                 getString(R.string.cancel_selection)
             )) { _, which ->
                 when (which) {
-                    0 -> deleteSelected()
-                    1 -> exitSelection()
+                    0 -> forwardSelected()
+                    1 -> copySelected()
+                    2 -> deleteSelected()
+                    3 -> exitSelection()
                 }
             }
             .show()
+    }
+
+    /** Selected rows, oldest first (the order they were sent/received). */
+    private fun selectedRowsInOrder(): List<MessageRow> =
+        rows.filter { it.msg.id in selectedIds && !it.isSystemLine }
+            .sortedWith(compareBy({ it.msg.date }, { it.msg.id }))
+
+    /** Copy the text of all selected messages, oldest first, one per paragraph. */
+    private fun copySelected() {
+        val text = selectedRowsInOrder().map { it.msg.body.trim() }
+            .filter { it.isNotEmpty() }.joinToString("\n\n")
+        if (text.isEmpty()) {
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.nothing_to_copy, Toast.LENGTH_SHORT).show()
+            return
+        }
+        ElementActions.copy(this, text)
+        exitSelection()
+    }
+
+    /** Forward all selected messages (text + attachments), oldest first. */
+    private fun forwardSelected() {
+        val picked = selectedRowsInOrder()
+        if (picked.isEmpty()) { exitSelection(); return }
+        // full-screen chat list, Cancel on the RIGHT soft key
+        ChatTargetPicker.show(
+            this, getString(R.string.forward_n, picked.size),
+            onNew = { forwardManyToNew(picked) },
+            // tick several chats, Send forwards to all of them at once
+            onPickMany = { chats ->
+                lifecycleScope.launch {
+                    repo.scope.async {
+                        for (c in chats) for (r in picked) forwardOne(r, c.id)
+                    }.await()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this@ThreadActivity,
+                        resources.getQuantityString(R.plurals.forwarded_to_chats, chats.size, chats.size),
+                        Toast.LENGTH_SHORT).show()
+                    exitSelection()
+                }
+            },
+        ) { c ->
+            lifecycleScope.launch {
+                repo.scope.async {
+                    for (r in picked) forwardOne(r, c.id)
+                }.await()
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this@ThreadActivity,
+                    getString(R.string.forwarded_n, picked.size), Toast.LENGTH_SHORT).show()
+                exitSelection()
+            }
+        }
+    }
+
+    /** Copies a message's attachments so the forward owns its own files. */
+    private fun copyParts(r: MessageRow): List<Triple<String, String, String>> {
+        val dir = File(filesDir, "parts").apply { mkdirs() }
+        return r.parts.mapNotNull { part ->
+            try {
+                val src = File(part.filePath)
+                if (!src.exists()) return@mapNotNull null
+                val copy = File(dir, "fwd_${System.currentTimeMillis()}_${part.id}_${part.fileName}")
+                src.copyTo(copy, overwrite = true)
+                Triple(copy.absolutePath, part.mimeType, part.fileName)
+            } catch (_: Exception) { null }
+        }
+    }
+
+    private suspend fun forwardOne(r: MessageRow, dest: Long) {
+        try {
+            val atts = copyParts(r)
+            if (atts.isNotEmpty()) repo.sendAttachment(dest, r.msg.body, atts)
+            else if (r.msg.body.isNotBlank()) repo.sendText(dest, r.msg.body)
+        } catch (_: Exception) {}
+    }
+
+    /** "New number…": open the new-message screen with every text joined and
+     *  every attachment staged (limits applied there). */
+    private fun forwardManyToNew(picked: List<MessageRow>) {
+        lifecycleScope.launch {
+            val atts = repo.scope.async { picked.flatMap { copyParts(it) } }.await()
+            val text = picked.map { it.msg.body.trim() }.filter { it.isNotEmpty() }.joinToString("\n\n")
+            startActivity(Intent(this@ThreadActivity, ComposeActivity::class.java)
+                .putExtra("prefill_body", text)
+                .putStringArrayListExtra(EXTRA_SHARED_PATHS, ArrayList(atts.map { it.first }))
+                .putStringArrayListExtra(EXTRA_SHARED_MIMES, ArrayList(atts.map { it.second }))
+                .putStringArrayListExtra(EXTRA_SHARED_NAMES, ArrayList(atts.map { it.third })))
+            exitSelection()
+        }
     }
 
     private fun toggleSelected(row: MessageRow) {
@@ -372,6 +541,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 if (c.groupMode == GroupMode.GROUP_MMS) R.string.subtitle_group
                 else R.string.subtitle_broadcast
             )
+            else if (io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c)) getString(R.string.notes_subtitle)
             else c.addressList().firstOrNull() ?: ""
         } ?: ""
         updateSoftkeys()
@@ -381,12 +551,13 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.threadSubtitle.text = getString(R.string.n_selected, selectedIds.size)
         binding.btnSelDeleteThread.text = getString(R.string.delete_n, selectedIds.size)
         softkeys?.set(
-            getString(R.string.softkey_cancel), getString(R.string.softkey_select),
+            getString(R.string.softkey_options), getString(R.string.softkey_select),
             getString(R.string.delete),
-            onLeft = { exitSelection() },
+            // Options: Forward / Copy / Delete / Cancel (BACK still cancels)
+            onLeft = { selectionActionsDialog() },
             onCenter = { binding.msgList.focusedChild?.performClick() },
             onRight = { deleteSelected() },
-            onMenu = { exitSelection() }
+            onMenu = { selectionActionsDialog() }
         )
     }
 
@@ -396,7 +567,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val lockedCount = selectedIds.count { id -> rows.firstOrNull { it.msg.id == id }?.msg?.locked == true }
             val ids = selectedIds.toList()
             if (lockedCount > 0) {
-                AlertDialog.Builder(this@ThreadActivity)
+                DsmsAlertBuilder(this@ThreadActivity)
                     .setMessage(getString(R.string.delete_selected_locked, ids.size, lockedCount))
                     .setPositiveButton(R.string.delete_all) { _, _ ->
                         lifecycleScope.launch { repo.deleteMessages(ids, includeLocked = true); exitSelection() }
@@ -407,7 +578,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             } else {
-                AlertDialog.Builder(this@ThreadActivity)
+                DsmsAlertBuilder(this@ThreadActivity)
                     .setMessage(getString(R.string.delete_selected_confirm, ids.size))
                     .setPositiveButton(R.string.delete) { _, _ ->
                         lifecycleScope.launch { repo.deleteMessages(ids, includeLocked = true); exitSelection() }
@@ -420,53 +591,172 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private var dividerCaptured = false
 
-    /** Reads are now marked by VISIBILITY: only messages the user has actually
+    /** Reads are marked by VISIBILITY: only messages the user has actually
      *  scrolled to count as read. The chip at the bottom shows how many unread
-     *  remain below, and clears as they're seen. */
+     *  remain below, and clears as they're seen.
+     *
+     *  Fix for "newest message stays unread": the old version measured
+     *  the last visible row right after a new message was added, BEFORE the
+     *  list had laid it out, so it marked only up to the previous message —
+     *  and nothing measured again (D-pad scrolling uses scrollBy, which never
+     *  reports "scroll idle"). Now: re-check after every layout/scroll
+     *  (scheduleMarkRead), and when the newest message is on screen mark the
+     *  WHOLE thread read, exactly like "Mark as read" in the list. The DB work
+     *  runs in the app scope so pressing BACK right away can't cancel it, and
+     *  the list is pinged to recount. */
     private fun markRead() {
         // callable from onResume, which runs BEFORE the async convo load has
         // created the adapter — nothing to mark yet in that window
         if (!::adapter.isInitialized) return
+        if (!threadShown) return          // screen off / another app on top
+        // perf: the full check (read-report scan, notification clean-up, the
+        // whole-database unread count) runs once per showing of the screen
+        // and whenever this pass marks something new; the passes after each
+        // scroll/layout in between only do the cheap per-chat queries
+        val fullCheck = fullReadCheckDue
+        fullReadCheckDue = false
+        val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+        val lastVis = lm?.findLastVisibleItemPosition() ?: -1
+        val snapshot = rows
+        val loadedSnapshot = loadedRows
+        val hiddenSnap = hiddenTargets
+        val anchor = snapshot.getOrNull(lastVis)?.msg
+        val rowCount = snapshot.size
+        val moreNewer = hasMoreNewer
+        val lastLoadedId = loadedSnapshot.lastOrNull()?.msg?.id ?: snapshot.lastOrNull()?.msg?.id
+        val cid = convoId
+        val app = applicationContext
         lifecycleScope.launch {
             if (!dividerCaptured) {
                 dividerCaptured = true
-                adapter.newDividerMessageId =
-                    repo.db.messages().firstUnreadId(convoId) ?: -1L
+                val firstUnread = repo.db.messages().firstUnreadId(cid)
+                adapter.newDividerMessageId = firstUnread?.let { hiddenSnap[it] ?: it } ?: -1L
             }
-            val lm = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
-            val lastVis = lm?.findLastVisibleItemPosition() ?: -1
-            val anchor = rows.getOrNull(lastVis)?.msg
-            val changed = if (anchor != null) {
-                repo.db.messages().markReadUpTo(convoId, anchor.date, anchor.id)
-            } else 0
-            // answer any read-report requests now that these are read
-            repo.sendPendingReadRecs(convoId)
-            val left = repo.db.messages().unreadCount(convoId)
+            val left = repo.scope.async {
+                val msgs = repo.db.messages()
+                val mode = io.github.theonionsarewatching.nova.util.ReadMarking.decide(
+                    lastVis, rowCount, moreNewer, lastLoadedId, msgs.newest(cid)?.id
+                )
+                val changed = when (mode) {
+                    io.github.theonionsarewatching.nova.util.ReadMarking.Mode.ALL ->
+                        msgs.markThreadReadCount(cid)
+                    io.github.theonionsarewatching.nova.util.ReadMarking.Mode.UP_TO ->
+                        if (anchor != null) {
+                            // Hidden reaction texts sit after their target; if
+                            // that target is already on screen, mark them read too.
+                            var date = anchor.date
+                            var id = anchor.id
+                            for (row in loadedSnapshot) {
+                                val targetId = hiddenSnap[row.msg.id] ?: continue
+                                val target = loadedSnapshot.find { it.msg.id == targetId }?.msg
+                                    ?: continue
+                                val targetAtOrBefore = target.date < anchor.date ||
+                                    (target.date == anchor.date && target.id <= anchor.id)
+                                if (targetAtOrBefore && (row.msg.date > date ||
+                                        (row.msg.date == date && row.msg.id > id))) {
+                                    date = row.msg.date
+                                    id = row.msg.id
+                                }
+                            }
+                            msgs.markReadUpTo(cid, date, id)
+                        } else 0
+                    else -> 0
+                }
+                // answer any read-report requests now that these are read
+                if (fullCheck || changed > 0) {
+                    try { repo.sendPendingReadRecs(cid) } catch (_: Exception) {}
+                }
+                if (changed > 0) {
+                    repo.refreshConversation(cid)   // list count / bold / badge
+                    ChangeBus.ping()                // list recounts even if already shown
+                }
+                val n = msgs.unreadCount(cid)
+                if (n == 0 && (fullCheck || changed > 0)) {
+                    val nm = androidx.core.app.NotificationManagerCompat.from(app)
+                    nm.cancel(cid.toInt())
+                    if (msgs.totalUnread() == 0) nm.cancel(1000)
+                }
+                n
+            }.await()
             binding.unreadChip.text = left.toString()
             binding.unreadChip.visibility = if (left > 0) View.VISIBLE else View.GONE
-            if (changed > 0) repo.refreshConversation(convoId)
-            if (left == 0) {
-                androidx.core.app.NotificationManagerCompat.from(this@ThreadActivity)
-                    .cancel(convoId.toInt())
-                if (repo.db.messages().totalUnread() == 0) {
-                    androidx.core.app.NotificationManagerCompat.from(this@ThreadActivity)
-                        .cancel(1000)
-                }
-            }
         }
+    }
+
+    // ---------------- compact bars while scrolling ----------------
+    private var compact = false
+
+    /** Scrolling the messages: slimmer top bar (no subtitle) and compose bar
+     *  (no + / send buttons, tighter padding) so more messages fit. Back in
+     *  the box: full size. Only touches views when the state changes. */
+    private fun setCompact(on: Boolean) {
+        if (on == compact || !::binding.isInitialized) return
+        compact = on
+        val d = resources.displayMetrics.density
+        val px = { v: Int -> (v * d).toInt() }
+        (binding.threadTitle.parent?.parent as? View)?.minimumHeight = px(if (on) 26 else 36)
+        if (!selecting) binding.threadSubtitle.visibility = if (on) View.GONE else View.VISIBLE
+        binding.composeBar.setPaddingRelative(px(4), px(if (on) 1 else 3), px(4), px(if (on) 1 else 3))
+        binding.composeInput.setPaddingRelative(px(12), px(if (on) 3 else 8), px(12), px(if (on) 3 else 8))
+        if (on) {
+            binding.btnAttach.visibility = View.GONE
+            binding.btnSend.visibility = View.GONE
+        } else {
+            applyComposeButtonLayout()
+        }
+    }
+
+    /** True between onResume and onPause: only then does looking count as reading. */
+    private var threadShown = false
+
+    /** Next markRead does the full check (see markRead); set on every resume. */
+    private var fullReadCheckDue = true
+
+    private val markReadSoon = Runnable { markRead() }
+
+    /** Mark after the list has settled (layout done), debounced. */
+    private fun scheduleMarkRead() {
+        if (!::binding.isInitialized) return
+        binding.msgList.removeCallbacks(markReadSoon)
+        binding.msgList.postDelayed(markReadSoon, 150)
     }
 
     private fun saveDraft() {
         val text = binding.composeInput.text?.toString().orEmpty()
+        prefs.setDraftAttachments(convoId, DraftPrompt.encode(pendingAttachments))
+        // attachment-only draft still shows as "Draft: <name>" in the list
+        val listText = text.ifBlank { pendingAttachments.firstOrNull()?.third ?: "" }
         lifecycleScope.launch {
-            repo.db.conversations().setDraft(convoId, text)
+            repo.db.conversations().setDraft(convoId, listText)
         }
+    }
+
+    private fun hasUnsent() = !binding.composeInput.text.isNullOrBlank() || pendingAttachments.isNotEmpty()
+
+    private fun discardDraft() {
+        draftRunnable?.let { draftHandler.removeCallbacks(it) }
+        binding.composeInput.setText("")
+        clearAttachments(deleteFiles = true)
+        prefs.setDraft(convoId, ""); prefs.setDraftAttachments(convoId, "")
+        lifecycleScope.launch { repo.db.conversations().setDraft(convoId, "") }
+    }
+
+    private fun saveDraftAndExit() {
+        prefs.setDraft(convoId, binding.composeInput.text?.toString().orEmpty())
+        saveDraft(); goBack()
     }
 
     // ============================== loading ==============================
 
-    private suspend fun buildRows(messages: List<MessageEntity>): List<MessageRow> {
+    private suspend fun buildRows(messages0: List<MessageEntity>): List<MessageRow> {
         val c = convo ?: return emptyList()
+        // a copy already stored twice for the same provider
+        // row (made by the old ingest race) shows once
+        val seenT = HashSet<String>()
+        val messages = messages0.filter { m ->
+            val t = m.telephonyId ?: return@filter true
+            seenT.add((if (m.telephonyIsMms) "m" else "s") + t)
+        }
         val ids = messages.map { it.id }
         val parts = if (ids.isEmpty()) emptyList() else repo.db.parts().byMessages(ids)
         val elements = if (ids.isEmpty()) emptyList() else repo.db.elements().byMessages(ids)
@@ -483,6 +773,36 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 elements = elsBy[m.id] ?: emptyList(),
                 senderName = names[PhoneUtils.normalize(m.address)] ?: m.address
             )
+        }
+    }
+
+    /** Hide matched reaction texts and attach pills. Nothing is deleted from the store. */
+    private fun displayFrom(raw: List<MessageRow>): ArrayList<MessageRow> {
+        if (raw.isEmpty() || !ReactionSettings.enabled(this)) {
+            hiddenTargets = emptyMap()
+            hiddenIds = emptySet()
+            return ArrayList(raw.map { if (it.reactions.isEmpty()) it else it.copy(reactions = emptyList()) })
+        }
+        val result = MessageReactions.resolve(raw.map { it.toReactionItem() })
+        hiddenIds = result.hidden.map { it.id }.toSet()
+        hiddenTargets = result.targets.entries.associate { it.key.id to it.value.id }
+        return ArrayList(raw.mapNotNull { row ->
+            if (row.msg.id in hiddenIds) null
+            else {
+                val rx = result.reactions[MessageReactions.Key(row.msg.id)].orEmpty()
+                if (rx == row.reactions) row else row.copy(reactions = rx)
+            }
+        })
+    }
+
+    private fun publishWindow(raw: List<MessageRow>, useSubmit: Boolean) {
+        loadedRows = ArrayList(raw)
+        rows = displayFrom(raw)
+        if (!::adapter.isInitialized) return
+        if (useSubmit) adapter.submit(rows)
+        else {
+            adapter.rows = rows
+            adapter.notifyDataSetChanged()
         }
     }
 
@@ -506,15 +826,16 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private suspend fun updateScrollExtent() {
         val lm = binding.msgList.layoutManager as? BoundedLinearLayoutManager ?: return
-        if (rows.isEmpty()) { lm.totalBefore = 0; lm.totalAfter = 0; return }
-        val first = rows.first().msg
-        val last = rows.last().msg
+        val extent = if (loadedRows.isNotEmpty()) loadedRows else rows
+        if (extent.isEmpty()) { lm.totalBefore = 0; lm.totalAfter = 0; return }
+        val first = extent.first().msg
+        val last = extent.last().msg
         lm.totalBefore = repo.db.messages().countOlderThan(convoId, first.date, first.id)
         lm.totalAfter = repo.db.messages().countNewerThan(convoId, last.date, last.id)
         binding.msgList.invalidate()
     }
 
-    private fun loadLatest(focusBottom: Boolean) {
+    private fun loadLatest(focusBottom: Boolean, then: (() -> Unit)? = null) {
         if (loading) return
         loading = true
         lifecycleScope.launch {
@@ -522,13 +843,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val latest = repo.db.messages().latest(convoId, PAGE).reversed()
             val tQuery = System.currentTimeMillis() - t0
             val t1 = System.currentTimeMillis()
-            rows = ArrayList(buildRows(latest))
+            publishWindow(buildRows(latest), useSubmit = false)
             val tBuild = System.currentTimeMillis() - t1
             hasMoreOlder = latest.size >= PAGE
             hasMoreNewer = false
             val t2 = System.currentTimeMillis()
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
             val tNotify = System.currentTimeMillis() - t2
             Perf.logLoad(this@ThreadActivity, rows, tQuery, tBuild, tNotify, t0)
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -540,51 +859,49 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // mark what's on screen once the initial layout settles — the
             // programmatic scroll above fires no scroll events, so without this
             // a thread opened into compose focus never marked anything read
-            binding.msgList.post { markRead() }
+            scheduleMarkRead()
             loading = false
+            then?.invoke()
         }
     }
 
     private fun loadOlder() {
-        if (loading || !hasMoreOlder || rows.isEmpty()) return
+        if (loading || !hasMoreOlder || loadedRows.isEmpty()) return
         loading = true
         binding.loadingBanner.visibility = View.VISIBLE
         lifecycleScope.launch {
             val t0 = System.currentTimeMillis()
-            val first = rows.first().msg
+            val first = loadedRows.first().msg
             val older = repo.db.messages()
                 .olderThan(convoId, first.date, first.id, PAGE_MORE).reversed()
             val tQuery = System.currentTimeMillis() - t0
             hasMoreOlder = older.size >= PAGE_MORE
             if (older.isNotEmpty()) {
-                // keep the exact scroll position AND the focused view: capture the
-                // current anchor, insert above, then restore the anchor shifted by
-                // the insert count — the focused view instance survives untouched,
-                // so focus can never blip up to the header during the re-layout
+                // Re-resolve reactions on the whole window, then restore the
+                // same message (a hidden reaction can change adapter indexes).
                 val hadFocus = binding.msgList.focusedChild != null
                 val anchorView = binding.msgList.focusedChild ?: binding.msgList.getChildAt(0)
                 val anchorPos = anchorView?.let { binding.msgList.getChildAdapterPosition(it) } ?: -1
                 val anchorOffset = anchorView?.top ?: 0
-                val newRows = buildRows(older)
-                rows.addAll(0, newRows)
-                adapter.rows = rows
-                adapter.notifyItemRangeInserted(0, newRows.size)
+                val anchorId = rows.getOrNull(anchorPos)?.msg?.id
+                val combined = ArrayList<MessageRow>(older.size + loadedRows.size)
+                combined.addAll(buildRows(older))
+                combined.addAll(loadedRows)
+                publishWindow(combined, useSubmit = true)
                 updateScrollExtent()
-                if (anchorPos >= 0) {
+                val newPos = if (anchorId != null) rows.indexOfFirst { it.msg.id == anchorId } else -1
+                if (newPos >= 0) {
                     (binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
-                        ?.scrollToPositionWithOffset(anchorPos + newRows.size, anchorOffset)
+                        ?.scrollToPositionWithOffset(newPos, anchorOffset)
                 }
                 if (hadFocus) binding.msgList.post {
-                    // the insert can momentarily recycle the focused row; if
-                    // focus escaped the list (it lands on the top bar), bring
-                    // it back to the same message instead
-                    if (binding.msgList.focusedChild == null) {
-                        scroller?.focusPosition(anchorPos + newRows.size, false)
+                    if (binding.msgList.focusedChild == null && newPos >= 0) {
+                        scroller?.focusPosition(newPos, false)
                     }
                 }
                 Perf.log(
                     this@ThreadActivity, "loadOlder",
-                    "rows=${older.size} total=${rows.size} query=${tQuery}ms " +
+                    "rows=${older.size} total=${loadedRows.size} query=${tQuery}ms " +
                         "total=${System.currentTimeMillis() - t0}ms"
                 )
             }
@@ -594,18 +911,17 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun loadNewer() {
-        if (loading || !hasMoreNewer || rows.isEmpty()) return
+        if (loading || !hasMoreNewer || loadedRows.isEmpty()) return
         loading = true
         lifecycleScope.launch {
-            val last = rows.last().msg
+            val last = loadedRows.last().msg
             val newer = repo.db.messages().newerThan(convoId, last.date, last.id, PAGE)
             hasMoreNewer = newer.size >= PAGE
             if (newer.isNotEmpty()) {
-                val newRows = buildRows(newer)
-                val start = rows.size
-                rows.addAll(newRows)
-                adapter.rows = rows
-                adapter.notifyItemRangeInserted(start, newRows.size)
+                val combined = ArrayList<MessageRow>(loadedRows.size + newer.size)
+                combined.addAll(loadedRows)
+                combined.addAll(buildRows(newer))
+                publishWindow(combined, useSubmit = true)
                 updateScrollExtent()
             }
             loading = false
@@ -626,13 +942,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val newer = repo.db.messages().newerThan(convoId, target.date, target.id, PAGE / 2)
             hasMoreOlder = older.size >= PAGE / 2
             hasMoreNewer = newer.size >= PAGE / 2
-            rows = ArrayList(buildRows(older + target + newer))
-            adapter.rows = rows
-            adapter.notifyDataSetChanged()
+            publishWindow(buildRows(older + target + newer), useSubmit = false)
             binding.emptyLabel.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-            val pos = rows.indexOfFirst { it.msg.id == targetId }.coerceAtLeast(0)
+            val focusId = hiddenTargets[targetId] ?: targetId
+            val pos = rows.indexOfFirst { it.msg.id == focusId }.coerceAtLeast(0)
             updateScrollExtent()
             enterScrollMode(focusPos = pos)
+            // only what is actually on screen gets marked
+            scheduleMarkRead()
             loading = false
         }
     }
@@ -650,15 +967,24 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val lmB = binding.msgList.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
             val atBottom = (lmB?.findLastVisibleItemPosition() ?: -1) >= adapter.itemCount - 1
             val t0 = System.currentTimeMillis()
-            val requested = maxOf(PAGE, rows.size)
-            val latest = repo.db.messages().latest(convoId, requested).reversed()
+            // After scrolling far back, `rows` can hold thousands of messages.
+            // Re-loading ALL of them on every new message made heavy threads
+            // stall. Now: keep the older part as-is (if a cheap fingerprint
+            // says nothing in it changed) and only re-load the newest PAGE
+            // plus anything newer. Any doubt -> the old full reload.
+            val requested = maxOf(PAGE, loadedRows.size)
+            val tailRows = refreshTailOnly()
             val tQuery = System.currentTimeMillis() - t0
             val t1 = System.currentTimeMillis()
-            rows = ArrayList(buildRows(latest))
+            if (tailRows != null) {
+                publishWindow(tailRows, useSubmit = true)
+            } else {
+                val latest = repo.db.messages().latest(convoId, requested).reversed()
+                publishWindow(buildRows(latest), useSubmit = true)
+                hasMoreOlder = latest.size >= requested
+            }
             val tBuild = System.currentTimeMillis() - t1
-            hasMoreOlder = latest.size >= requested
             val t2 = System.currentTimeMillis()
-            adapter.submit(rows) // diff: only changed rows repaint — no full-list flash
             Perf.logRefresh(
                 this@ThreadActivity, rows.size, requested, tQuery, tBuild,
                 System.currentTimeMillis() - t2, t0
@@ -673,11 +999,54 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 val pos = rows.indexOfFirst { it.msg.id == focusedId }
                 if (pos >= 0) scroller?.focusPosition(pos)
             }
-            markRead()
+            // after the new rows are laid out, not now (old bug: measured the
+            // previous last row, so the newest message stayed unread)
+            scheduleMarkRead()
         }
     }
 
+    /** Live-tail refresh for big windows: returns the new row list, or null
+     *  when the caller should fall back to the full reload. */
+    private suspend fun refreshTailOnly(): ArrayList<MessageRow>? {
+        val keep = loadedRows.size - PAGE
+        if (keep <= 0) return null                     // small window: full reload is cheap
+        val first = loadedRows.first().msg
+        val cut = loadedRows[keep - 1].msg
+        // 1) is the kept (older) part unchanged? fingerprints only, no bodies
+        val stamps = try {
+            repo.db.messages().stampsBetween(convoId, first.date, first.id, cut.date, cut.id)
+        } catch (_: Exception) { return null }
+        if (stamps.size != keep) return null
+        for (i in 0 until keep) {
+            val r = loadedRows[i]
+            val st = stamps[i]
+            val m = r.msg
+            if (st.id != m.id || st.status != m.status || st.locked != m.locked ||
+                st.date != m.date || st.sched != (m.scheduledAt ?: 0L) ||
+                st.partCount != r.parts.size ||
+                st.bodyBytes != m.body.toByteArray(Charsets.UTF_8).size.toLong()
+            ) return null
+        }
+        // 2) re-load only the rows after the cut (the old tail + new messages)
+        val limit = PAGE * 4
+        val tail = repo.db.messages().newerThan(convoId, cut.date, cut.id, limit)
+        if (tail.size >= limit) return null            // flood of new rows: full reload
+        val out = ArrayList<MessageRow>(keep + tail.size)
+        out.addAll(loadedRows.subList(0, keep))
+        out.addAll(buildRows(tail))
+        return out
+    }
+
     // ============================== compose <-> scroll boundary ==============================
+
+    /** no symbols for soft-key actions in the top bar. With
+     *  the soft-key bar showing, the options are on a soft key, so the
+     *  three-dots button is hidden; only the small back arrow stays on the
+     *  left. Touch phones (no soft-key bar) keep the dots to reach options. */
+    private fun applyTopBarSymbols() {
+        binding.btnOverflow.visibility =
+            if (softkeys?.shouldShow() == true) View.GONE else View.VISIBLE
+    }
 
     /** Header buttons are focusable ONLY while deliberately visited — the framework
      *  can never auto-park focus on them during a list re-layout or page load. */
@@ -800,7 +1169,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     /** chars-over-segments counter in the corner of the compose box */
     private fun updateCharCounter() {
         val len = binding.composeInput.text?.length ?: 0
-        if (len == 0 || !binding.composeInput.hasFocus()) {
+        // no SMS parts in the notes chat: nothing is sent
+        if (len == 0 || !binding.composeInput.hasFocus() || io.github.theonionsarewatching.nova.data.NotesChat.isNotes(convo)) {
             binding.charCounter.visibility = View.GONE
             return
         }
@@ -808,9 +1178,23 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         binding.charCounter.text = if (pendingAttachments.isNotEmpty()) {
             len.toString()
         } else {
-            val segs = (len + 159) / 160
-            val inSeg = len - 160 * (segs - 1)
-            "($inSeg/$segs)"
+            // real SMS parts. Plain (GSM) text: 160 in one part,
+            // 153 per part when split; any emoji / non-GSM letter (e.g.
+            // Hebrew) makes it UCS-2: 70 in one part, 67 per part when split.
+            // Shown as (used in this part/parts).
+            val text = binding.composeInput.text?.toString() ?: ""
+            val r = try { android.telephony.SmsMessage.calculateLength(text, false) }
+                catch (_: Exception) { null }
+            if (r == null || r.size < 4 || r[0] < 1) {
+                val segs = (len + 159) / 160
+                "(${len - 160 * (segs - 1)}/$segs)"
+            } else {
+                val segs = r[0]
+                val ucs2 = r[3] == android.telephony.SmsMessage.ENCODING_16BIT
+                val perPart = if (ucs2) { if (segs > 1) 67 else 70 } else { if (segs > 1) 153 else 160 }
+                val used = (perPart - r[2]).coerceIn(0, perPart)
+                "($used/$segs)"
+            }
         }
     }
 
@@ -827,6 +1211,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private fun enterComposeMode() {
         composeMode = true
+        setCompact(false)
         binding.composeInput.maxLines = prefs.composeMaxLines
         binding.moreIndicator.visibility = View.GONE
         binding.composeInput.requestFocus()
@@ -838,6 +1223,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun enterScrollMode(focusPos: Int = rows.size - 1) {
         if (rows.isEmpty()) return
         composeMode = false
+        setCompact(true)
         binding.composeInput.maxLines = 1
         val multiline = (binding.composeInput.layout?.lineCount ?: 1) > 1 ||
             binding.composeInput.text?.contains('\n') == true
@@ -868,6 +1254,77 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 val delta = v.bottom - viewBottom
                 if (delta != 0) binding.msgList.scrollBy(0, delta)
             }
+        }
+    }
+
+    /** Jump keys while a message is focused (UP/DOWN stay the
+     *  small step with hold acceleration, in DpadScroller):
+     *    LEFT / 2 / Page Up      one screen up      (held: keeps paging)
+     *    RIGHT / 8 / Page Down   one screen down    (held: keeps paging)
+     *    1                       top (oldest message of the whole chat)
+     *    7                       bottom (newest message)
+     *  1/7 act on key-up. */
+    private fun handleJumpKey(event: KeyEvent): Boolean {
+        val up = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_2, KeyEvent.KEYCODE_PAGE_UP -> true
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_8, KeyEvent.KEYCODE_PAGE_DOWN -> false
+            KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_7 -> {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                    if (event.keyCode == KeyEvent.KEYCODE_1) jumpToTop() else jumpToBottom()
+                }
+                return true
+            }
+            else -> return false
+        }
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        if (rows.isEmpty()) return true
+        val rv = binding.msgList
+        val lm = rv.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager ?: return true
+        val pageH = (rv.height * 0.85f).toInt().coerceAtLeast(1)
+        // raw scroll (the bounded manager only clamps focus-driven scrolls)
+        rv.scrollBy(0, if (up) -pageH else pageH)
+        val pos = if (up) lm.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 }
+            ?: lm.findFirstVisibleItemPosition()
+        else lm.findLastCompletelyVisibleItemPosition().takeIf { it >= 0 }
+            ?: lm.findLastVisibleItemPosition()
+        if (pos >= 0) {
+            val v = lm.findViewByPosition(pos)
+            if (v != null && v.isFocusable) v.requestFocus() else scroller?.focusPosition(pos, !up)
+        }
+        if (up && pos in 0..3) loadOlder()
+        if (!up && hasMoreNewer && pos > rows.size - 5) loadNewer()
+        showDateBubble()
+        return true
+    }
+
+    /** "1": the very first message of the chat (loads the oldest page). */
+    private fun jumpToTop() {
+        if (loading) return
+        if (!hasMoreOlder) {
+            binding.msgList.scrollToPosition(0)
+            scroller?.focusPosition(0, false)
+            return
+        }
+        loading = true
+        lifecycleScope.launch {
+            val oldest = repo.db.messages().newerThan(convoId, Long.MIN_VALUE, Long.MIN_VALUE, PAGE)
+            publishWindow(buildRows(oldest), useSubmit = false)
+            hasMoreOlder = false
+            hasMoreNewer = oldest.size >= PAGE
+            updateScrollExtent()
+            binding.msgList.scrollToPosition(0)
+            binding.msgList.post { scroller?.focusPosition(0, false) }
+            loading = false
+        }
+    }
+
+    /** "7": the newest message (reloads the latest page if paged away). */
+    private fun jumpToBottom() {
+        if (loading) return
+        if (hasMoreNewer) {
+            loadLatest(focusBottom = false) { binding.msgList.post { enterScrollMode() } }
+        } else {
+            enterScrollMode()   // focuses the last row, pinned to the bottom
         }
     }
 
@@ -970,6 +1427,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             // focus moved elsewhere by other means: relock the header
             setHeaderFocusable(false)
         }
+        if (binding.msgList.hasFocus() && handleJumpKey(event)) return true
         if (binding.msgList.hasFocus()) {
             if (scroller?.onKey(event) == true) {
                 // prefetch older pages as the focus climbs
@@ -985,7 +1443,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
         if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_CALL) {
             convo?.let { c ->
-                if (!c.isGroup) {
+                if (!c.isGroup && !io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c)) {
                     try {
                         startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + c.addressList().first())))
                     } catch (_: Exception) {}
@@ -1036,15 +1494,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             } catch (_: Exception) { 0L }
         }
         val input = android.widget.EditText(this).apply {
-            hint = getString(R.string.cut_start_hint)
+            hint = getString(R.string.seconds_short_hint)
             setText("0")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val wrap = android.widget.FrameLayout(this).apply {
-            setPadding(pad, pad / 2, pad, 0); addView(input)
-        }
-        AlertDialog.Builder(this)
+        val wrap = Dialogs.inputPanel(this, input, getString(R.string.cut_start_hint))
+        DsmsAlertBuilder(this)
             .setTitle(R.string.cut_video_title)
             .setMessage(getString(R.string.cut_video_msg, durMs / 1000, maxS))
             .setView(wrap)
@@ -1056,7 +1511,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                         vc.trim(this@ThreadActivity, java.io.File(path), start * 1000, maxS * 1000)
                     }
                     if (cut == null) {
-                        Toast.makeText(this@ThreadActivity, R.string.cut_failed,
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this@ThreadActivity, R.string.cut_failed,
                             Toast.LENGTH_LONG).show()
                         return@launch
                     }
@@ -1076,12 +1531,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
         val attachments = pendingAttachments.toList()
         if (text.isEmpty() && attachments.isEmpty()) return
+        // pasted text has been used: clear it from the clipboard now
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.clearIfStillPasted(applicationContext)
         prefs.setDraft(convoId, "")
+        prefs.setDraftAttachments(convoId, "")
         binding.composeInput.setText("")
         clearAttachments(deleteFiles = false)
         lifecycleScope.launch {
             repo.db.conversations().setDraft(convoId, "")
-            if (attachments.isNotEmpty()) {
+            if (attachments.isNotEmpty() &&
+                io.github.theonionsarewatching.nova.data.NotesChat.isNotes(convo)) {
+                // notes keep the text only (Repo says so); no video-cut prompt
+                repo.sendAttachment(convoId, text, attachments)
+            } else if (attachments.isNotEmpty()) {
                 val ready = offerVideoCutIfNeeded(text, attachments) ?: return@launch
                 repo.sendAttachment(convoId, text, ready)
             } else {
@@ -1089,6 +1551,38 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
         }
         enterComposeMode()
+    }
+
+    /** Puts text/attachments shared from another app into the compose box.
+     *  Runs once: the extras are removed so a recreate doesn't add them twice. */
+    private fun applySharedContent() {
+        val text = intent.getStringExtra(EXTRA_SHARED_TEXT)
+        val paths = intent.getStringArrayListExtra(EXTRA_SHARED_PATHS)
+        val mimes = intent.getStringArrayListExtra(EXTRA_SHARED_MIMES)
+        val names = intent.getStringArrayListExtra(EXTRA_SHARED_NAMES)
+        listOf(EXTRA_SHARED_TEXT, EXTRA_SHARED_PATHS, EXTRA_SHARED_MIMES, EXTRA_SHARED_NAMES)
+            .forEach { intent.removeExtra(it) }
+        if (!text.isNullOrBlank()) {
+            val cur = binding.composeInput.text?.toString().orEmpty()
+            val joined = if (cur.isBlank()) text else cur.trimEnd() + "\n" + text
+            binding.composeInput.setText(joined)
+            binding.composeInput.setSelection(joined.length)
+        }
+        if (paths.isNullOrEmpty()) return
+        var skipped = 0
+        paths.forEachIndexed { i, path ->
+            val f = File(path)
+            val mime = mimes?.getOrNull(i) ?: "application/octet-stream"
+            val name = names?.getOrNull(i) ?: f.name
+            if (!f.exists() || f.length() <= 0) { skipped++; return@forEachIndexed }
+            if (pendingAttachments.size >= io.github.theonionsarewatching.nova.util.AttachLimits.MAX_ITEMS ||
+                !io.github.theonionsarewatching.nova.util.AttachLimits.fits(this, pendingAttachments, mime, f.length())
+            ) { runCatching { f.delete() }; skipped++; return@forEachIndexed }
+            addAttachment(path, mime, name)
+        }
+        if (skipped > 0) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+            this, getString(R.string.attach_skipped, skipped), Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun addAttachment(path: String, mime: String, name: String) {
@@ -1123,12 +1617,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun manageAttachments() {
         if (pendingAttachments.isEmpty()) return
         val labels = pendingAttachments.map { it.third } + getString(R.string.remove_all)
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(getString(R.string.attached_n, pendingAttachments.size))
             .setItems(labels.toTypedArray()) { _, which ->
                 if (which < pendingAttachments.size) {
                     val item = pendingAttachments[which]
-                    AlertDialog.Builder(this)
+                    DsmsAlertBuilder(this)
                         .setMessage(getString(R.string.remove_one_confirm, item.third))
                         .setPositiveButton(R.string.remove) { _, _ ->
                             runCatching { File(item.first).delete() }
@@ -1154,31 +1648,43 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     }
 
     private fun pickAttachment() {
-        android.app.AlertDialog.Builder(this)
-            .setItems(arrayOf(
-                getString(R.string.attach_menu_photo),
-                getString(R.string.attach_menu_video),
+        // full Attach list. "Record audio" lives in the small first
+        // popup (AttachOrPaste) only; Photo / Video / From gallery are one
+        // "Photo/Video" item that opens the gallery picker (images+videos).
+        // Rows stay centered (exception to the compact left rows) and the
+        // pop-up is narrowed to its labels.
+        val labels = arrayOf(
+                getString(R.string.attach_menu_photo_video),
+                getString(R.string.attach_menu_camera),
                 getString(R.string.attach_menu_contact),
                 getString(R.string.attach_menu_audio),
-                getString(R.string.attach_menu_record),
                 getString(R.string.attach_menu_file),
-                getString(R.string.attach_menu_gallery),
                 getString(R.string.attach_menu_emoji)
-            )) { _, which ->
+            )
+        val d = Dialogs.centeredItems(DsmsAlertBuilder(this), labels) { which ->
                 when (which) {
-                    0 -> pickMedia("image/*", cameraImageIntent())
-                    1 -> pickMedia("video/*",
-                        Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE))
+                    // our own Photo/Video grid; "Other gallery…" = old route
+                    0 -> MediaPickerDialog.show(
+                        this,
+                        maxItems = io.github.theonionsarewatching.nova.util.AttachLimits.MAX_ITEMS -
+                            pendingAttachments.size,
+                        maxVideos = if (pendingAttachments.any { it.second.startsWith("video/") }) 0 else 1,
+                        onOtherGallery = { pickFromGalleryApp() }
+                    ) { deliverPicked(it) }
+                    // the phone's own Contacts and Music apps
+                    // (our in-app lists only as a fallback when there is none)
+                    // Camera: in-app Photo / Video choice, then the camera app
+                    1 -> CameraCapture.choose(this, pendingAttachments)
                     2 -> pickContactAttachment()
-                    3 -> pickMedia("audio/*",
-                        Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
-                    4 -> recordAudioAttachment()
-                    5 -> pickFileAttachment()
-                    6 -> pickFromGalleryApp()
-                    7 -> EmojiPicker.show(this, binding.composeInput)
+                    3 -> pickAudioFromMusicApp()
+                    4 -> pickFileAttachment()
+                    5 -> EmojiPicker.show(this, binding.composeInput)
                 }
             }
-            .show()
+            .create()
+        // final width BEFORE the first frame (no jump)
+        Dialogs.narrowToLabels(d, labels)
+        d.show()
     }
 
     /** The gallery app's OWN picker, straight up (user request; on phones
@@ -1186,7 +1692,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
      *  route). Falls back to the pictures flow when no gallery responds.
      *  Results come back through the same 201 handler as pickMedia. */
     private fun pickFromGalleryApp() {
+        // no system ask when All files access already covers reading media
+        // (it popped up on every Gallery press on the Flip 2)
         if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            !(android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) &&
             checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -1208,14 +1717,21 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val both = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            InAppPickers.askMultiple(this)
         }
         val pickAll = Intent(Intent.ACTION_PICK).apply {
             setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "*/*")
+            // most galleries ignore this on PICK; harmless where they do
+            InAppPickers.askMultiple(this)
         }
         val pickImages = Intent(Intent.ACTION_PICK).apply {
             setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+            InAppPickers.askMultiple(this)
         }
+        // the phone's REAL gallery app first, opened
+        // explicitly (never the file manager / DocumentsUI, no chooser)
+        val gallery = InAppPickers.galleryIntent(this)
+        if (gallery != null && tryStart(gallery, "gallery-app " + gallery.component?.packageName)) return
         // ORDER MATTERS (08-09 log: "via get-content-both" opened the Files
         // UI, not the gallery): ACTION_PICK is the gallery's verb — it goes
         // first; GET_CONTENT-with-both-types is the fallback for phones whose
@@ -1234,7 +1750,10 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun pickMedia(mime: String, capture: Intent?) {
         // media-store uris returned by gallery/music apps need this on older
         // Android; without it the copy dies with a SecurityException
+        // no system ask when All files access already covers reading media
+        // (it popped up on every Gallery press on the Flip 2)
         if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            !(android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) &&
             checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -1248,7 +1767,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         } catch (_: Exception) { false }
         val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = mime
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            InAppPickers.askMultiple(this)
         }
         val chooser = Intent.createChooser(pick, getString(R.string.softkey_attach))
         if (capture != null) {
@@ -1267,7 +1786,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 addCategory(Intent.CATEGORY_OPENABLE); type = mime
             })
         if (!started) {
-            android.widget.Toast.makeText(this, R.string.no_gallery,
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_gallery,
                 android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -1279,7 +1798,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 72)
-            android.widget.Toast.makeText(
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                 this, R.string.mic_permission_hint, android.widget.Toast.LENGTH_SHORT
             ).show()
             return
@@ -1306,24 +1825,63 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
     } catch (_: Exception) { null }
 
+    /** Files: the system file picker directly (ACTION_OPEN_DOCUMENT goes
+     *  straight to it; GET_CONTENT + chooser listed every app twice). If
+     *  the phone has no file picker, our own D-pad file browser. */
     private fun pickFileAttachment() {
-        try {
-            val i = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*", "audio/*", "text/x-vcard"))
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                addCategory(Intent.CATEGORY_OPENABLE)
-            }
-            startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 201)
-        } catch (_: Exception) {}
+        // the phone's file manager, opened DIRECTLY (explicit
+        // component, no chooser); none found -> our own D-pad file browser
+        val direct = InAppPickers.fileManagerIntent(this)
+        if (direct != null) {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(direct, 201)
+                return
+            } catch (_: Exception) {}
+        }
+        FileBrowserDialog.show(this,
+            listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".3gp", ".m4a", ".amr", ".mp3", ".ogg", ".vcf"),
+            { uri, _ -> deliverPicked(listOf(uri)) })
     }
 
+    /** Hand in-app picks to the same code as a picker app's result. */
+    private fun deliverPicked(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val data = Intent()
+        val clip = android.content.ClipData.newRawUri("pick", uris[0])
+        for (k in 1 until uris.size) clip.addItem(android.content.ClipData.Item(uris[k]))
+        data.clipData = clip
+        @Suppress("DEPRECATION")
+        onActivityResult(201, RESULT_OK, data)
+    }
+
+    /** Attach > Contact: the phone's Contacts app (result: 231). */
     private fun pickContactAttachment() {
         try {
+            @Suppress("DEPRECATION")
             startActivityForResult(
                 Intent(Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI), 231
             )
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // no Contacts app answers: our own list as the fallback
+            InAppPickers.pickContact(this) { stageContactVcf(it) }
+        }
+    }
+
+    /** Attach > Audio: the phone's Music app, opened directly (result: the
+     *  normal attach handler, 201). Fallback: our own list. */
+    private fun pickAudioFromMusicApp() {
+        val music = InAppPickers.musicIntent(this)
+        if (music != null) {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(music, 201)
+                return
+            } catch (_: Exception) {}
+        }
+        InAppPickers.pickAudio(this, onRecord = { recordAudioAttachment() }) {
+            deliverPicked(listOf(it))
+        }
     }
 
     private fun stageContactVcf(contactUri: android.net.Uri) {
@@ -1370,10 +1928,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             data?.data?.let { stageContactVcf(it) }
             return
         }
+        if (requestCode == CameraCapture.REQ) {
+            CameraCapture.onResult(this, resultCode, data, pendingAttachments,
+                add = { p, m, n -> addAttachment(p, m, n) },
+                fromUri = { deliverPicked(listOf(it)) })
+            return
+        }
         if (requestCode == 201 && resultCode == RESULT_OK) {
             val uris = ArrayList<android.net.Uri>()
-            data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
-            data?.data?.let { if (uris.isEmpty()) uris.add(it) }
+            uris.addAll(InAppPickers.resultUris(this, data))
             if (uris.isEmpty()) {
                 // camera capture with EXTRA_OUTPUT returns no uri — the photo
                 // is already in our staging file
@@ -1385,9 +1948,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 return
             }
             lifecycleScope.launch {
+                var skipped = 0
                 for (uri in uris) {
+                    if (pendingAttachments.size >= io.github.theonionsarewatching.nova.util.AttachLimits.MAX_ITEMS) { skipped++; continue }
                     try {
-                        val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                        val mime = contentResolver.getType(uri)
+                            ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                                uri.lastPathSegment.orEmpty().substringAfterLast('.', "").lowercase())
+                            ?: "application/octet-stream"
                         val ext = io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
                         // carry the source's display name (song title, photo
                         // name) into our filename, ahead of the usual suffix
@@ -1406,7 +1974,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                         contentResolver.openInputStream(uri)?.use { input ->
                             out.outputStream().use { output -> input.copyTo(output) }
                         }
-                        if (out.exists() && out.length() > 0) {
+                        if (out.exists() && out.length() > 0 &&
+                        !io.github.theonionsarewatching.nova.util.AttachLimits.fits(this@ThreadActivity, pendingAttachments, mime, out.length())
+                    ) {
+                        // over the MMS limits (multi-select): drop it, tell the user below
+                        out.delete(); skipped++
+                    } else if (out.exists() && out.length() > 0) {
                             // staged, not sent — goes out with the next Send press
                             addAttachment(out.absolutePath, mime, out.name)
                         }
@@ -1417,11 +1990,23 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                         )
                     }
                 }
+                if (skipped > 0) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+                    this@ThreadActivity, getString(R.string.attach_skipped, skipped),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
 
     // ============================== message press / hold ==============================
+
+    /** Long text, or a row taller than the visible list (cut off). */
+    private fun isLongRow(row: MessageRow): Boolean {
+        val pos = rows.indexOf(row)
+        val h = binding.msgList.findViewHolderForAdapterPosition(pos)?.itemView?.height ?: 0
+        val listH = binding.msgList.height - binding.msgList.paddingTop - binding.msgList.paddingBottom
+        return LongTextReader.isLong(row.msg.body, h, listH)
+    }
 
     private fun pressMessage(row: MessageRow) {
         if (row.isSystemLine) return
@@ -1430,7 +2015,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         when (m.status) {
             MsgStatus.FAILED, MsgStatus.RETRYING -> {
                 // both retry paths, same as the long-press menu (user request)
-                AlertDialog.Builder(this)
+                DsmsAlertBuilder(this)
                     .setItems(arrayOf(
                         getString(R.string.retry),
                         getString(R.string.retry_on_service),
@@ -1440,7 +2025,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                             0 -> lifecycleScope.launch { repo.retry(m.id) }
                             1 -> {
                                 io.github.theonionsarewatching.nova.util.AutoRetry.add(this, m.id)
-                                Toast.makeText(this, R.string.retry_on_service_armed,
+                                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.retry_on_service_armed,
                                     Toast.LENGTH_SHORT).show()
                             }
                             2 -> deleteMessage(m)
@@ -1457,7 +2042,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             MsgStatus.SCHEDULED -> {
                 val items = arrayOf(getString(R.string.send_now), getString(R.string.cancel_schedule),
                     getString(R.string.message_options))
-                AlertDialog.Builder(this)
+                DsmsAlertBuilder(this)
                     .setItems(items) { _, which ->
                         when (which) {
                             0 -> lifecycleScope.launch { repo.fireScheduled(m.id) }
@@ -1472,12 +2057,12 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         when {
             stub != null -> {
                 if (stub.location.isBlank()) {
-                    android.widget.Toast.makeText(
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                         this, R.string.mms_download_unavailable,
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    android.widget.Toast.makeText(
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                         this, R.string.mms_downloading, android.widget.Toast.LENGTH_SHORT
                     ).show()
                     io.github.theonionsarewatching.nova.util.ManualDownloads.mark(convoId)
@@ -1486,8 +2071,21 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     )
                 }
             }
-            row.parts.size > 1 -> chooseAttachment(row)
+            // one attachment (and no long text) opens
+            // straight away (a picture/video full screen). Several
+            // attachments, or long text with attachments, show a pick list
+            // with sharp thumbnails (+ "Read text" for the long text).
+            row.parts.size > 1 || (row.parts.isNotEmpty() && hasLongText(row)) ->
+                chooseAttachment(row)
             row.parts.isNotEmpty() -> openAttachment(row, 0)
+            // a long text opens the full-screen reader; OK inside
+            // it still offers the links/numbers
+            row.parts.isEmpty() && isLongRow(row) -> LongTextReader.show(
+                this, row.senderName.ifBlank { convo?.displayTitle() ?: "" }, m.body,
+                if (row.elements.isNotEmpty()) {
+                    { ElementActions.showForMessage(this, row.elements) { num -> messageNumber(num) } }
+                } else null
+            )
             row.elements.isNotEmpty() -> ElementActions.showForMessage(this, row.elements) { num -> messageNumber(num) }
             else -> { /* plain text, no elements: press does nothing (by design) */ }
         }
@@ -1495,7 +2093,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
 
     private fun stateDialog(row: MessageRow, primaryRes: Int, primary: () -> Unit) {
         val items = arrayOf(getString(primaryRes), getString(R.string.message_options))
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setItems(items) { _, which ->
                 if (which == 0) primary() else holdMessage(row)
             }.show()
@@ -1514,31 +2112,147 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 this, "$packageName.fileprovider", File(part.filePath)
             )
-            startActivity(Intent(Intent.ACTION_VIEW).apply {
+            val view = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, part.mimeType)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            })
+            }
+            if (part.isAudio()) {
+                // the phone's stock/default audio player directly; chooser only as fallback
+                val def = packageManager.resolveActivity(view, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                    ?.activityInfo
+                if (def != null && def.packageName != "android" && !def.name.contains("Resolver")) {
+                    view.setClassName(def.packageName, def.name)
+                    startActivity(view)
+                } else {
+                    startActivity(Intent.createChooser(view, getString(R.string.player_open_with))
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                }
+                return
+            }
+            startActivity(view)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(this, R.string.no_app_for_file,
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_app_for_file,
                 android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
-    /** A message carrying more than one attachment: list them so every part is
-     *  reachable, instead of silently opening only the first. */
+    /** Text of a message WITH attachments is "long" when it alone would
+     *  fill most of the list (or 500+ characters); the picture's height
+     *  does not count. */
+    private fun hasLongText(row: MessageRow): Boolean {
+        val body = row.msg.body.trim()
+        if (body.isEmpty()) return false
+        if (LongTextReader.isLong(body, 0, 0)) return true
+        val listH = binding.msgList.height - binding.msgList.paddingTop - binding.msgList.paddingBottom
+        val w = (binding.msgList.width * 0.8f).toInt()
+        if (listH <= 0 || w <= 0) return false
+        val paint = android.text.TextPaint(android.text.TextPaint.ANTI_ALIAS_FLAG).apply {
+            textSize = android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, prefs.msgTextSp, resources.displayMetrics)
+        }
+        val h = android.text.StaticLayout.Builder.obtain(body, 0, body.length, paint, w).build().height
+        return h > listH * 0.8f
+    }
+
+    /** Pick list for a message with several attachments, or long text plus
+     *  attachments: compact rows, each with a sharp
+     *  thumbnail decoded from the original file, and "Read text" first when
+     *  the text is long. OK opens the row. */
     private fun chooseAttachment(row: MessageRow) {
-        val labels = row.parts.mapIndexed { i, part ->
-            when {
+        val dm = resources.displayMetrics
+        val dp = { v: Int -> (v * dm.density).toInt() }
+        val thumbPx = dp(48)
+        val showText = hasLongText(row)
+        // entries: -1 = read text, otherwise the part index
+        val entries = (if (showText) listOf(-1) else emptyList()) + row.parts.indices
+        fun label(i: Int): String {
+            if (i < 0) return getString(R.string.read_text)
+            val part = row.parts[i]
+            return when {
                 part.isImage() -> getString(R.string.attach_kind_image, i + 1)
                 part.isVideo() -> getString(R.string.attach_kind_video, i + 1)
                 part.isAudio() -> part.fileName.ifBlank { getString(R.string.attach_kind_audio, i + 1) }
                 part.isVCard() -> vcardTitle(part)
                 else -> part.fileName.ifBlank { getString(R.string.attach_kind_file, i + 1) }
             }
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.attachments_title)
-            .setItems(labels) { _, which -> openAttachment(row, which) }
+        }
+        val textColors = androidx.core.content.ContextCompat.getColorStateList(this, R.color.dialog_item_text)
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = entries.size
+            override fun getItem(p: Int): Any = entries[p]
+            override fun getItemId(p: Int) = p.toLong()
+            override fun getView(p: Int, convert: View?, parent: android.view.ViewGroup): View {
+                val rowView = (convert as? android.widget.LinearLayout) ?: android.widget.LinearLayout(this@ThreadActivity).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    minimumHeight = thumbPx + dp(8)
+                    setPaddingRelative(dp(12), dp(4), dp(12), dp(4))
+                    val img = android.widget.ImageView(this@ThreadActivity).apply {
+                        clipToOutline = true
+                        outlineProvider = object : android.view.ViewOutlineProvider() {
+                            override fun getOutline(v: View, o: android.graphics.Outline) =
+                                o.setRoundRect(0, 0, v.width, v.height, dp(8).toFloat())
+                        }
+                    }
+                    addView(img, android.widget.LinearLayout.LayoutParams(thumbPx, thumbPx))
+                    addView(android.widget.TextView(this@ThreadActivity).apply {
+                        textSize = 15f
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+                        isDuplicateParentStateEnabled = true
+                        textColors?.let { setTextColor(it) }
+                        setPaddingRelative(dp(10), 0, 0, 0)
+                    }, android.widget.LinearLayout.LayoutParams(0,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                }
+                val img = rowView.getChildAt(0) as android.widget.ImageView
+                val tv = rowView.getChildAt(1) as android.widget.TextView
+                val e = entries[p]
+                tv.text = label(e)
+                img.dispose()
+                val part = row.parts.getOrNull(e)
+                if (part != null && (part.isImage() || part.isVideo())) {
+                    img.background = null
+                    img.imageTintList = null
+                    img.setPadding(0, 0, 0, 0)
+                    img.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    // sharp: decoded from the original file at the thumbnail's
+                    // exact pixel size, full colour
+                    img.load(File(part.filePath)) {
+                        size(thumbPx, thumbPx)
+                        scale(coil.size.Scale.FILL)
+                        precision(coil.size.Precision.EXACT)
+                        allowRgb565(false)
+                        if (part.isVideo()) videoFrameMillis(1000)
+                    }
+                } else {
+                    img.setImageResource(when {
+                        part == null -> R.drawable.ic_mail_line
+                        part.isAudio() -> R.drawable.ic_headphones_small
+                        part.isVCard() -> R.drawable.ic_person_small
+                        else -> R.drawable.ic_paperclip_small
+                    })
+                    img.scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                    img.setPadding(dp(12), dp(12), dp(12), dp(12))
+                    img.imageTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE)
+                    img.background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(ThemeUtils.accentColor(this@ThreadActivity))
+                        cornerRadius = dp(8).toFloat()
+                    }
+                }
+                return rowView
+            }
+        }
+        DsmsAlertBuilder(this)
+            .setCustomTitle(Dialogs.title(this, getString(R.string.attachments_title)))
+            .setAdapter(adapter) { _, which ->
+                val e = entries[which]
+                if (e < 0) {
+                    LongTextReader.show(
+                        this, row.senderName.ifBlank { convo?.displayTitle() ?: "" }, row.msg.body)
+                } else openAttachment(row, e)
+            }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
@@ -1568,13 +2282,14 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 onOpenExternal = { openPartExternally(part) },
                 onSave = {
                     lifecycleScope.launch {
-                        val ok = io.github.theonionsarewatching.nova.ui.Saver.saveToDownloads(
+                        // D-SMS/Voice notes or D-SMS/Audio (see Saver)
+                        val loc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { io.github.theonionsarewatching.nova.ui.Saver.save(
                             this@ThreadActivity, File(part.filePath),
                             part.fileName, part.mimeType
-                        )
-                        android.widget.Toast.makeText(
+                        ) }
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                             this@ThreadActivity,
-                            if (ok) R.string.saved_to_downloads else R.string.save_failed,
+                            if (loc != null) getString(R.string.saved_to, loc) else getString(R.string.save_failed),
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -1589,7 +2304,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             part.isAudio() -> getString(R.string.open_in_player)
             else -> getString(R.string.open)
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(part.fileName)
             .setItems(arrayOf(openLabel, getString(R.string.save))) { _, which ->
                 when (which) {
@@ -1602,7 +2317,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         })
                     } catch (_: Exception) {
-                        android.widget.Toast.makeText(this, R.string.no_app_for_file,
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_app_for_file,
                             android.widget.Toast.LENGTH_SHORT).show()
                     }
                     1 -> savePart(part)
@@ -1622,7 +2337,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 items += getString(R.string.retry) to { lifecycleScope.launch { repo.retry(m.id) } }
                 items += getString(R.string.retry_on_service) to {
                     io.github.theonionsarewatching.nova.util.AutoRetry.add(this, m.id)
-                    Toast.makeText(this, R.string.retry_on_service_armed, Toast.LENGTH_SHORT).show()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.retry_on_service_armed, Toast.LENGTH_SHORT).show()
                 }
             }
             MsgStatus.SENDING -> items += getString(R.string.cancel_sending) to {
@@ -1639,6 +2354,9 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             items += getString(R.string.act_copy) to { ElementActions.copy(this, m.body) }
         }
         items += getString(R.string.forward) to { forward(row) }
+        if (row.parts.size > 1) {
+            items += getString(R.string.attachments_n, row.parts.size) to { chooseAttachment(row) }
+        }
         if (row.parts.isNotEmpty()) {
             // already saves every part; the label just owns up to it now
             items += getString(
@@ -1656,23 +2374,29 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         row.elements.forEach { e ->
             items += ElementActions.label(this, e) to { ElementActions.show(this, e) { n -> messageNumber(n) } }
         }
+        // reactions present (only when Show reactions is on): View reactions
+        // leads the menu, so it is the row that starts focused
+        val menu = MessageReactions.withViewReactionsFirst(
+            items, row.reactions.isNotEmpty(),
+            getString(R.string.view_reactions) to { showReactions(row) }
+        )
 
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setCustomTitle(Dialogs.title(this, getString(R.string.message_options)))
-            .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .setItems(menu.map { it.first }.toTypedArray()) { _, which -> menu[which].second() }
             .show()
     }
 
     private fun deleteMessage(m: MessageEntity) {
         val doDelete = { lifecycleScope.launch { repo.deleteMessage(m.id) }; Unit }
         if (m.locked) {
-            AlertDialog.Builder(this)
+            DsmsAlertBuilder(this)
                 .setMessage(R.string.delete_locked_confirm)
                 .setPositiveButton(R.string.delete) { _, _ -> doDelete() }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
         } else {
-            AlertDialog.Builder(this)
+            DsmsAlertBuilder(this)
                 .setMessage(R.string.delete_message_confirm)
                 .setPositiveButton(R.string.delete) { _, _ -> doDelete() }
                 .setNegativeButton(android.R.string.cancel, null)
@@ -1774,33 +2498,55 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     sb.append(Sender.statusLabel(this, m.status)).append('\n')
             }
         }
-        AlertDialog.Builder(this)
+        if (row.reactions.isNotEmpty()) {
+            sb.append('\n').append(getString(R.string.view_reactions)).append('\n')
+            val you = getString(R.string.reaction_you)
+            for (r in row.reactions) {
+                val who = if (r.isMine) you else r.senderName
+                sb.append(getString(R.string.reaction_from, who, r.emoji)).append('\n')
+            }
+        }
+        DsmsAlertBuilder(this)
             .setTitle(R.string.details)
             .setMessage(sb.toString().trim())
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
 
-    private fun forward(row: MessageRow) {
-        lifecycleScope.launch {
-            val convos = repo.db.conversations().visible()
-                .sortedByDescending { it.snippetDate }.take(15)
-            val labels = convos.map { it.displayTitle() } + getString(R.string.new_message)
-            AlertDialog.Builder(this@ThreadActivity)
-                .setTitle(R.string.forward_to)
-                .setItems(labels.toTypedArray()) { _, which ->
-                    if (which < convos.size) {
-                        lifecycleScope.launch { doForward(row, convos[which].id) }
-                    } else {
-                        startActivity(Intent(this@ThreadActivity, ComposeActivity::class.java)
-                            .putExtra("prefill_body", row.msg.body))
-                    }
-                }
-                .show()
+    private fun showReactions(row: MessageRow) {
+        val you = getString(R.string.reaction_you)
+        val lines = row.reactions.joinToString("\n") {
+            getString(R.string.reaction_from, if (it.isMine) you else it.senderName, it.emoji)
         }
+        DsmsAlertBuilder(this)
+            .setTitle(R.string.view_reactions)
+            .setMessage(lines)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
-    private suspend fun doForward(row: MessageRow, destConvoId: Long) {
+    private fun forward(row: MessageRow) {
+        // full-screen chat list ("New number…" first),
+        // Cancel on the LEFT soft key, Send on the RIGHT
+        ChatTargetPicker.show(
+            this, getString(R.string.forward_to),
+            onNew = {
+                startActivity(Intent(this@ThreadActivity, ComposeActivity::class.java)
+                    .putExtra("prefill_body", row.msg.body))
+            },
+            // tick several chats, Send forwards to all of them at once
+            onPickMany = { chats ->
+                lifecycleScope.launch {
+                    for (c in chats) doForward(row, c.id, toast = false)
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this@ThreadActivity,
+                        resources.getQuantityString(R.plurals.forwarded_to_chats, chats.size, chats.size),
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+        ) { c -> lifecycleScope.launch { doForward(row, c.id) } }
+    }
+
+    private suspend fun doForward(row: MessageRow, destConvoId: Long, toast: Boolean = true) {
         val part = row.parts.firstOrNull()
         if (part != null) {
             try {
@@ -1814,7 +2560,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         } else if (row.msg.body.isNotBlank()) {
             repo.sendText(destConvoId, row.msg.body)
         }
-        android.widget.Toast.makeText(this, R.string.forwarded, android.widget.Toast.LENGTH_SHORT).show()
+        if (toast) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.forwarded, android.widget.Toast.LENGTH_SHORT).show()
     }
 
     // ---------------- chat background ----------------
@@ -1846,12 +2592,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 // dark counterpart of the card-style default backdrop
                 v = "#1B1B1E"
             }
+            // full themes: their own page colour instead of the grey defaults
+            if ((v == "#1B1B1E" || v.isBlank()) && ThemeUtils.palette(this) != null) v = ""
         } else if (v.isBlank() &&
             (prefs.messageStyle == "plain" || prefs.messageStyle == "accentbar")
         ) {
             // card styles read as white squares over a very light grey
             v = "#F2F2F3"
         }
+        if (!ThemeUtils.isNight(this) && v == "#F2F2F3" && ThemeUtils.palette(this) != null) v = ""
         io.github.theonionsarewatching.nova.util.ThemeDebug
             .dump(this, "thread convo=$convoId", convoId, v)
         return v
@@ -1861,7 +2610,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val v = resolvedChatBg()
         val night = ThemeUtils.isNight(this)
         return when {
-            v.isBlank() -> if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE
+            v.isBlank() -> ThemeUtils.palette(this)?.page
+                ?: if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE
             v.startsWith("#") ->
                 try { android.graphics.Color.parseColor(v) }
                 catch (_: Exception) { if (night) 0xFF121212.toInt() else android.graphics.Color.WHITE }
@@ -1901,15 +2651,15 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             }
             startActivityForResult(i, REQ_CHAT_BG)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(this, R.string.no_file_picker,
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_file_picker,
                 android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
     private fun savePart(part: io.github.theonionsarewatching.nova.data.PartEntity) {
         lifecycleScope.launch {
-            val loc = Saver.save(this@ThreadActivity, File(part.filePath), part.fileName, part.mimeType)
-            android.widget.Toast.makeText(
+            val loc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Saver.save(this@ThreadActivity, File(part.filePath), part.fileName, part.mimeType) }
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                 this@ThreadActivity,
                 if (loc != null) getString(R.string.saved_to, loc) else getString(R.string.save_failed),
                 android.widget.Toast.LENGTH_SHORT
@@ -1929,17 +2679,19 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             try { repo.db.messages().mediaCountForConvo(c.id) > 0 } catch (_: Exception) { true }
         }
         val items = ArrayList<Pair<String, () -> Unit>>()
+        // drafts first (Back is backspace while typing, so it can't ask)
+        if (hasUnsent()) {
+            items += getString(R.string.draft_save_exit) to { saveDraftAndExit() }
+            items += getString(R.string.draft_discard_item) to { discardDraft() }
+        }
         // SAME item set and order as the list's long-press menu (user rule:
         // the two menus mirror each other) — except list-only actions like
         // "Select conversations", which have no meaning inside a thread.
-        if (!c.isGroup) {
+        // the notes chat has no number: no call / contact / block /
+        // schedule / mark unread
+        val isNotes = io.github.theonionsarewatching.nova.data.NotesChat.isNotes(c)
+        if (!c.isGroup && !isNotes) {
             val addr = c.addressList().firstOrNull().orEmpty()
-            if (!addr.contains("@"))
-                items += getString(R.string.call_contact, c.displayTitle()) to {
-                try {
-                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$addr")))
-                } catch (_: Exception) {}
-            }
             val lookupUri = io.github.theonionsarewatching.nova.util.ContactsHelper
                 .lookupContactUri(this, addr)
             if (lookupUri != null) {
@@ -1967,8 +2719,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                 refreshConvoState()
             }
         }
-        items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
-        items += getString(R.string.customize_menu) to { customizeMenu() }
+        if (!isNotes) items += getString(R.string.block_and_menu) to { blockAndMenu(c) }
         if (c.isGroup) {
             items += getString(R.string.participants_title, c.addressList().size) to {
                 GroupParticipants.show(this, c)
@@ -1978,8 +2729,8 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             startActivity(Intent(this, MediaViewerActivity::class.java)
                 .putExtra(MediaViewerActivity.EXTRA_CONVO_ID, convoId))
         }
-        items += getString(R.string.schedule_send) to { scheduleSend() }
-        items += getString(R.string.mark_unread) to {
+        if (!isNotes) items += getString(R.string.schedule_send) to { scheduleSend() }
+        if (!isNotes) items += getString(R.string.mark_unread) to {
             lifecycleScope.launch {
                 repo.db.messages().newest(convoId)?.let { repo.db.messages().setRead(it.id, false) }
                 repo.refreshConversation(convoId)
@@ -1989,7 +2740,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         }
         items += getString(R.string.delete_thread) to { deleteThreadFlow(c) }
 
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setCustomTitle(Dialogs.title(this, c.displayTitle()))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
@@ -1999,14 +2750,11 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun nameGroupDialog(c: ConversationEntity) {
         val input = android.widget.EditText(this).apply {
             setText(c.customName)
-            hint = getString(R.string.name_group_hint)
+            hint = getString(R.string.name_group_short_hint)
             setSingleLine(true)
         }
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val wrap = android.widget.FrameLayout(this).apply {
-            setPadding(pad, pad / 2, pad, 0); addView(input)
-        }
-        AlertDialog.Builder(this)
+        val wrap = Dialogs.inputPanel(this, input, getString(R.string.name_group_hint))
+        DsmsAlertBuilder(this)
             .setTitle(R.string.name_group)
             .setView(wrap)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -2016,7 +2764,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     refreshConvoState()
                     ChangeBus.ping()
                 }
-                Toast.makeText(this,
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this,
                     if (name.isBlank()) R.string.group_name_removed else R.string.group_name_set,
                     Toast.LENGTH_SHORT).show()
             }
@@ -2034,7 +2782,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val field = if (address.contains("@"))
             android.provider.ContactsContract.Intents.Insert.EMAIL
         else android.provider.ContactsContract.Intents.Insert.PHONE
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(address)
             .setItems(labels) { _, which ->
                 try {
@@ -2072,7 +2820,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
             getString(R.string.pref_message_style) to { pickMessageStyle() },
             getString(R.string.pref_message_color) to { messageColorDialog() }
         )
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.customize_menu)
             .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
             .show()
@@ -2082,7 +2830,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         val values = resources.getStringArray(R.array.style_values)
         val labels = resources.getStringArray(R.array.style_entries)
         val current = values.indexOf(prefs.messageStyle).coerceAtLeast(0)
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.pref_message_style)
             .setSingleChoiceItems(labels, current) { d, w ->
                 d.dismiss()
@@ -2139,7 +2887,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         if (convo?.isGroup == true) {
             addSwitch(R.string.pref_group_colors, "group_member_colors", false) {}
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.pref_message_color)
             .setView(android.widget.ScrollView(this).apply { addView(column) })
             .setPositiveButton(android.R.string.ok, null)
@@ -2160,7 +2908,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
     private fun scheduleSend() {
         val text = binding.composeInput.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) {
-            android.widget.Toast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         io.github.theonionsarewatching.nova.ui.ScheduleTimePicker.show(this) { at ->
@@ -2176,7 +2924,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
         lifecycleScope.launch {
             val locked = repo.db.messages().lockedCount(c.id)
             if (locked > 0) {
-                AlertDialog.Builder(this@ThreadActivity)
+                DsmsAlertBuilder(this@ThreadActivity)
                     .setTitle(R.string.delete_thread)
                     .setMessage(getString(R.string.delete_thread_locked, locked))
                     .setPositiveButton(R.string.delete_all) { _, _ ->
@@ -2188,7 +2936,7 @@ class ThreadActivity : BaseActivity(), io.github.theonionsarewatching.nova.ui.Ch
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             } else {
-                AlertDialog.Builder(this@ThreadActivity)
+                DsmsAlertBuilder(this@ThreadActivity)
                     .setMessage(getString(R.string.delete_thread_confirm, c.displayTitle()))
                     .setPositiveButton(R.string.delete) { _, _ ->
                         lifecycleScope.launch { repo.deleteThread(c.id, true); finish() }

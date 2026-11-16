@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-SMS override of AppCompat's dialog title (same ids, same structure).
+     titles are CENTERED, with a short centered accent bar under them
+     (drawable/bg_dialog_title), so it looks right at any title length. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:id="@+id/topPanel"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/title_template"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingLeft="?attr/dialogPreferredPadding"
+        android:paddingRight="?attr/dialogPreferredPadding"
+        android:paddingTop="@dimen/abc_dialog_padding_top_material"
+        android:paddingBottom="6dp">
+        <!-- a clear 6dp gap under the accent underline, so list rows
+             never butt against it (the title is a fixed header outside the
+             scrolling list; the list itself is clipped, abc_select_dialog_material) -->
+
+        <ImageView
+            android:id="@android:id/icon"
+            android:layout_width="32dip"
+            android:layout_height="32dip"
+            android:layout_marginEnd="8dip"
+            android:layout_marginRight="8dip"
+            android:scaleType="fitCenter"
+            android:src="@null"/>
+
+        <!-- Independent vertical line: never drawn over text descenders. The
+             whole template is hidden together when a custom title is supplied. -->
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
+            <androidx.appcompat.widget.DialogTitle
+                android:id="@+id/alertTitle" style="?android:attr/windowTitleStyle"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center" android:textAlignment="center"
+                android:background="@null" android:paddingBottom="0dp"
+                android:includeFontPadding="true" android:singleLine="false"
+                android:maxLines="2" android:ellipsize="end" />
+            <View android:layout_width="28dp" android:layout_height="3dp"
+                android:layout_marginTop="6dp" android:background="@drawable/bg_dialog_title" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <android.widget.Space
+        android:id="@+id/titleDividerNoCustom"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/abc_dialog_title_divider_material"
+        android:visibility="gone"/>
+</LinearLayout>

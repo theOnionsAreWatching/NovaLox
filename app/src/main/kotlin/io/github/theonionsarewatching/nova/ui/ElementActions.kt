@@ -26,7 +26,8 @@ object ElementActions {
     fun copy(context: Context, value: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("D-SMS", value))
-        Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.markCopied(value)
+        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
     }
 
     private fun canResolve(context: Context, intent: Intent): Boolean =
@@ -66,7 +67,7 @@ object ElementActions {
                 if (mode != "never" && hasBrowser) {
                     items += activity.getString(R.string.act_open_link) to {
                         if (mode == "ask") {
-                            AlertDialog.Builder(activity)
+                            DsmsAlertBuilder(activity)
                                 .setMessage(activity.getString(R.string.open_link_confirm, url.take(80)))
                                 .setPositiveButton(R.string.open) { _, _ ->
                                     try { activity.startActivity(view) } catch (_: Exception) {}
@@ -93,7 +94,7 @@ object ElementActions {
         if (items.isEmpty()) {
             items += activity.getString(R.string.act_copy) to { copy(activity, e.value) }
         }
-        AlertDialog.Builder(activity)
+        DsmsAlertBuilder(activity)
             .setCustomTitle(titleWithDivider(activity, label(activity, e)))
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
@@ -104,7 +105,7 @@ object ElementActions {
         when {
             elements.isEmpty() -> {}
             elements.size == 1 -> show(activity, elements[0], onMessageNumber)
-            else -> AlertDialog.Builder(activity)
+            else -> DsmsAlertBuilder(activity)
                 .setCustomTitle(titleWithDivider(activity, activity.getString(R.string.elements_title)))
                 .setItems(elements.map { label(activity, it) }.toTypedArray()) { _, which ->
                     show(activity, elements[which], onMessageNumber)

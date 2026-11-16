@@ -156,7 +156,7 @@ object ChatBackground {
             column.addView(row)
         }
         val scroll = ScrollView(activity).apply { addView(column) }
-        dialog = AlertDialog.Builder(activity)
+        dialog = DsmsAlertBuilder(activity)
             .setTitle(R.string.bg_color)
             .setView(scroll)
             .setNegativeButton(android.R.string.cancel, null)
@@ -199,7 +199,7 @@ object ChatBackground {
             column.addView(bar)
         }
         val scroll = ScrollView(activity).apply { addView(column) }
-        dialog = AlertDialog.Builder(activity)
+        dialog = DsmsAlertBuilder(activity)
             .setTitle(f.nameRes)
             .setView(scroll)
             .setNegativeButton(android.R.string.cancel, null)
@@ -223,7 +223,7 @@ object ChatBackground {
             activity.getString(R.string.bg_choose_picture),
             activity.getString(R.string.bg_dark_theme)
         )
-        AlertDialog.Builder(activity)
+        DsmsAlertBuilder(activity)
             .setTitle(if (convoId == ALL_THREADS) R.string.bg_all_title else R.string.chat_background)
             .setItems(items) { _, which ->
                 when (which) {
@@ -238,7 +238,7 @@ object ChatBackground {
                     ) { hex ->
                         prefs.setChatBg(convoId, hex)
                         host.applyBackgroundForCurrent()
-                        android.widget.Toast.makeText(
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                             activity, R.string.background_set,
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
@@ -313,7 +313,7 @@ object ChatBackground {
         rebuild()
 
         val scroll = ScrollView(activity).apply { addView(column) }
-        dialog = AlertDialog.Builder(activity)
+        dialog = DsmsAlertBuilder(activity)
             .setTitle(R.string.bg_dark_theme)
             .setView(scroll)
             .setNegativeButton(android.R.string.ok, null)
@@ -345,7 +345,7 @@ object ChatBackground {
                 }
                 activity.startActivityForResult(i, req)
             } catch (_: Exception) {
-                android.widget.Toast.makeText(
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                     activity, R.string.no_gallery, android.widget.Toast.LENGTH_LONG
                 ).show()
             }

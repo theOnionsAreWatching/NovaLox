@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- theme: own picker with a colour dot per theme (Settings.showThemePicker);
+         the value is still the string pref "theme" -->
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="theme"
+        android:title="@string/pref_theme" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="app_zoom"
+        android:title="@string/st_app_size"
+        android:entries="@array/zoom_entries"
+        android:entryValues="@array/zoom_values"
+        android:defaultValue="0.9"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="accent_picker"
+        android:title="@string/pref_accent" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="message_style"
+        android:title="@string/pref_message_style"
+        android:entries="@array/style_entries"
+        android:entryValues="@array/style_values"
+        android:defaultValue="bubble"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_message_color"
+        android:title="@string/st_message_colors"
+        android:summary="@string/st_message_colors_sum" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="all_backgrounds"
+        android:title="@string/st_chat_bg"
+        android:summary="@string/st_chat_bg_sum" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="show_search_bar"
+        android:title="@string/pref_show_search_short"
+        android:defaultValue="false" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_advanced_display"
+        android:title="@string/st_more_display"
+        android:summary="@string/st_more_display_sum" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="hint_appearance"
+        android:layout="@layout/pref_hint"
+        android:selectable="false"
+        android:persistent="false"
+        android:summary="@string/st_hint_appearance" />
+</PreferenceScreen>

@@ -57,6 +57,26 @@
     <string name="action_reply">Reply</string>
     <string name="attach_menu_gallery">From gallery</string>
     <string name="attach_menu_emoji">Emoji</string>
+    <string name="emoji_recent">Recent</string>
+    <string name="emoji_done">Done</string>
+    <string name="emoji_select">Select</string>
+    <string name="paste_will">\u25BC Will paste:</string>
+    <string name="draft_save_exit">Save draft and exit</string>
+    <string name="draft_discard_item">Discard draft</string>
+    <string name="emoji_back">Back</string>
+    <string name="emoji_added">Picked: %1$s</string>
+    <string name="media_tab_photos">Photos</string>
+    <string name="media_tab_videos">Videos</string>
+    <string name="media_loading">Loading…</string>
+    <string name="media_no_photos">No photos found</string>
+    <string name="media_no_videos">No videos found</string>
+    <string name="media_done_n">Done (%1$d)</string>
+    <string name="media_other_gallery">Gallery</string>
+    <string name="media_picked_n">%1$d picked</string>
+    <string name="open_settings">Settings</string>
+    <string name="media_limit_items">Up to %1$d per message</string>
+    <string name="media_limit_video">Only one video per message</string>
+    <string name="media_limit_full">This message already has the most attachments</string>
     <string name="tone_pick_system">System sounds</string>
     <string name="tone_pick_file">Choose a file\u2026</string>
     <string name="status_retrying">Retrying\u2026</string>
@@ -73,7 +93,7 @@
     <string name="retry_on_service_armed">Will retry when service is back</string>
     <string name="detail_sent_at">Sent (sender\u2019s time)</string>
     <string name="pref_save_to_sd">Save to SD card</string>
-    <string name="pref_save_to_sd_summary">Saved attachments go to the SD card. When no SD card is present they go to phone storage</string>
+    <string name="pref_save_to_sd_summary">Saved files go to D-SMS on the SD card. With no card, to phone storage</string>
     <string name="pref_save_to_sd_none">No SD card detected</string>
     <string name="saved_to_sd">SD card (%1$s)</string>
     <string name="pref_send_on_left">Send on the left</string>
@@ -159,6 +179,7 @@
     <string name="attach_file">[File: %1$s]</string>
     <string name="more_attachments">%1$d attachments</string>
     <string name="attachments_title">Attachments</string>
+    <string name="read_text">Read text</string>
     <string name="attach_kind_image">Picture %1$d</string>
     <string name="attach_kind_video">Video %1$d</string>
     <string name="attach_kind_audio">Audio %1$d</string>
@@ -171,7 +192,10 @@
     <string name="save">Save</string>
     <string name="play">Play</string>
     <string name="media_counter">%1$d / %2$d</string>
-    <string name="saved_to_downloads">Saved to Downloads/D-SMS</string>
+    <!-- picture viewer -->
+    <string name="viewer_all">All</string>
+    <string name="viewer_all_title">Choose a picture</string>
+    <string name="viewer_zoom_pct">%1$d%%</string>
     <string name="save_failed">Could not save</string>
 
     <!-- elements -->
@@ -201,6 +225,7 @@
 
     <!-- notifications -->
     <string name="channel_messages">Messages</string>
+    <string name="channel_muted">Muted chats</string>
     <string name="action_mark_read">Mark read</string>
 
     <!-- settings -->
@@ -224,7 +249,7 @@
     <string name="open_bin_pref">Recycle bin</string>
     <string name="open_hidden_pref">Hidden conversations</string>
     <string name="resync_pref">Re-sync with system messages</string>
-    <string name="resync_started">Sync started</string>
+    <string name="resync_started">Checking for missed messages…</string>
     <string name="refresh_contacts_pref">Refresh contact names</string>
     <string name="contacts_refreshing">Refreshing contact names</string>
 
@@ -291,7 +316,7 @@
     <string name="restore_done">Restore complete</string>
     <string name="restore_failed">Restore failed — is that a Nova backup zip?</string>
 
-    <string name="no_backups_found">No Nova backups found in Downloads/D-SMS</string>
+    <string name="no_backups_found">No Nova backups found in the D-SMS folders</string>
     <string name="group_mode_line">Group mode: %1$s — press to change</string>
     <string name="mode_broadcast_short">Broadcast</string>
     <string name="mode_group_mms_short">Group MMS</string>
@@ -312,6 +337,20 @@
     <string name="accent_purple_name">Purple</string>
     <string name="accent_pink_name">Pink</string>
     <string name="accent_gray_name">Gray</string>
+    <string name="accent_amber_name">Amber</string>
+    <string name="accent_gold_name">Gold</string>
+    <string name="accent_coral_name">Coral</string>
+    <string name="accent_crimson_name">Crimson</string>
+    <string name="accent_rose_name">Rose</string>
+    <string name="accent_violet_name">Violet</string>
+    <string name="accent_indigo_name">Indigo</string>
+    <string name="accent_sky_name">Sky blue</string>
+    <string name="accent_cyan_name">Cyan</string>
+    <string name="accent_mint_name">Mint</string>
+    <string name="accent_lime_name">Lime</string>
+    <string name="accent_olive_name">Olive</string>
+    <string name="accent_brown_name">Brown</string>
+    <string name="accent_slate_name">Slate</string>
 
     <!-- v0.7: sound settings -->
     <string name="settings_sound">Sound</string>
@@ -331,7 +370,7 @@
     <string name="tone_saved">Saved</string>
 
     <!-- v0.8 additions -->
-    <string name="softkey_trouble_hint">If a softkey doesn\'t respond even after setup (this happens on some phones), turn the softkey bar off: Settings → Softkey bar → Never. On-screen buttons appear instead, and they work with the D-pad.</string>
+    <string name="softkey_trouble_hint">If a softkey doesn\'t respond even after setup (this happens on some phones), turn the softkey bar off: Settings → Keys → Soft key bar → Never. On-screen buttons appear instead, and they work with the D-pad.</string>
 
     <!-- v0.9 additions -->
     <string name="mms_not_downloaded">[Multimedia message — not downloaded. Auto-download is off in Settings.]</string>
@@ -377,7 +416,7 @@
     <string name="pref_thumb_size">Picture/video thumbnail size</string>
     <string name="pref_thumb_size_summary">How large image and video previews appear in conversations</string>
     <string name="auto_delete_warning">This will keep only the most recent messages in each conversation and permanently delete older ones as new messages arrive. Locked messages are kept. This cannot be undone. Turn on?</string>
-    <string name="auto_delete_count_title">Messages to keep per conversation</string>
+    <string name="auto_delete_count_title">Messages to keep per chat</string>
     <string name="auto_delete_apply_warning">Apply now? Conversations longer than %1$d messages will have their oldest messages permanently deleted.</string>
     <string name="clear_cache_warning">Remove all downloaded MMS media files from the cache? Your messages stay; media will re-download when you open those messages. Continue?</string>
     <string name="clear_cache_done">MMS cache cleared</string>
@@ -402,8 +441,8 @@
     <string name="pref_reimport">Re-import all messages</string>
     <string name="pref_reimport_summary">Rebuild conversations from the phone\'s message store (fixes mixed-up group messages)</string>
     <string name="reimport_warning">This clears the app\'s copy of your messages and re-imports everything from the phone\'s message store. Message locks and scheduled sends are lost; keywords and settings are kept. Continue?</string>
-    <string name="reimporting">Re-importing…</string>
-    <string name="reimport_done">Re-import complete</string>
+    <string name="reimporting">Rebuilding chats…</string>
+    <string name="reimport_done">Chats rebuilt</string>
     <string name="pref_check_updates">Check for updates</string>
     <string name="checking_updates">Checking…</string>
     <string name="update_available">Update available: v%1$s</string>
@@ -429,11 +468,19 @@
 
     <!-- v0.9.6 additions -->
     <string name="restore_writing_detail">Message %1$d of %2$d</string>
-    <string name="restore_rebuilding">Rebuilding conversations…</string>
-    <string name="restore_finishing">Restoring locks and settings…</string>
+    <string name="restore_rebuilding">Rebuilding conversations… %1$d of %2$d</string>
+    <string name="restore_checking_sent">Checking sent MMS… %1$d of %2$d</string>
+    <string name="restore_updating_chats">Updating chats… %1$d of %2$d</string>
+    <string name="restore_finishing">Finishing: locks and settings…</string>
+    <string name="restore_finishing_prep">Finishing: getting ready…</string>
 
     <!-- v0.9.7 additions -->
     <string name="run_in_background">Run in background</string>
+    <string name="task_cancel">Cancel</string>
+    <string name="task_stopping">Stopping…</string>
+    <string name="task_cant_stop">Almost done, can\'t stop now</string>
+    <string name="backup_cancelled">Backup cancelled</string>
+    <string name="restore_cancelled">Restore cancelled (%1$d of %2$d messages done)</string>
     <string name="background_warning">Continuing in the background — messages may look incomplete until it finishes</string>
     <string name="search_hint">Search messages</string>
 
@@ -462,8 +509,8 @@
 
     <!-- v0.9.15 additions -->
     <string name="pref_save_log">Save diagnostic log</string>
-    <string name="pref_save_log_summary">Saves a small technical log to Downloads — send it to the developer when reporting a problem</string>
-    <string name="log_saved">Log saved to Downloads as novalox-log.txt</string>
+    <string name="pref_save_log_summary">Saves a small log to D-SMS/Logs, to send with a problem report</string>
+    <string name="log_saved">Log saved to %1$s</string>
     <string name="log_empty">Nothing logged yet</string>
 
     <!-- v0.9.16 additions -->
@@ -510,6 +557,16 @@
     <string name="vibrate_always">Always</string>
     <string name="vibrate_only_mode">Only on vibrate</string>
     <string name="vibrate_never">Never</string>
+    <string name="pref_vibrate_pattern">Pattern</string>
+    <string name="vibrate_pattern_title">Pattern</string>
+    <string name="vibrate_pattern_default">Default</string>
+    <string name="vibrate_pattern_long">Long</string>
+    <string name="vibrate_pattern_two_short">Two short</string>
+    <string name="vibrate_pattern_three_short">Three short</string>
+    <string name="vibrate_pattern_heartbeat">Heartbeat</string>
+    <string name="vibrate_pattern_pulse">Pulse</string>
+    <string name="vibrate_pattern_gentle">Gentle</string>
+    <string name="vibrate_pattern_off">Off</string>
     <string name="color_gray">Gray</string>
     <string name="color_red">Red</string>
     <string name="color_orange">Orange</string>
@@ -565,7 +622,10 @@
 
     <!-- v0.9.41 additions -->
     <string name="add_number_row">Add number</string>
-    <string name="view_contact">View contact</string>
+    <string name="softkey_start">Start</string>
+    <string name="softkey_add_more">Add more</string>
+    <string name="pick_type_first">Type a name or number</string>
+    <string name="view_contact">Call / View contact</string>
     <string name="add_to_contacts">Add to contacts</string>
     <string name="name_group">Name group</string>
     <string name="rename_group">Rename group</string>
@@ -578,19 +638,20 @@
     <string name="sent_color_set">Sent message color set</string>
     <string name="background_set">Background set</string>
     <string name="pref_export_contacts">Export contacts</string>
-    <string name="pref_export_contacts_summary">Save every contact to one .vcf file in Downloads</string>
+    <string name="pref_export_contacts_summary">Save all contacts to one .vcf in D-SMS/Contacts</string>
     <string name="export_contacts_empty">No contacts to export</string>
-    <string name="export_contacts_done">Contacts saved to Downloads</string>
+    <string name="export_contacts_done">Contacts saved to %1$s</string>
     <string name="export_contacts_failed">Could not save the export</string>
     <string name="setting_updated_fmt">%1$s \u2014 updated</string>
 
     <!-- v0.9.42 additions -->
     <string name="attach_menu_photo">Photo</string>
+    <string name="attach_menu_photo_video">Photo/Video</string>
     <string name="attach_menu_video">Video</string>
     <string name="attach_menu_contact">Contact</string>
     <string name="attach_menu_audio">Audio</string>
     <string name="attach_menu_file">File</string>
-    <string name="export_contacts_confirm">Save every contact into a single .vcf file in your Downloads folder?</string>
+    <string name="export_contacts_confirm">Save all contacts into one .vcf file in D-SMS/Contacts?</string>
     <string name="export_go">Export</string>
 
     <!-- v0.9.43 additions -->
@@ -598,11 +659,14 @@
     <string name="exporting_contacts">Exporting contacts\u2026</string>
 
     <!-- v0.9.44 additions -->
-    <string name="rec_ready">Press Record to start</string>
+    <string name="rec_ready">Press Record</string>
     <string name="rec_start">\u25CF Record</string>
     <string name="rec_stop">\u25A0 Stop</string>
-    <string name="rec_done_fmt">Recorded %1$d:%2$02d \u2014 press Attach</string>
-    <string name="rec_failed">Recording failed \u2014 check the microphone</string>
+    <string name="rec_done_fmt">Recorded %1$d:%2$02d</string>
+    <string name="rec_failed">Recording failed</string>
+    <string name="rec_time_left_fmt">%1$s · %2$s left</string>
+    <string name="rec_limit_fmt">MMS limit %1$d:%2$02d</string>
+    <string name="rec_limit_msg">Stopped: MMS size limit</string>
     <string name="rec_nothing">Nothing recorded yet</string>
     <string name="attach_recording">Attach</string>
     <string name="mic_permission_hint">Allow microphone access, then press Record audio again</string>
@@ -610,8 +674,8 @@
     <!-- v0.9.45 additions -->
     <string name="player_play">\u25B6 Play</string>
     <string name="player_pause">\u2759\u2759 Pause</string>
-    <string name="player_cant_play">This phone can\u2019t decode this audio format</string>
-    <string name="player_open_with">Open with\u2026</string>
+    <string name="player_cant_play">Can\u2019t play this format</string>
+    <string name="player_open_with">Play in stock player</string>
     <string name="close">Close</string>
 
     <!-- v0.9.45 UA additions -->
@@ -623,4 +687,114 @@
     <string name="pref_mms_custom_uaprof">Custom identity \u2014 profile URL</string>
     <string name="pref_mms_custom_uaprof_summary">Optional capability profile URL (x-wap-profile) sent with the custom identity.</string>
     <string name="pref_voice_format">Voice note format</string>
+
+    <!-- settings save / restore, backup choice, file finding -->
+    <string name="pref_save_settings">Save settings</string>
+    <string name="pref_save_settings_summary">To the D-SMS folder</string>
+    <string name="pref_restore_settings">Restore settings</string>
+    <string name="settings_saved">Settings saved.</string>
+    <string name="settings_saved_to">Settings saved to %1$s</string>
+    <string name="settings_restored">Settings restored.</string>
+    <string name="restore_settings_confirm">Put back the settings from %1$s? Your current settings will be replaced.</string>
+    <string name="restore_confirm_file">Restore from %1$s? Settings saved in it will also be put back.</string>
+    <string name="backup_what">Back up what?</string>
+    <string name="backup_sms_only">SMS only</string>
+    <string name="backup_mms_only">MMS only</string>
+    <string name="backup_both">Both</string>
+    <string name="backup_saved_to">Backup saved to %1$s</string>
+    <string name="pick_backup">Pick a backup</string>
+    <string name="pick_settings_file">Pick a settings file</string>
+    <string name="browse_for_file">Browse for file…</string>
+    <string name="what_backups">No backups</string>
+    <string name="what_settings_files">No settings files</string>
+    <string name="nothing_found_looked">%1$s found.\n\nLooked in:\n%2$s</string>
+    <string name="could_not_open_folders">Could not open: %1$s</string>
+    <string name="all_files_access_off">Files from before a reset are hidden until you allow file access.</string>
+    <string name="allow_access">Allow access</string>
+    <string name="browse_anyway">Browse</string>
+    <string name="no_access_screen">This phone has no file access screen.</string>
+    <string name="browse_up">Up a folder</string>
+    <string name="browse_phone_storage">Phone storage</string>
+    <string name="browse_cant_open">Can\'t open %1$s.</string>
+    <string name="browse_empty">No matching files in %1$s.</string>
+    <string name="err_no_space">Not enough space</string>
+    <string name="attachment_unreadable">Can\'t read %1$s. Not sent.</string>
+    <string name="notes_chat_name">Notes</string>
+    <string name="notes_subtitle">Only on this phone</string>
+    <string name="pref_notes_chat">Notes chat</string>
+    <string name="pref_notes_chat_summary">Private notes. Nothing is sent.</string>
+    <string name="err_cant_read">Can\'t read the file</string>
+    <string name="err_cant_write">Can\'t write the file</string>
+    <string name="err_out_of_memory">Out of memory</string>
+    <string name="err_bad_file">Not a D-SMS backup</string>
+    <string name="err_empty_backup">This backup has no messages</string>
+    <string name="err_not_settings_file">Not a D-SMS settings file</string>
+    <string name="err_unknown">Something went wrong. Try again.</string>
+    <string name="attach_skipped">%1$d not added: too many or too big for MMS</string>
+    <string name="unread_new">%1$d new</string>
+    <string name="unread_new_max">99+ new</string>
+    <string name="main_all_read">All read</string>
+    <plurals name="main_chats">
+        <item quantity="one">%1$d chat</item>
+        <item quantity="other">%1$d chats</item>
+    </plurals>
+    <string name="select_manually">Select manually</string>
+    <string name="searching_whole_phone">Searching the whole phone…</string>
+    <string name="search_progress">Folders checked: %1$d\nFound: %2$d</string>
+    <string name="search_phone_title">Search the whole phone?</string>
+    <string name="search_phone_need_access">Not found in Download. To search the whole phone, D-SMS needs file access.</string>
+    <string name="could_not_find_it">Could not find it</string>
+    <string name="not_found_on_phone">%1$s found on the phone.</string>
+    <string name="share_to">Send to</string>
+    <string name="share_new_number">New number…</string>
+    <string name="share_no_chats">No chats yet</string>
+    <string name="forward_n">Forward (%1$d)</string>
+    <string name="forwarded_n">Forwarded %1$d</string>
+    <string name="send_to_n">Send (%1$d)</string>
+    <plurals name="forwarded_to_chats">
+        <item quantity="one">Forwarded to 1 chat</item>
+        <item quantity="other">Forwarded to %1$d chats</item>
+    </plurals>
+    <string name="copy_n">Copy (%1$d)</string>
+    <string name="nothing_to_copy">No text to copy</string>
+    <string name="key_guide_title">Key guide</string>
+    <string name="key_guide_summary">Keys in a chat and in the reader</string>
+    <string name="keys_help">Keys in a chat\nUp/Down: next message (hold = faster)\nLeft/Right or 2/8: one screen up/down\n1: top  7: bottom\nOK on a long message: open reader\n\nIn the reader\nUp/Down: line (hold = faster)\nLeft/Right or 4/6: page\n1: top  7: bottom\nOK or Back: close\nSoft key or Menu: links and numbers\n\nVoice notes\nOK: play / pause\nLeft soft key: earpiece on/off\nRight soft key: options\nLeft/Right: 5 s back/forward\nBack: close</string>
+    <string name="attachments_n">Attachments (%1$d)</string>
+    <string name="media_permission_why">To show your photos, videos and audio here, D-SMS needs access to media on the phone.</string>
+    <string name="media_permission_denied">No media access. Allow it in the phone\'s Settings > Apps > D-SMS > Permissions.</string>
+    <string name="contacts_permission_why">To list your contacts here, D-SMS needs access to contacts.</string>
+    <string name="contacts_permission_denied">No contacts access. Allow it in the phone\'s Settings > Apps > D-SMS > Permissions.</string>
+    <string name="no_audio_found">No audio found on the phone.</string>
+    <string name="no_contacts_found">No contacts found.</string>
+    <string name="attach_menu_camera">Camera</string>
+    <string name="camera_none">No camera app found on this phone</string>
+    <string name="camera_cancelled">Nothing taken</string>
+    <string name="camera_failed">The camera returned nothing</string>
+    <string name="camera_full">Already %1$d attachments, the most per message</string>
+    <string name="camera_one_video">Only one video per message</string>
+    <string name="camera_too_big">Too big for this message</string>
+    <string name="pref_voice_earpiece">Voice notes on earpiece</string>
+    <string name="pref_voice_earpiece_summary">Play voice notes through the earpiece, like a call</string>
+    <string name="player_earpiece">Earpiece</string>
+    <string name="player_cant_play_msg">This voice note can’t be played here.</string>
+    <string name="player_earpiece_on">Earpiece: on</string>
+    <string name="player_earpiece_off">Earpiece: off</string>
+    <string name="player_play_key">Play</string>
+    <string name="player_pause_key">Pause</string>
+    <string name="player_speaker">Speaker</string>
+    <string name="player_seek_hint">◀ ▶: seek 5 s</string>
+    <string name="player_guide">Left: Earpiece on/off (%1$s)\nOK: Play / Pause\nRight: Options\n◀ ▶ arrows: seek 5 s</string>
+    <string name="player_state_on">on</string>
+    <string name="player_state_off">off</string>
+    <string name="player_ear_key_on">Ear: on</string>
+    <string name="player_ear_key_off">Ear: off</string>
+    <string name="media_tab_hint">Press 0 to switch between Photos and Videos</string>
+    <string name="name_group_short_hint">Group name</string>
+    <string name="seconds_short_hint">Seconds</string>
+    <string name="code_short_hint">Code</string>
+    <string name="mms_content_unavailable_short">MMS content unavailable</string>
+    <string name="mms_content_unavailable">MMS content is not available yet. It may still be downloading or could not be read.</string>
+    <string name="media_read_error">Could not read media. Check permission and reopen the picker.</string>
+    <string name="mms_content_failed">MMS failed. No readable content is available.</string>
 </resources>

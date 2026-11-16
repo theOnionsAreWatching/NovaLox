@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="notif_mode"
+        android:title="@string/st_notif_style"
+        android:entries="@array/notif_mode_entries"
+        android:entryValues="@array/notif_mode_values"
+        android:defaultValue="single"
+        android:summary="%s" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="notif_clear_mode"
+        android:title="@string/st_notif_clear"
+        android:entries="@array/notif_clear_entries"
+        android:entryValues="@array/notif_clear_values"
+        android:defaultValue="app"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="default_tone"
+        android:title="@string/st_tone" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="vibrate_mode"
+        android:title="@string/pref_vibrate"
+        android:entries="@array/vibrate_entries"
+        android:entryValues="@array/vibrate_values"
+        android:defaultValue="always"
+        android:summary="%s" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="vibrate_pattern"
+        android:title="@string/pref_vibrate_pattern"
+        android:entries="@array/vibrate_pattern_entries"
+        android:entryValues="@array/vibrate_pattern_values"
+        android:defaultValue="default"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="hint_notifications"
+        android:layout="@layout/pref_hint"
+        android:selectable="false"
+        android:persistent="false"
+        android:summary="@string/st_hint_notif" />
+</PreferenceScreen>

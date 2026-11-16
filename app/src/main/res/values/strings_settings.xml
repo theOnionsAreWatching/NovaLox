@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings layout. Short, plain
+     names; a row that opens a screen has the same name as that screen. -->
+<resources>
+    <string name="st_settings">Settings</string>
+    <string name="st_search">Search</string>
+    <string name="st_search_sum">Find words in your messages</string>
+
+    <string name="st_notifications">Notifications</string>
+    <string name="st_notifications_sum">Style, tone, vibrate</string>
+    <string name="st_notif_style">Notification style</string>
+    <string name="st_notif_clear">Clear notification</string>
+    <string name="st_tone">Tone</string>
+
+    <string name="st_messages">Messages</string>
+    <string name="st_messages_sum">MMS, groups, reports, notes</string>
+    <string name="st_auto_mms">Auto-download MMS</string>
+    <string name="st_auto_mms_sum">Get pictures and audio as they arrive</string>
+    <string name="st_group_mode">Group messaging</string>
+    <string name="st_reports">Delivery &amp; read reports</string>
+    <string name="st_reports_sum">Ask for and send reports</string>
+    <string name="st_unread_top">Unread chats on top</string>
+    <string name="st_unread_top_sum">Keep them at the top until read</string>
+    <string name="st_t9">Number keys find names</string>
+    <string name="st_t9_sum">Type digits in To: to find contacts</string>
+    <string name="st_earpiece">Voice notes on earpiece</string>
+    <string name="st_earpiece_sum">Play like a call</string>
+
+    <string name="st_appearance">Appearance</string>
+    <string name="st_appearance_sum">Theme, size, colors</string>
+    <string name="st_app_size">App size</string>
+    <string name="st_app_size_sum">Everything bigger or smaller</string>
+    <string name="st_message_colors">Message colors</string>
+    <string name="st_message_colors_sum">Sent, incoming, groups</string>
+    <string name="st_chat_bg">Chat background</string>
+    <string name="st_chat_bg_sum">One picture or color for all chats</string>
+    <string name="st_more_display">More display</string>
+    <string name="st_more_display_sum">Text sizes, pictures, direction</string>
+
+    <string name="st_keys">Keys</string>
+    <string name="st_keys_sum">Soft keys and key guide</string>
+    <string name="st_softkey_bar">Soft key bar</string>
+    <string name="st_softkey_setup">Set up soft keys</string>
+    <string name="st_softkey_setup_sum">Teach D-SMS your left and right keys</string>
+    <string name="st_softkeys_dpad">Soft keys reachable by D-pad</string>
+    <string name="st_softkeys_dpad_sum">Arrows can move onto the bar</string>
+
+    <string name="st_blocked">Blocked &amp; hidden</string>
+    <string name="st_blocked_sum">Blocked messages, words, hidden chats</string>
+    <string name="st_blocked_words">Blocked words</string>
+    <string name="st_hidden_chats">Hidden chats</string>
+
+    <string name="st_storage">Storage</string>
+    <string name="st_storage_sum">Recycle bin, keep messages, cache</string>
+    <string name="st_bin_after">Empty bin</string>
+    <string name="st_keep">Keep per chat</string>
+    <string name="st_keep_all">All messages</string>
+    <string name="st_keep_n">Last %1$d messages</string>
+    <string name="st_keep_other">Other number\u2026</string>
+    <string name="st_keep_other_n">Other: %1$d</string>
+    <string name="st_clear_cache">Clear picture cache</string>
+    <string name="st_clear_cache_sum">Frees space. Pictures download again</string>
+
+    <string name="st_backup">Backup &amp; restore</string>
+    <string name="st_backup_sum">Messages, settings, contacts</string>
+    <string name="st_backup_now">Back up</string>
+    <string name="st_backup_now_sum">Messages and settings, to %1$s</string>
+    <string name="st_restore">Restore</string>
+    <string name="st_restore_sum">From a backup file</string>
+    <string name="st_save_settings_sum">Only settings, to %1$s</string>
+    <string name="st_restore_settings_sum">Only settings, from a file</string>
+    <string name="st_export_contacts_sum">All contacts, to %1$s</string>
+
+    <string name="st_advanced">Advanced</string>
+    <string name="st_advanced_sum">Repair, carrier, log</string>
+    <string name="st_resync">Find missed messages</string>
+    <string name="st_resync_sum">Quick check of the last 2 days</string>
+    <string name="st_rebuild">Rebuild all chats</string>
+    <string name="st_rebuild_sum">Slow. Reloads everything from the phone</string>
+    <string name="st_refresh_contacts_sum">Read names again from Contacts</string>
+    <string name="st_carrier">Carrier identity</string>
+    <string name="st_carrier_sum">Fix bad pictures from some carriers</string>
+    <string name="st_mms_profile">Identity</string>
+    <string name="st_custom_ua">Custom User-Agent</string>
+    <string name="st_custom_ua_sum">Used when Identity is Custom</string>
+    <string name="st_custom_prof">Custom profile URL</string>
+    <string name="st_custom_prof_sum">Optional, with Custom</string>
+    <string name="st_save_log_sum">For a problem report</string>
+
+    <string name="st_about">About</string>
+    <!-- hint lines at the end of short Settings screens -->
+    <string name="st_hint_notif">To silence one chat, use Mute in its menu on the chat list.</string>
+    <string name="st_hint_appearance">Message text and time sizes are under Advanced display.</string>
+    <string name="st_hint_keys">Soft keys act when you let go of the key.</string>
+    <string name="st_hint_blocked">Open a list to add or remove entries.</string>
+    <string name="st_hint_storage">Saved pictures, voice notes and files go to the D-SMS folder.</string>
+</resources>

@@ -15,8 +15,11 @@ import io.github.theonionsarewatching.nova.sms.ScheduledSendReceiver
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.ContactsHelper
 import io.github.theonionsarewatching.nova.util.ElementExtractor
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.PhoneUtils
 import io.github.theonionsarewatching.nova.util.Prefs
+import io.github.theonionsarewatching.nova.util.ReactionParser
+import io.github.theonionsarewatching.nova.util.ReactionSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,6 +44,17 @@ class Repo private constructor(private val context: Context) {
     val db = AppDb.get(context)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val convoMutex = Mutex()
+    // duplicate messages, mostly in groups: every MMS
+    // ingest, every SMS insert, and each sync pass now run one at a time.
+    // Before, the MMS receiver and the observer-driven sync (and two
+    // overlapping sync passes) could ingest the SAME telephony row at once:
+    // both passed the "already linked?" check at the top of ingestMms and
+    // both inserted — the window is the whole ingest (address + part reads,
+    // part copies), so it was widest for group MMS with many recipients
+    // and pictures.
+    private val mmsIngestMutex = Mutex()
+    private val smsInsertMutex = Mutex()
+    private val syncMutex = Mutex()
 
     // transaction ids we've already fired a sync-path fallback download for, so
     // repeated observer passes don't kick off the same download over and over
@@ -145,8 +159,12 @@ class Repo private constructor(private val context: Context) {
         val isGroup = clean.size > 1
         val defaultMode =
             if (Prefs.get(context).defaultGroupMode == "group_mms") GroupMode.GROUP_MMS else GroupMode.BROADCAST
-        val names = clean.map { ContactsHelper.lookupName(context, it) ?: "" }
-        val photo = if (!isGroup) ContactsHelper.lookupPhoto(context, clean.first()) ?: "" else ""
+        // restore speed: during a full import the names/photos are filled in
+        // ONE pass at the end (refreshContactNames), not 2 contact lookups
+        // per new chat here
+        val names = if (bulkImporting) clean.map { "" }
+            else clean.map { ContactsHelper.lookupName(context, it) ?: "" }
+        val photo = if (bulkImporting || isGroup) "" else ContactsHelper.lookupPhoto(context, clean.first()) ?: ""
         val c = ConversationEntity(
             convoKey = key,
             addresses = clean.joinToString("|"),
@@ -163,7 +181,7 @@ class Repo private constructor(private val context: Context) {
         db.conversations().all().forEach { refreshConversation(it.id) }
     }
 
-    suspend fun refreshConversation(convoId: Long) {
+    suspend fun refreshConversation(convoId: Long, allowTrim: Boolean = true) {
         val convo = db.conversations().byId(convoId) ?: return
         val newest = db.messages().newest(convoId)
         val unread = db.messages().unreadCount(convoId)
@@ -171,7 +189,7 @@ class Repo private constructor(private val context: Context) {
         db.conversations().updateSummary(
             convoId, snippet, newest?.date ?: convo.snippetDate, newest?.isMine ?: false, unread
         )
-        maybeTrimConversation(convoId)
+        if (allowTrim) maybeTrimConversation(convoId)
     }
 
     /** If auto-delete is on and this conversation is over the keep limit, drop
@@ -179,6 +197,8 @@ class Repo private constructor(private val context: Context) {
     private suspend fun maybeTrimConversation(convoId: Long) {
         val prefs = Prefs.get(context)
         if (!prefs.autoDeleteOld) return
+        // notes are the user's own; "keep only the last N messages" never trims them
+        if (NotesChat.isNotes(db.conversations().byId(convoId))) return
         val keep = prefs.autoDeleteKeep
         val victims = db.messages().messagesBeyondKeep(convoId, keep)
         if (victims.isEmpty()) return
@@ -191,15 +211,68 @@ class Repo private constructor(private val context: Context) {
         }
     }
 
+    private fun senderNameOf(m: MessageEntity, convo: ConversationEntity?): String {
+        if (m.isMine) return ""
+        val addrs = convo?.addressList().orEmpty()
+        val names = convo?.nameList().orEmpty()
+        val want = PhoneUtils.normalize(m.address)
+        val i = addrs.indexOfFirst { PhoneUtils.normalize(it) == want }
+        return names.getOrNull(i)?.takeIf { it.isNotBlank() } ?: m.address
+    }
+
+    private fun toReactionItem(
+        m: MessageEntity,
+        parts: List<PartEntity>,
+        convo: ConversationEntity?
+    ): MessageReactions.Item {
+        val skip = m.status == MsgStatus.SCHEDULED || m.status == MsgStatus.NOTE ||
+            MmsStub.isStub(m.body)
+        return MessageReactions.Item(
+            id = m.id,
+            body = m.body,
+            date = m.date,
+            isMine = m.isMine,
+            address = m.address,
+            senderName = senderNameOf(m, convo),
+            eligible = !skip,
+            mimeTypes = parts.map { it.mimeType }
+        )
+    }
+
+    /**
+     * Short chat-list / notification text when [m] is a matched incoming
+     * reaction. Null if it should stay a normal snippet. Looks at a small
+     * recent window only — not a per-row scan of the whole thread.
+     */
+    suspend fun reactionPreviewText(m: MessageEntity): String? {
+        if (!ReactionSettings.enabled(context) || m.body.isBlank()) return null
+        val parsed = ReactionParser.parse(m.body) ?: return null
+        if (parsed.kind == ReactionParser.Kind.EDIT) return null
+        val recent = db.messages().latest(m.convoId, 80).reversed()
+        if (recent.isEmpty()) return null
+        val parts = db.parts().byMessages(recent.map { it.id }).groupBy { it.messageId }
+        val convo = db.conversations().byId(m.convoId)
+        val items = recent.map { toReactionItem(it, parts[it.id].orEmpty(), convo) }
+        val preview = MessageReactions.preview(m.id, items) ?: return null
+        return MessageReactions.formatPreview(
+            preview,
+            context.getString(io.github.theonionsarewatching.nova.R.string.reaction_you),
+            context.getString(io.github.theonionsarewatching.nova.R.string.reaction_your_message)
+        )
+    }
+
     private suspend fun snippetFor(m: MessageEntity): String {
         if (MmsStub.isStub(m.body)) return context.getString(
             io.github.theonionsarewatching.nova.R.string.snippet_mms_pending)
-        if (m.body.isNotBlank()) return m.body.take(120)
+        if (m.body.isNotBlank()) {
+            reactionPreviewText(m)?.let { return it.take(120) }
+            return m.body.take(120)
+        }
         if (m.isMms) {
             val parts = db.parts().byMessage(m.id)
             val p = parts.firstOrNull()
             return when {
-                p == null -> "MMS"
+                p == null -> context.getString(io.github.theonionsarewatching.nova.R.string.mms_content_unavailable_short)
                 p.isImage() -> "Picture"
                 p.isVideo() -> "Video"
                 p.isAudio() -> "Audio"
@@ -214,8 +287,63 @@ class Repo private constructor(private val context: Context) {
 
     /** Store an incoming SMS. Also writes it to the system provider (default-app duty).
      *  Returns the stored message + its conversation, or null when the sender is number-blocked. */
-    suspend fun receiveSms(address: String, body: String, date: Long, subId: Int): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
+    suspend fun receiveSms(
+        address: String, body: String, date: Long, subId: Int, sentAt: Long = 0L
+    ): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
         if (isNumberBlocked(address)) return@withContext null
+        // provider row + our row as one step: the sync pass can no longer see
+        // the provider row before our row exists and add a second copy
+        smsInsertMutex.withLock { receiveSmsLocked(address, body, date, subId, sentAt) }
+    }
+
+    /** a TRUE re-delivery is the same SMS again: same sender,
+     *  same text AND the same network time stamp (the service centre's
+     *  stamp inside the SMS, [sentAt]). It is kept in the system store's
+     *  date_sent column, so look there. */
+    private fun isRedelivery(address: String, body: String, sentAt: Long): Boolean {
+        if (sentAt <= 0L || body.isBlank()) return false
+        return try {
+            context.contentResolver.query(Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms._ID),
+                "${Telephony.Sms.TYPE} = ? AND ${Telephony.Sms.ADDRESS} = ? AND " +
+                    "${Telephony.Sms.BODY} = ? AND ${Telephony.Sms.DATE_SENT} = ?",
+                arrayOf(Telephony.Sms.MESSAGE_TYPE_INBOX.toString(), address, body, sentAt.toString()),
+                null)?.use { it.moveToFirst() } ?: false
+        } catch (_: Exception) { false }
+    }
+
+    private suspend fun receiveSmsLocked(
+        address: String, body: String, date: Long, subId: Int, sentAt: Long
+    ): Pair<MessageEntity, ConversationEntity>? {
+        // only a true re-delivery (same sender, text AND network
+        // time stamp) is dropped. Before, ANY same text from the same person
+        // within 10 s was dropped ("ok" then "ok" lost the second one).
+        if (isRedelivery(address, body, sentAt)) {
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                context, "sms-ingest", "duplicate SMS re-delivery from $address skipped (same network stamp)")
+            return null
+        }
+        // a text the user sent to their OWN number comes back as an
+        // incoming copy. Pair it with the sent one (oldest unpaired sent text
+        // with the same words in the last 15 min) and show it once: the sent
+        // bubble gets "Delivered". Each echo pairs with one sent copy, so
+        // sending "ok" twice still shows two. Only when the sender is known
+        // to be this phone's own number (SIM or learned), never for others.
+        if (body.isNotBlank() && PhoneUtils.normalize(address).let { n ->
+                n.isNotEmpty() && n in ownNumbers }) {
+            val c0 = getOrCreateConversation(listOf(address))
+            val sent = db.messages().unpairedSelfSent(c0.id, body, date - 15 * 60_000L, date + 60_000L)
+            if (sent != null) {
+                db.messages().appendDeliveryDebug(sent.id, "[self-echo]")
+                if (sent.status == MsgStatus.SENT || sent.status == MsgStatus.SENDING) {
+                    db.messages().setStatus(sent.id, MsgStatus.DELIVERED)
+                }
+                refreshConversation(c0.id)
+                ChangeBus.ping()
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "sms-ingest", "text to own number: incoming copy paired with sent #${sent.id}")
+                return null
+            }
+        }
 
         // 1) system provider (OS compatibility)
         val telephonyId = try {
@@ -223,6 +351,8 @@ class Repo private constructor(private val context: Context) {
                 put(Telephony.Sms.ADDRESS, address)
                 put(Telephony.Sms.BODY, body)
                 put(Telephony.Sms.DATE, date)
+                // the network stamp: how a true re-delivery is recognised
+                if (sentAt > 0L) put(Telephony.Sms.DATE_SENT, sentAt)
                 put(Telephony.Sms.READ, 0)
                 put(Telephony.Sms.SEEN, 0)
                 put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
@@ -240,10 +370,11 @@ class Repo private constructor(private val context: Context) {
             telephonyId = telephonyId, telephonyIsMms = false
         )
         val id = db.messages().insert(msg)
+        io.github.theonionsarewatching.nova.ui.IncomingArrivals.record(context)
         extractElements(id, body)
         refreshConversation(convo.id)
         ChangeBus.ping()
-        return@withContext Pair(msg.copy(id = id), convo)
+        return Pair(msg.copy(id = id), convo)
     }
 
     /** Ingest the newest MMS that the engine persisted into the telephony provider. */
@@ -357,9 +488,9 @@ class Repo private constructor(private val context: Context) {
                 "mid = ?", arrayOf(mmsId.toString()), null
             )?.use { c ->
                 while (c.moveToNext()) {
-                    if ((c.getString(1) ?: "") != "text/plain") continue
+                    if (MmsContentPolicy.partKind(c.getString(1).orEmpty()) != "text/plain") continue
                     val pid = c.getLong(0)
-                    val t = c.getString(2) ?: try {
+                    val t = c.getString(2)?.takeIf { it.isNotEmpty() } ?: try {
                         context.contentResolver.openInputStream(Uri.parse("content://mms/part/$pid"))
                             ?.use { it.readBytes().toString(Charsets.UTF_8) }
                     } catch (_: Exception) { null }
@@ -405,7 +536,10 @@ class Repo private constructor(private val context: Context) {
     }
 
     @SuppressLint("Range")
-    suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
+    suspend fun ingestMms(mmsId: Long, dateMs: Long, msgBox: Int, bulk: Boolean = false): Pair<MessageEntity, ConversationEntity>? =
+        withContext(Dispatchers.IO) { mmsIngestMutex.withLock { ingestMmsLocked(mmsId, dateMs, msgBox, bulk) } }
+
+    private suspend fun ingestMmsLocked(mmsId: Long, dateMs: Long, msgBox: Int, bulk: Boolean): Pair<MessageEntity, ConversationEntity>? = withContext(Dispatchers.IO) {
         // broadcast copies are machinery of the broadcast illusion — the one
         // real message already lives in the broadcast conversation. EVERY
         // ingest route (sync loops, sent-confirmation, push) funnels through
@@ -509,16 +643,6 @@ class Repo private constructor(private val context: Context) {
         // each telephony row exactly once — and if the first pass caught it before
         // its text parts were written (blank body), heal it now instead.
         db.messages().byTelephonyMms(mmsId)?.let { existing ->
-            // tap-to-download turns the notification row (130) into the
-            // downloaded message (132) IN PLACE, so this existing row is our
-            // download stub. Drop the stub and fall through to ingest the real
-            // content — otherwise the "Tap to download" line never went away.
-            if (MmsStub.isStub(existing.body)) {
-                val convoId = existing.convoId
-                db.messages().hardDelete(existing.id)
-                refreshConversation(convoId)
-                return@let  // continue to full ingest below
-            }
             if (existing.isMine) {
                 // the engine moves the box (outbox -> sent/failed) after we linked:
                 // reflect reality on our row
@@ -530,15 +654,7 @@ class Repo private constructor(private val context: Context) {
                 } catch (_: Exception) { 0 }
                 applyBoxHeal(existing, boxNow)
             }
-            if (existing.body.isBlank()) {
-                val healed = mmsBodyFor(mmsId)
-                if (healed.isNotBlank()) {
-                    db.messages().updateBody(existing.id, healed)
-                    if (!existing.elementsExtracted || healed.isNotBlank()) extractElements(existing.id, healed)
-                    refreshConversation(existing.convoId)
-                    ChangeBus.ping()
-                }
-            }
+            healExistingMms(existing, mmsId)
             return@withContext null
         }
 
@@ -843,7 +959,6 @@ class Repo private constructor(private val context: Context) {
 
         // parts
         var bodyText = ""
-        data class RawPart(val id: Long, val ct: String, val name: String, val text: String?)
         val binaryParts = ArrayList<RawPart>()
         try {
             resolver.query(
@@ -857,17 +972,17 @@ class Repo private constructor(private val context: Context) {
                     val text = c.getString(2)
                     val name = c.getString(3) ?: c.getString(4) ?: "part_$pid"
                     when {
-                        ct == "text/plain" -> {
+                        MmsContentPolicy.partKind(ct) == "text/plain" -> {
                             // large text parts store their content in the part file,
                             // leaving the text column null — read the file in that case
-                            val t = text ?: try {
+                            val t = text?.takeIf { it.isNotEmpty() } ?: try {
                                 resolver.openInputStream(Uri.parse("content://mms/part/$pid"))
                                     ?.use { it.readBytes().toString(Charsets.UTF_8) }
                             } catch (_: Exception) { null }
                             if (!t.isNullOrBlank()) bodyText =
                                 if (bodyText.isBlank()) t else bodyText + "\n" + t
                         }
-                        ct == "application/smil" -> { /* layout description, skip */ }
+                        MmsContentPolicy.partKind(ct) == "application/smil" -> { /* layout description, skip */ }
                         else -> binaryParts.add(RawPart(pid, ct, name, null))
                     }
                 }
@@ -914,7 +1029,8 @@ class Repo private constructor(private val context: Context) {
             bodyText = MmsStub.encode(loc ?: "", trId ?: "", stubSub)
         }
 
-        val convo = getOrCreateConversation(participants)
+        val convo = if (participants == listOf("Unknown")) unresolvedMmsConversation(mmsId)
+            else getOrCreateConversation(participants)
         val blocked = !isMine && matchesKeyword(bodyText, from.firstOrNull() ?: "")
         val senderAddress = if (isMine) participants.joinToString("|") else (from.firstOrNull() ?: "Unknown")
         // honest status from the actual message box — outgoing rows were all
@@ -961,6 +1077,44 @@ class Repo private constructor(private val context: Context) {
                 return@withContext null
             }
         }
+        // the same incoming MMS delivered twice under two
+        // provider rows (carrier re-push with a new transaction id, common
+        // for group MMS). Same Message-ID = same message; without one, the
+        // same sender + same text in the same conversation seconds apart.
+        // Non-destructive: the provider row stays, only our second copy is
+        // not made.
+        if (!isMine) {
+            var mid: String? = null
+            try {
+                resolver.query(Uri.parse("content://mms"), arrayOf("m_id"),
+                    "_id = ?", arrayOf(mmsId.toString()), null)?.use { c ->
+                    if (c.moveToFirst()) mid = c.getString(0)
+                }
+            } catch (_: Exception) {}
+            var dupOf = 0L
+            if (!mid.isNullOrBlank()) {
+                try {
+                    resolver.query(Uri.parse("content://mms"), arrayOf("_id"),
+                        "m_id = ? AND _id != ? AND msg_box = ${Telephony.Mms.MESSAGE_BOX_INBOX}",
+                        arrayOf(mid, mmsId.toString()), null)?.use { c ->
+                        while (dupOf == 0L && c.moveToNext()) {
+                            val other = db.messages().byTelephonyMms(c.getLong(0))
+                            if (other != null && !MmsStub.isStub(other.body)) dupOf = other.id
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            if (dupOf == 0L && bodyText.isNotBlank() &&
+                db.messages().existsSimilarFrom(convo.id, senderAddress, bodyText, dateMs - 10_000, dateMs + 10_000)) {
+                dupOf = -1L
+            }
+            if (dupOf != 0L) {
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-ingest",
+                    "duplicate incoming MMS tid=$mmsId m_id=$mid (same as msg=$dupOf) — not added again")
+                return@withContext null
+            }
+        }
         // received MMS start unread; our own sent MMS are read
         val fixed = MessageEntity(
             convoId = convo.id, address = senderAddress, body = bodyText, date = dateMs,
@@ -978,15 +1132,46 @@ class Repo private constructor(private val context: Context) {
             )
         }
 
+        copyMmsBinaryParts(id, binaryParts)
+
+        if (!bulk && !fixed.isMine) io.github.theonionsarewatching.nova.ui.IncomingArrivals.record(context)
+        extractElements(id, bodyText)
+        // bulk import (restore / re-import): the per-chat summary is done ONCE
+        // per chat at the end, and the screens are pinged once — doing it per
+        // message made every open screen reload on each MMS
+        if (!bulk) {
+            refreshConversation(convo.id)
+            ChangeBus.ping()
+        }
+        return@withContext Pair(fixed.copy(id = id), convo)
+    }
+
+    private data class RawPart(val id: Long, val ct: String, val name: String, val text: String?)
+    private suspend fun copyMmsBinaryParts(id: Long, binaryParts: List<RawPart>): Int {
+        val resolver = context.contentResolver
         // copy binary parts into app storage for instant loading
+        var copied = 0
+        val existing = db.parts().byMessage(id)
+        // Restored/app-composed attachments without provider-part IDs cannot
+        // safely be matched. Preserve them rather than adding guessed duplicates.
+        if (existing.any { !MmsContentPolicy.managedPart(File(it.filePath).name, id) }) return 0
         val dir = File(context.filesDir, "parts").apply { mkdirs() }
         for (p in binaryParts) {
             try {
+                val prefix = "m${id}_p${p.id}"
+                val old = existing.firstOrNull { MmsContentPolicy.copiedPart(File(it.filePath).name, id, p.id) }
+                if (old != null && File(old.filePath).let { it.isFile && it.length() > 0L }) continue
                 val ext = extensionFor(p.ct, p.name)
-                val outFile = File(dir, "m${id}_p${p.id}$ext")
-                resolver.openInputStream(Uri.parse("content://mms/part/${p.id}"))?.use { input ->
-                    outFile.outputStream().use { output -> input.copyTo(output) }
-                }
+                // Never overwrite an old attachment while repairing late content.
+                val base = File(dir, "$prefix$ext")
+                val outFile = if (base.exists()) File(dir, "${prefix}_repair${System.nanoTime()}$ext") else base
+                // One app-owned, unreferenced staging file per provider part.
+                // Failed reads cannot expose partial attachments or accumulate
+                // a new orphan on every observer retry; completed old files stay.
+                val pending = File(dir, ".${prefix}.pending")
+                val input = resolver.openInputStream(Uri.parse("content://mms/part/${p.id}")) ?: continue
+                input.use { stream -> pending.outputStream().use { output -> stream.copyTo(output) } }
+                if (pending.length() <= 0L || !pending.renameTo(outFile)) continue
                 if (outFile.exists() && outFile.length() > 0) {
                     // trust the bytes over the carrier's label for audio parts
                     var finalFile = outFile
@@ -1020,22 +1205,100 @@ class Repo private constructor(private val context: Context) {
                         }
                     }
                     val dims = imageDims(finalMime, finalFile.absolutePath)
-                    db.parts().insert(
-                        PartEntity(
-                            messageId = id, mimeType = finalMime,
-                            filePath = finalFile.absolutePath, fileName = p.name,
-                            size = finalFile.length(),
-                            width = dims.first, height = dims.second
-                        )
-                    )
+                    if (old == null) {
+                        db.parts().insert(PartEntity(messageId = id, mimeType = finalMime,
+                            filePath = finalFile.absolutePath, fileName = p.name, size = finalFile.length(),
+                            width = dims.first, height = dims.second))
+                    } else {
+                        db.parts().updateFile(old.id, finalFile.absolutePath, finalMime, p.name, finalFile.length())
+                        db.parts().setDims(old.id, dims.first, dims.second)
+                    }
+                    copied++
                 }
             } catch (_: Exception) {}
         }
 
-        extractElements(id, bodyText)
-        refreshConversation(convo.id)
-        ChangeBus.ping()
-        return@withContext Pair(fixed.copy(id = id), convo)
+        return copied
+    }
+
+    /** Reconcile the SAME provider row after late address/part writes. No new
+     * message, network operation, deletion, arbitrary merge or thread guessing. */
+    private suspend fun healExistingMms(existing: MessageEntity, mmsId: Long) {
+        val resolver = context.contentResolver
+        var threadId = 0L
+        val type = try { resolver.query(Uri.parse("content://mms/$mmsId"), arrayOf("m_type","thread_id"),null,null,null)?.use {
+            if (it.moveToFirst()) { threadId = it.getLong(1); it.getInt(0) } else 0
+        } ?: 0 } catch (_: Exception) { 0 }
+        if (!MmsContentPolicy.payloadType(type)) return // notification/protocol/incomplete header retained unchanged
+        var changed = false
+        if (existing.body.isBlank() || MmsStub.isStub(existing.body)) {
+            val body = mmsBodyFor(mmsId)
+            if (body.isNotBlank() || MmsStub.isStub(existing.body)) {
+                db.messages().updateBody(existing.id, body)
+                if (body.isNotBlank()) extractElements(existing.id, body)
+                changed = true
+            }
+        }
+        val parts = ArrayList<RawPart>()
+        if (!existing.isMine) try { resolver.query(Uri.parse("content://mms/part"),arrayOf("_id","ct","name","cl"),"mid = ?",arrayOf(mmsId.toString()),"_id ASC")?.use { c ->
+            while (c.moveToNext()) {
+                val ct = c.getString(1).orEmpty()
+                if (MmsContentPolicy.partKind(ct) !in listOf("application/smil","text/plain"))
+                    parts.add(RawPart(c.getLong(0),ct,c.getString(2) ?: c.getString(3) ?: "part_${c.getLong(0)}",null))
+            }
+        } } catch (_: Exception) {}
+        if (copyMmsBinaryParts(existing.id, parts) > 0) changed = true
+        var destination = existing.convoId
+        val unresolvedConvo = db.conversations().byId(existing.convoId)?.addressList()?.all { MmsContentPolicy.unresolved(it) } == true
+        if (!existing.isMine && (MmsContentPolicy.unresolved(existing.address) || unresolvedConvo)) {
+            val from = ArrayList<String>(); val to = ArrayList<String>()
+            try { resolver.query(Uri.parse("content://mms/$mmsId/addr"),arrayOf("address","type"),null,null,null)?.use { c ->
+                while (c.moveToNext()) {
+                    val address = c.getString(0).orEmpty()
+                    when (c.getInt(1)) { 137 -> from.add(address); 151 -> to.add(address); 130 -> to.add(address) }
+                }
+            } } catch (_: Exception) {}
+            val sender = MmsContentPolicy.verifiedSender(from)
+            val verified = MmsContentPolicy.verifiedOneToOne(from, to, nativeThreadRecipients(threadId))
+            if (verified != null && unresolvedConvo) destination = getOrCreateConversation(listOf(verified)).id
+            if (sender != null && (existing.address != sender || destination != existing.convoId)) {
+                db.messages().repairMmsSender(existing.id, sender, destination)
+                changed = true
+            }
+        }
+        if (!changed && MmsContentPolicy.emptyContent(true, existing.body, db.parts().byMessage(existing.id).size) &&
+            db.conversations().byId(existing.convoId)?.snippet == "MMS") changed = true
+        if (changed) {
+            refreshConversation(existing.convoId, allowTrim = false)
+            if (destination != existing.convoId) refreshConversation(destination, allowTrim = false)
+            ChangeBus.ping()
+        }
+    }
+
+    private fun nativeThreadRecipients(threadId: Long): List<String> {
+        if (threadId <= 0) return emptyList()
+        return try {
+            val resolver = context.contentResolver
+            val ids = resolver.query(Uri.parse("content://mms-sms/conversations?simple=true"),
+                arrayOf("recipient_ids"),"_id = ?",arrayOf(threadId.toString()),null)?.use {
+                if (it.moveToFirst()) {
+                    val tokens = it.getString(0).orEmpty().trim().split(Regex("\\s+")).filter { token -> token.isNotBlank() }
+                    val parsed = tokens.map { token -> token.toLongOrNull()?.takeIf { n -> n > 0 } }
+                    if (parsed.any { value -> value == null }) emptyList() else parsed.filterNotNull()
+                } else emptyList()
+            }.orEmpty()
+            ids.map { id -> resolver.query(Uri.parse("content://mms-sms/canonical-address/$id"),arrayOf("address"),null,null,null)?.use {
+                if (it.moveToFirst()) it.getString(0).orEmpty() else ""
+            }.orEmpty() }.takeIf { list -> list.size == ids.size && list.none { it.isBlank() } }.orEmpty()
+        } catch (_: Exception) { emptyList() }
+    }
+
+    private suspend fun unresolvedMmsConversation(providerId: Long): ConversationEntity = convoMutex.withLock {
+        val key = MmsContentPolicy.unresolvedKey(providerId)
+        db.conversations().byKey(key)?.let { return@withLock it }
+        val convo = ConversationEntity(convoKey = key, addresses = "Unknown")
+        val id = db.conversations().insert(convo)
+        convo.copy(id = id)
     }
 
     private fun extensionFor(mime: String, name: String): String {
@@ -1265,6 +1528,8 @@ class Repo private constructor(private val context: Context) {
     /** Send text to a conversation, honoring its group mode. Returns our message id. */
     suspend fun sendText(convoId: Long, text: String): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
+        // the notes chat never sends — Send just saves the note
+        if (NotesChat.isNotes(convo)) return saveNote(convoId, text)
         val addresses = sendTargets(convo)
         if (addresses.isEmpty() || text.isBlank()) return null
 
@@ -1318,6 +1583,9 @@ class Repo private constructor(private val context: Context) {
         convoId: Long, text: String, attachments: List<Triple<String, String, String>>
     ): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
+        // notes chat: attachments are kept on the phone with the note —
+        // never sent, never shrunk, no MMS size limit
+        if (NotesChat.isNotes(convo)) return saveNote(convoId, text, attachments)
         val addresses = sendTargets(convo)
         if (addresses.isEmpty() || attachments.isEmpty()) return null
         // ONE limit everywhere: the compressor and the sender now agree on
@@ -1352,7 +1620,7 @@ class Repo private constructor(private val context: Context) {
                     context, "video-compress", "refused before send: clip over ~${maxS}s"
                 )
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                         context,
                         context.getString(
                             io.github.theonionsarewatching.nova.R.string.video_too_long, maxS),
@@ -1481,19 +1749,18 @@ class Repo private constructor(private val context: Context) {
     fun backfillPartDims() {
         scope.launch {
             try {
-                val legacy = db.parts().needingDims()
-                var done = 0
-                legacy.forEach { part ->
-                    val d = imageDims(part.mimeType, part.filePath)
-                    if (d.first > 0) {
-                        db.parts().setDims(part.id, d.first, d.second)
-                        done++
+                // Bound memory and yield between batches; never fetch every legacy part
+                // at startup. Bad files advance the cursor too, so no infinite retries.
+                var after = 0L
+                while (true) {
+                    val page = db.parts().needingDimsPage(after)
+                    if (page.isEmpty()) break
+                    for (part in page) {
+                        val d = imageDims(part.mimeType, part.filePath)
+                        if (d.first > 0) db.parts().setDims(part.id, d.first, d.second)
+                        after = part.id
                     }
-                }
-                if (legacy.isNotEmpty()) {
-                    io.github.theonionsarewatching.nova.util.DiagLog.log(
-                        context, "thumb", "backfilled dims for $done/${legacy.size} legacy parts"
-                    )
+                    kotlinx.coroutines.yield()
                 }
             } catch (_: Exception) {}
         }
@@ -1526,8 +1793,9 @@ class Repo private constructor(private val context: Context) {
         }
         try {
             val since = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
-            val msgs = db.messages().threadMessagesForDelete(convoId, 1)
-                .filter { !it.isMine && it.telephonyIsMms && it.date >= since }
+            // perf: only the recent received MMS rows, filtered in SQL (was:
+            // every message of the chat loaded, then filtered here)
+            val msgs = db.messages().incomingMmsSince(convoId, since)
             for (m in msgs) {
                 val tid = m.telephonyId ?: continue
                 var mid: String? = null
@@ -1590,8 +1858,10 @@ class Repo private constructor(private val context: Context) {
      *  message is next opened. Frees space without losing any conversation. */
     suspend fun clearMmsCache() {
         try {
+            // downloaded MMS files only — notes' attachments (parts/notes/)
+            // can't be downloaded again, so they are never cleared here
             File(context.filesDir, "parts").listFiles()?.forEach { f ->
-                runCatching { f.delete() }
+                if (f.isFile) runCatching { f.delete() }
             }
         } catch (_: Exception) {}
         // also the transient download scratch files
@@ -1609,6 +1879,7 @@ class Repo private constructor(private val context: Context) {
     suspend fun enforceAutoDelete(keep: Int) {
         if (keep < 1) return
         for (c in db.conversations().visible()) {
+            if (NotesChat.isNotes(c)) continue
             val victims = db.messages().messagesBeyondKeep(c.id, keep)
             if (victims.isEmpty()) continue
             for (m in victims) {
@@ -2029,8 +2300,20 @@ class Repo private constructor(private val context: Context) {
 
     // ---- scheduled ----
 
+    /** store a note in the notes chat (local only, already read). */
+    suspend fun saveNote(
+        convoId: Long, text: String, attachments: List<Triple<String, String, String>> = emptyList()
+    ): Long? = withContext(Dispatchers.IO) {
+        val id = NotesChat.save(context, db, convoId, text, attachments) ?: return@withContext null
+        if (text.isNotBlank()) extractElements(id, text)
+        refreshConversation(convoId)
+        ChangeBus.ping()
+        id
+    }
+
     suspend fun scheduleMessage(convoId: Long, text: String, sendAt: Long): Long? {
         val convo = db.conversations().byId(convoId) ?: return null
+        if (NotesChat.isNotes(convo)) return saveNote(convoId, text)
         val msg = MessageEntity(
             convoId = convoId, address = convo.addresses, body = text, date = sendAt,
             isMine = true, status = MsgStatus.SCHEDULED, scheduledAt = sendAt,
@@ -2125,14 +2408,21 @@ class Repo private constructor(private val context: Context) {
      *  Fixes conversations that were mis-grouped by the old import. Keeps keywords
      *  and settings; app-only flags on messages (locks, schedules) are lost. */
     suspend fun reimportAll(onProgress: (Int) -> Unit) {
+        // notes live only in the app: carry them across the wipe
+        val notes = NotesChat.snapshot(db)
         db.elements().deleteAll()
         db.parts().deleteAll()
         db.messages().deleteAll()
         db.conversations().deleteAll()
         try {
-            File(context.filesDir, "parts").listFiles()?.forEach { runCatching { it.delete() } }
+            // files only: notes' attachments live in parts/notes/ and stay
+            File(context.filesDir, "parts").listFiles()?.forEach { if (it.isFile) runCatching { it.delete() } }
         } catch (_: Exception) {}
         importFromTelephony(onProgress)
+        if (notes != null) {
+            NotesChat.putBack(context, db, notes.first, notes.second)
+            db.conversations().byKey(NotesChat.KEY)?.let { refreshConversation(it.id) }
+        }
         ChangeBus.ping()
     }
 
@@ -2218,14 +2508,16 @@ class Repo private constructor(private val context: Context) {
 
     // ============================== Contact name cache ==============================
 
+    private val contactsRefreshMutex = kotlinx.coroutines.sync.Mutex()
     fun refreshContactNames(force: Boolean = false) {
         scope.launch {
+          contactsRefreshMutex.withLock {
             val prefs = Prefs.get(context)
             val now = System.currentTimeMillis()
             if (!force && now - prefs.contactsRefreshedAt < 60_000L) return@launch
             if (!ContactsHelper.hasPermission(context)) return@launch
+            val contacts = ContactsHelper.loadAllOrNull(context) ?: return@launch
             prefs.contactsRefreshedAt = now
-            val contacts = ContactsHelper.loadAll(context)
             val nameByKey = HashMap<String, String>()
             val photoByKey = HashMap<String, String>()
             contacts.forEach {
@@ -2235,6 +2527,7 @@ class Repo private constructor(private val context: Context) {
             }
             var changed = false
             db.conversations().all().forEach { convo ->
+                if (NotesChat.isNotes(convo)) return@forEach
                 val names = convo.addressList().map { nameByKey[PhoneUtils.normalize(it)] ?: "" }
                 val joined = names.joinToString("|")
                 val photo = if (!convo.isGroup)
@@ -2245,7 +2538,11 @@ class Repo private constructor(private val context: Context) {
                     changed = true
                 }
             }
-            if (changed) ChangeBus.ping()
+            // A photo's bytes can change without URI/name metadata changing.
+            // Drop finished badge bitmaps so the next bind fetches current bytes.
+            if (force) io.github.theonionsarewatching.nova.ui.ContactPhotoMemory.clear()
+            if (changed || force) ChangeBus.ping()
+          }
         }
     }
 
@@ -2253,10 +2550,29 @@ class Repo private constructor(private val context: Context) {
 
     /** One-time import of the system SMS/MMS store into our DB. Reports progress 0..100. */
     @SuppressLint("Range")
-    suspend fun importFromTelephony(onProgress: (Int) -> Unit) =
-        db.withTransaction { importFromTelephonyInner(onProgress) }
+    /** [onSteps]: real counts per phase — 0 = checking own number (sent MMS),
+     *  1 = messages, 2 = chat summaries — for a progress text "N of M". */
+    suspend fun importFromTelephony(
+        onProgress: (Int) -> Unit,
+        onSteps: ((phase: Int, done: Int, total: Int) -> Unit)? = null
+    ) = try {
+        bulkImporting = true
+        db.withTransaction { importFromTelephonyInner(onProgress, onSteps) }
+    } finally {
+        bulkImporting = false
+        // names + photos for every chat, one contacts read (also covers the
+        // chats made while bulkImporting skipped the per-chat lookups)
+        refreshContactNames(force = true)
+    }
 
-    private suspend fun importFromTelephonyInner(onProgress: (Int) -> Unit) = withContext(Dispatchers.IO) {
+    /** True while the full import runs (per-chat contact lookups wait). */
+    @Volatile
+    private var bulkImporting = false
+
+    private suspend fun importFromTelephonyInner(
+        onProgress: (Int) -> Unit,
+        onSteps: ((phase: Int, done: Int, total: Int) -> Unit)?
+    ) = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
 
         // learn this phone's own number(s) from sent MMS senders FIRST — without
@@ -2264,17 +2580,23 @@ class Repo private constructor(private val context: Context) {
         // keys and sent messages landed in a parallel copy of the group
         try {
             val sentIds = ArrayList<Long>()
+            // restore speed: a vote over the newest 200 sent MMS is as good
+            // as over all of them (one provider query each was the cost)
             resolver.query(
                 Telephony.Mms.CONTENT_URI, arrayOf(Telephony.Mms._ID, Telephony.Mms.MESSAGE_BOX),
-                "${Telephony.Mms.MESSAGE_BOX} != ${Telephony.Mms.MESSAGE_BOX_INBOX}", null, null
-            )?.use { c -> while (c.moveToNext()) sentIds.add(c.getLong(0)) }
+                "${Telephony.Mms.MESSAGE_BOX} != ${Telephony.Mms.MESSAGE_BOX_INBOX}", null,
+                "${Telephony.Mms.DATE} DESC"
+            )?.use { c -> while (c.moveToNext() && sentIds.size < 200) sentIds.add(c.getLong(0)) }
             // MAJORITY VOTE: the true own number appears as From on nearly
             // every sent row; a wrong address (foreign app's rows, a restore's
             // bad guess) appears on few. Only addresses on >=3 rows AND >=20%
             // of observations are trusted — one-off pollution can't get in.
             val tally = HashMap<String, Int>()
             var observations = 0
+            var checked = 0
             for (id in sentIds) {
+                checked++
+                if (checked % 20 == 0) onSteps?.invoke(0, checked, sentIds.size)
                 resolver.query(
                     Uri.parse("content://mms/$id/addr"), arrayOf("address", "type"),
                     "type = 137", null, null
@@ -2307,6 +2629,7 @@ class Repo private constructor(private val context: Context) {
             ?.use { mmsTotal = it.count }
         val total = (smsTotal + mmsTotal).coerceAtLeast(1)
         var done = 0
+        val convoCache = HashMap<String, ConversationEntity>()
 
         // SMS
         try {
@@ -2320,7 +2643,7 @@ class Repo private constructor(private val context: Context) {
             )?.use { c ->
                 while (c.moveToNext()) {
                     done++
-                    if (done % 50 == 0) onProgress(done * 100 / total)
+                    if (done % 50 == 0) { onProgress(done * 100 / total); onSteps?.invoke(1, done, total) }
                     val tId = c.getLong(0)
                     if (db.messages().existsByTelephonyId(tId, false)) continue
                     val address = c.getString(1) ?: continue
@@ -2340,7 +2663,8 @@ class Repo private constructor(private val context: Context) {
                     }
                     // broadcast dummy rows in some apps use "|" joined addresses
                     val addresses = address.split("|").filter { it.isNotBlank() }.ifEmpty { listOf(address) }
-                    val convo = getOrCreateConversation(addresses)
+                    // one lookup per address set, not one per message
+                    val convo = convoCache.getOrPut(address) { getOrCreateConversation(addresses) }
                     db.messages().insert(
                         MessageEntity(
                             convoId = convo.id, address = address, body = body, date = date,
@@ -2361,20 +2685,23 @@ class Repo private constructor(private val context: Context) {
             )?.use { c ->
                 while (c.moveToNext()) {
                     done++
-                    if (done % 20 == 0) onProgress(done * 100 / total)
+                    if (done % 20 == 0) { onProgress(done * 100 / total); onSteps?.invoke(1, done, total) }
                     val id = c.getLong(0)
                     if (db.messages().existsByTelephonyId(id, true)) continue
-                    ingestMms(id, c.getLong(1) * 1000L, c.getInt(2))
+                    ingestMms(id, c.getLong(1) * 1000L, c.getInt(2), bulk = true)
                 }
             }
         } catch (_: Exception) {}
 
         // sent MMS ingested above default to unread=false handled in ingestMms; mark imported received as read
         onProgress(100)
+        onSteps?.invoke(1, total, total)
         val all = db.conversations().all()
-        all.forEach { convo ->
+        // one recount per chat, once (counts, snippet, date)
+        all.forEachIndexed { i, convo ->
             db.messages().markThreadRead(convo.id) // imported history starts read
             refreshConversation(convo.id)
+            if (i % 5 == 0 || i == all.size - 1) onSteps?.invoke(2, i + 1, all.size)
         }
         refreshContactNames(force = true)
         ChangeBus.ping()
@@ -2390,7 +2717,13 @@ class Repo private constructor(private val context: Context) {
 
     fun syncRecentFromTelephony() {
         if (syncSuspended) return
-        scope.launch {
+        // one pass at a time: overlapping passes each
+        // inserted the same new rows
+        scope.launch { syncMutex.withLock { syncRecentPass() } }
+    }
+
+    private suspend fun syncRecentPass() {
+        run {
             val resolver = context.contentResolver
             val cutoff = System.currentTimeMillis() - 48 * 3600_000L
             try {
@@ -2404,6 +2737,9 @@ class Repo private constructor(private val context: Context) {
                 )?.use { c ->
                     while (c.moveToNext()) {
                         val tId = c.getLong(0)
+                        if (db.messages().existsByTelephonyId(tId, false)) continue
+                        // wait for a receive in progress, then look again
+                        smsInsertMutex.withLock { }
                         if (db.messages().existsByTelephonyId(tId, false)) continue
                         val address = c.getString(1) ?: continue
                         val body = c.getString(2) ?: ""
@@ -2457,6 +2793,8 @@ class Repo private constructor(private val context: Context) {
                             // "Sending" forever)
                             db.messages().byTelephonyMms(id)?.let { existing ->
                                 if (existing.isMine) applyBoxHeal(existing, c.getInt(2))
+                                // Provider notifications often precede addr/part writes.
+                                mmsIngestMutex.withLock { healExistingMms(existing, id) }
                             }
                             continue
                         }

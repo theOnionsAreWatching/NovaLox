@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pop-up list rows: the focused / selected row is a filled pill in the
+     user's accent color (?attr/colorPrimary = Prefs.accent via the
+     Accent_* theme overlay). Text turns @color/on_accent (dialog_item_text). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:exitFadeDuration="80">
+    <item android:state_focused="true">
+        <inset android:insetLeft="8dp" android:insetRight="8dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/colorPrimary" />
+                <corners android:radius="16dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:state_selected="true">
+        <inset android:insetLeft="8dp" android:insetRight="8dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/colorPrimary" />
+                <corners android:radius="16dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:state_pressed="true">
+        <inset android:insetLeft="8dp" android:insetRight="8dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="?attr/colorPrimary" />
+                <corners android:radius="16dp" />
+            </shape>
+        </inset>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

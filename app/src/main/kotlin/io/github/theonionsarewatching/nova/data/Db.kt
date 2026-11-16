@@ -30,6 +30,8 @@ object MsgStatus {
     const val RETRYING = 8
     /** video transcode in progress before the send */
     const val COMPRESSING = 9
+    /** a "Note to self" — stored only, never sent, no status label */
+    const val NOTE = 10
 }
 
 object GroupMode {
@@ -182,6 +184,13 @@ data class BinRow(
     val deletedAt: Long, val isMine: Boolean, val isMms: Boolean, val address: String
 )
 
+/** Cheap per-row fingerprint (no body text, no parts) so the open thread can
+ *  tell whether its already-loaded older rows changed without re-loading them. */
+data class RowStamp(
+    val id: Long, val status: Int, val locked: Boolean, val date: Long,
+    val bodyBytes: Long, val sched: Long, val partCount: Int
+)
+
 data class SearchRow(
     val id: Long, val convoId: Long, val body: String, val date: Long, val isMine: Boolean
 )
@@ -278,6 +287,13 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
+    /** Repair only provider-verified identity; preserve read/lock/status/user flags. */
+    @Query("UPDATE messages SET address = :address, convoId = :convoId WHERE id = :id")
+    suspend fun repairMmsSender(id: Long, address: String, convoId: Long)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM messages LIMIT 1)")
+    suspend fun hasAny(): Boolean
+
     @Insert
     suspend fun insert(m: MessageEntity): Long
 
@@ -307,6 +323,31 @@ interface MessageDao {
            ORDER BY date ASC, id ASC LIMIT :limit"""
     )
     suspend fun newerThan(convoId: Long, afterDate: Long, afterId: Long, limit: Int): List<MessageEntity>
+
+    /** Fingerprints of the visible rows from (fromDate,fromId) to (toDate,toId),
+     *  both ends inclusive, oldest first. */
+    @Query(
+        """SELECT id, status, locked, date, length(CAST(body AS BLOB)) AS bodyBytes,
+           COALESCE(scheduledAt, 0) AS sched,
+           (SELECT COUNT(*) FROM parts WHERE parts.messageId = messages.id) AS partCount
+           FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0
+           AND (date > :fromDate OR (date = :fromDate AND id >= :fromId))
+           AND (date < :toDate OR (date = :toDate AND id <= :toId))
+           ORDER BY date ASC, id ASC"""
+    )
+    suspend fun stampsBetween(
+        convoId: Long, fromDate: Long, fromId: Long, toDate: Long, toId: Long
+    ): List<RowStamp>
+
+    // ---- backup paging (keyset on id: never loads a whole table) ----
+    @Query("SELECT * FROM messages WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    suspend fun pageAfter(afterId: Long, limit: Int): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE id > :afterId AND isMms = :isMms ORDER BY id ASC LIMIT :limit")
+    suspend fun pageAfterOfKind(afterId: Long, isMms: Boolean, limit: Int): List<MessageEntity>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE isMms = :isMms")
+    suspend fun countOfKind(isMms: Boolean): Int
 
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0 AND read = 0")
     suspend fun unreadCount(convoId: Long): Int
@@ -344,6 +385,10 @@ interface MessageDao {
     @Query("UPDATE messages SET read = 1 WHERE convoId = :convoId AND read = 0")
     suspend fun markThreadRead(convoId: Long)
 
+    /** Same as markThreadRead, but returns how many rows changed. */
+    @Query("UPDATE messages SET read = 1 WHERE convoId = :convoId AND read = 0")
+    suspend fun markThreadReadCount(convoId: Long): Int
+
     @Query("UPDATE messages SET read = :read WHERE id = :id")
     suspend fun setRead(id: Long, read: Boolean)
 
@@ -358,6 +403,19 @@ interface MessageDao {
            AND date > :since ORDER BY date DESC LIMIT 20"""
     )
     suspend fun recentMineSms(since: Long): List<MessageEntity>
+
+    /** every row of one chat, bin included (notes carry-over) */
+    @Query("SELECT * FROM messages WHERE convoId = :convoId ORDER BY date, id")
+    suspend fun allInConvo(convoId: Long): List<MessageEntity>
+
+    /** the oldest sent text in [convoId] with this exact body,
+     *  in the window, that no echo has been paired with yet */
+    @Query(
+        """SELECT * FROM messages WHERE convoId = :convoId AND isMine = 1 AND isMms = 0
+           AND deletedAt IS NULL AND body = :body AND date BETWEEN :from AND :to
+           AND deliveryDebug NOT LIKE '%[self-echo]%' ORDER BY date ASC, id ASC LIMIT 1"""
+    )
+    suspend fun unpairedSelfSent(convoId: Long, body: String, from: Long, to: Long): MessageEntity?
 
     @Query("UPDATE messages SET deliveryDebug = deliveryDebug || :line WHERE id = :id")
     suspend fun appendDeliveryDebug(id: Long, line: String)
@@ -384,6 +442,11 @@ interface MessageDao {
     // backing rows can be purged too (stops re-import resurrection)
     @Query("SELECT * FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND (:includeLocked = 1 OR locked = 0)")
     suspend fun threadMessagesForDelete(convoId: Long, includeLocked: Int): List<MessageEntity>
+
+    /** Received MMS of one chat since [since] (read-report responder): the
+     *  filter runs in SQL, not by loading every message of the chat. */
+    @Query("SELECT * FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND isMine = 0 AND telephonyIsMms = 1 AND date >= :since")
+    suspend fun incomingMmsSince(convoId: Long, since: Long): List<MessageEntity>
 
     @Query("SELECT COUNT(*) FROM messages WHERE convoId = :convoId AND deletedAt IS NULL AND blockedByKeyword = 0")
     suspend fun countInConvo(convoId: Long): Int
@@ -505,6 +568,13 @@ interface MessageDao {
     )
     suspend fun existsSimilar(convoId: Long, mine: Boolean, body: String, from: Long, to: Long): Boolean
 
+    /** incoming copy from the same sender with the same text in a time window */
+    @Query(
+        """SELECT EXISTS(SELECT 1 FROM messages WHERE convoId = :convoId AND isMine = 0
+           AND address = :address AND body = :body AND date BETWEEN :from AND :to)"""
+    )
+    suspend fun existsSimilarFrom(convoId: Long, address: String, body: String, from: Long, to: Long): Boolean
+
     @Query(
         """SELECT m.id AS id, m.convoId AS convoId, m.body AS body, m.date AS date, m.isMine AS isMine
            FROM messages m JOIN messages_fts f ON m.id = f.rowid
@@ -535,6 +605,10 @@ interface PartDao {
     @Query("SELECT * FROM parts WHERE messageId = :messageId")
     suspend fun byMessage(messageId: Long): List<PartEntity>
 
+    /** how many part rows use this file (notes: move only an unused file) */
+    @Query("SELECT COUNT(*) FROM parts WHERE filePath = :path")
+    suspend fun countByPath(path: String): Int
+
     @Query("SELECT * FROM parts WHERE messageId IN (:ids)")
     suspend fun byMessages(ids: List<Long>): List<PartEntity>
 
@@ -543,6 +617,9 @@ interface PartDao {
 
     @Query("SELECT * FROM parts WHERE width = 0 AND mimeType LIKE 'image/%'")
     suspend fun needingDims(): List<PartEntity>
+
+    @Query("SELECT * FROM parts WHERE width = 0 AND mimeType LIKE 'image/%' AND id > :after ORDER BY id LIMIT 64")
+    suspend fun needingDimsPage(after: Long): List<PartEntity>
 
     // visual media only, newest first (viewer: right = older, left = newer)
     @Query(
@@ -558,6 +635,13 @@ interface PartDao {
 
     @Query("SELECT * FROM parts")
     suspend fun allParts(): List<PartEntity>
+
+    // backup paging; parts belong to MMS messages only
+    @Query("SELECT * FROM parts WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    suspend fun pageAfter(afterId: Long, limit: Int): List<PartEntity>
+
+    @Query("SELECT COUNT(*) FROM parts")
+    suspend fun count(): Int
 
     @Query("DELETE FROM parts")
     suspend fun deleteAll()
@@ -579,6 +663,18 @@ interface ElementDao {
 
     @Query("SELECT * FROM elements")
     suspend fun allElements(): List<ElementEntity>
+
+    // backup paging, limited to the messages of the chosen kind(s)
+    @Query(
+        """SELECT elements.* FROM elements JOIN messages ON elements.messageId = messages.id
+           WHERE elements.id > :afterId AND (:kind = 0 OR (:kind = 1 AND messages.isMms = 0)
+           OR (:kind = 2 AND messages.isMms = 1))
+           ORDER BY elements.id ASC LIMIT :limit"""
+    )
+    suspend fun pageAfter(afterId: Long, kind: Int, limit: Int): List<ElementEntity>
+
+    @Query("SELECT COUNT(*) FROM elements")
+    suspend fun count(): Int
 
     @Query("DELETE FROM elements")
     suspend fun deleteAll()

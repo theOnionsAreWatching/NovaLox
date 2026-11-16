@@ -11,8 +11,27 @@
     <color name="accent_purple">#6A1B9A</color>
     <color name="accent_pink">#AD1457</color>
     <color name="accent_gray">#546E7A</color>
+    <color name="accent_amber">#B26A00</color>
+    <color name="accent_gold">#8D6E00</color>
+    <color name="accent_coral">#D84315</color>
+    <color name="accent_crimson">#9B1B30</color>
+    <color name="accent_rose">#B03A5B</color>
+    <color name="accent_violet">#4527A0</color>
+    <color name="accent_indigo">#283593</color>
+    <color name="accent_sky">#0277BD</color>
+    <color name="accent_cyan">#00838F</color>
+    <color name="accent_mint">#1E8C6A</color>
+    <color name="accent_lime">#558B2F</color>
+    <color name="accent_olive">#6B6B1E</color>
+    <color name="accent_brown">#5D4037</color>
+    <color name="accent_slate">#37474F</color>
     <color name="divider">#38000000</color>
     <color name="compose_pill">#0D000000</color>
     <color name="focus_fill">#3D000000</color>
     <color name="ic_launcher_background">#2A8A7A</color>
+    <!-- pop-ups -->
+    <color name="dialog_surface">#FFFFFFFF</color>
+    <color name="dialog_rim">#14000000</color>
+    <color name="on_accent">#FFFFFFFF</color>
+    <color name="dialog_text_disabled">#61000000</color>
 </resources>

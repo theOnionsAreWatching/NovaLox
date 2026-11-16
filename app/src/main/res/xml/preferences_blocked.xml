@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_blocked"
+        android:title="@string/open_blocked_pref" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_keywords"
+        android:title="@string/st_blocked_words" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_hidden"
+        android:title="@string/st_hidden_chats" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="hint_blocked"
+        android:layout="@layout/pref_hint"
+        android:selectable="false"
+        android:persistent="false"
+        android:summary="@string/st_hint_blocked" />
+</PreferenceScreen>

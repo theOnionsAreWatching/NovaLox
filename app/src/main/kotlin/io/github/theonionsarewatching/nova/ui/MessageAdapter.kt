@@ -19,6 +19,8 @@ import io.github.theonionsarewatching.nova.data.PartEntity
 import io.github.theonionsarewatching.nova.databinding.ItemMessageBinding
 import io.github.theonionsarewatching.nova.sms.Sender
 import io.github.theonionsarewatching.nova.util.Formatters
+import io.github.theonionsarewatching.nova.util.MessageReaction
+import io.github.theonionsarewatching.nova.util.MessageReactions
 import io.github.theonionsarewatching.nova.util.Prefs
 import java.io.File
 
@@ -26,7 +28,8 @@ data class MessageRow(
     val msg: MessageEntity,
     val parts: List<PartEntity>,
     val elements: List<ElementEntity>,
-    val senderName: String
+    val senderName: String,
+    val reactions: List<MessageReaction> = emptyList()
 ) {
     val isSystemLine: Boolean get() = msg.address == SYSTEM_ADDRESS
 
@@ -143,6 +146,7 @@ class MessageAdapter(
             holder.b.thumb.visibility = View.GONE
             holder.b.attachLabel.visibility = View.GONE
             holder.b.metaRow.visibility = View.GONE
+            holder.b.reactionsLine.visibility = View.GONE
             holder.b.accentBar.visibility = View.GONE
             holder.b.bubbleBox.background = null
             val lp = holder.b.bubbleBox.layoutParams as LinearLayout.LayoutParams
@@ -173,7 +177,7 @@ class MessageAdapter(
         val bubbleParams = holder.b.bubbleBox.layoutParams as LinearLayout.LayoutParams
         holder.b.body.setTypeface(null, Typeface.NORMAL)
         holder.b.body.setTextColor(
-            androidx.core.content.ContextCompat.getColor(ctx, R.color.text_primary)
+            ThemeUtils.attrColor(ctx, R.attr.dsmsText, R.color.text_primary)
         )
         when (prefs.messageStyle) {
             "accentbar" -> {
@@ -232,6 +236,39 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
+            "round", "outline", "blocks", "lines" -> {
+                // newer styles: round = fill, big corners, no tail;
+                // outline = no fill, thin accent (sent) / grey ring;
+                // blocks = full-width flat fill; lines = no background,
+                // full width, sent text marked by the accent side bar
+                val style = prefs.messageStyle
+                val fill = bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null)
+                holder.b.accentBar.visibility = View.GONE
+                holder.b.bubbleBox.background = when (style) {
+                    "round" -> GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(fill) }
+                    "outline" -> GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.TRANSPARENT)
+                        setStroke(maxOf(1, dp(1) + dp(1) / 2), if (m.isMine) accent else Color.GRAY)
+                    }
+                    "blocks" -> GradientDrawable().apply { cornerRadius = 0f; setColor(fill) }
+                    else -> if (m.isMine) android.graphics.drawable.InsetDrawable(
+                        GradientDrawable().apply { setColor(accent) }, 0, 0, 0, 0).let {
+                            // a 3dp accent strip on the start side only
+                            android.graphics.drawable.LayerDrawable(arrayOf(it)).apply {
+                                setLayerWidth(0, dp(3))
+                                setLayerGravity(0, Gravity.START or Gravity.FILL_VERTICAL)
+                            }
+                        } else null
+                }
+                val full = style == "blocks" || style == "lines"
+                bubbleParams.width = if (full) ViewGroup.LayoutParams.MATCH_PARENT
+                    else ViewGroup.LayoutParams.WRAP_CONTENT
+                bubbleParams.gravity = if (full) Gravity.START
+                    else if (m.isMine) Gravity.END else Gravity.START
+                bubbleParams.marginStart = if (full) 0 else if (m.isMine) dp(28) else 0
+                bubbleParams.marginEnd = if (full) 0 else if (m.isMine) 0 else dp(28)
+            }
             else -> { // bubble: rounded body, the original bottom-corner tail
                 holder.b.accentBar.visibility = View.GONE
                 holder.b.bubbleBox.background = BottomTailBubbleDrawable(
@@ -250,7 +287,7 @@ class MessageAdapter(
         // neutral light fill, so forcing white text left it invisible.
         if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
             customSentColor(ctx) != null &&
-            prefs.messageStyle != "plain" && prefs.messageStyle != "accentbar"
+            prefs.messageStyle !in setOf("plain", "accentbar", "outline", "lines")
         ) {
             val fill = customSentColor(ctx)!!
             if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) {
@@ -260,6 +297,8 @@ class MessageAdapter(
         // the effective fill this row sits on — drives adaptive text below
         val effectiveFill = when (prefs.messageStyle) {
             "plain", "accentbar" -> cardColor(ctx)
+            // no fill of their own: the text sits on the chat background
+            "outline", "lines" -> backdropColor()
             else -> if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
                 customSentColor(ctx) != null)
                 customSentColor(ctx)!!
@@ -272,9 +311,16 @@ class MessageAdapter(
         val bgPad = android.graphics.Rect()
         val hasBgPad = holder.b.bubbleBox.background?.getPadding(bgPad) == true
         if (!hasBgPad) bgPad.set(0, 0, 0, 0)
+        // reaction badge: a fixed-height pill that overlaps the bubble's
+        // bottom edge by half its height. Its size is known at bind time, so
+        // the bubble gets just enough extra bottom room to keep the text clear
+        // and nothing resizes later (no jump while scrolling or re-entering).
+        val rxBadgeH = if (row.reactions.isNotEmpty()) reactionBadgeHeight(holder, prefs, dp) else 0
+        val rxOverlap = rxBadgeH / 2
+        val rxExtraPad = if (rxBadgeH > 0) (rxOverlap - dp(3)).coerceAtLeast(0) else 0
         holder.b.bubbleBox.setPadding(
             dp(8) + bgPad.left, dp(6) + bgPad.top,
-            dp(8) + bgPad.right, dp(6) + bgPad.bottom
+            dp(8) + bgPad.right, dp(6) + bgPad.bottom + rxExtraPad
         )
 
         // ---- body ----
@@ -294,6 +340,11 @@ class MessageAdapter(
         } else if (m.body.isNotBlank()) {
             holder.b.body.visibility = View.VISIBLE
             holder.b.body.text = m.body
+            holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+            holder.b.body.compoundDrawablePadding = 0
+        } else if (io.github.theonionsarewatching.nova.data.MmsContentPolicy.emptyContent(m.isMms, m.body, row.parts.size)) {
+            holder.b.body.visibility = View.VISIBLE
+            holder.b.body.text = ctx.getString(if (m.status == MsgStatus.FAILED) R.string.mms_content_failed else R.string.mms_content_unavailable)
             holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
             holder.b.body.compoundDrawablePadding = 0
         } else {
@@ -415,13 +466,18 @@ class MessageAdapter(
                 holder.b.attachLabel,
                 android.content.res.ColorStateList.valueOf(bodyColor)
             )
+            // a contact card is read in the background; remember
+            // which part this row shows so a late result can't land on a
+            // recycled row
+            holder.b.attachLabel.setTag(R.id.dsms_vcard_part,
+                if (!multiNonVisual && other != null && other.isVCard()) other.id else null)
             holder.b.attachLabel.text = when {
                 // several non-visual parts collapse to a count; the tap opens
                 // the chooser so each one is still reachable
                 multiNonVisual -> ctx.getString(R.string.more_attachments, nonVisual.size)
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
                 other.isAudio() -> other.fileName
-                other.isVCard() -> vcardSummary(ctx, other)
+                other.isVCard() -> VCardCache.summary(ctx, other, holder.b.attachLabel)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
             }
             if (!multiNonVisual && other != null && other.isAudio()) {
@@ -451,6 +507,44 @@ class MessageAdapter(
             }
         } else {
             holder.b.attachLabel.visibility = View.GONE
+        }
+
+        // ---- reaction badge (display-only; the fallback SMS stays in the store) ----
+        // A "drop" overlapping the bubble's bottom edge, half on / half below:
+        // bottom-left on incoming, bottom-right on sent. Opaque fill with a
+        // ring in the chat background color so it separates from the bubble.
+        if (rxBadgeH > 0) {
+            val v = holder.b.reactionsLine
+            v.visibility = View.VISIBLE
+            v.text = MessageReactions.summarize(row.reactions)
+            val backdrop = backdropColor()
+            val fill = androidx.core.graphics.ColorUtils.compositeColors(
+                withAlpha(accent, if (ThemeUtils.isNight(ctx)) 0x55 else 0x2E), backdrop
+            )
+            val textColor = if (androidx.core.graphics.ColorUtils.calculateContrast(
+                    accent, fill) >= 3.0) accent
+                else ThemeUtils.attrColor(ctx, R.attr.dsmsText, R.color.text_primary)
+            v.setTextColor(textColor)
+            v.background = GradientDrawable().apply {
+                cornerRadius = rxBadgeH / 2f
+                setColor(fill)
+                setStroke(reactionRing(dp), backdrop)
+            }
+            val ring = reactionRing(dp)
+            v.setPadding(dp(5) + ring, 0, dp(5) + ring, 0)
+            val rlp = v.layoutParams as LinearLayout.LayoutParams
+            val full = prefs.messageStyle in setOf("blocks", "lines")
+            val mine = m.isMine && !full
+            rlp.height = rxBadgeH
+            rlp.topMargin = -rxOverlap
+            rlp.gravity = if (mine) Gravity.END else Gravity.START
+            // inset past the tail / bar so the badge sits under the bubble's
+            // corner, not on the tail
+            rlp.marginStart = if (mine) dp(28) + dp(8) else bgPad.left + dp(6)
+            rlp.marginEnd = if (mine) bgPad.right + dp(6) else dp(28) + dp(8)
+            v.layoutParams = rlp
+        } else {
+            holder.b.reactionsLine.visibility = View.GONE
         }
 
         // ---- meta line: time + status ----
@@ -507,7 +601,8 @@ class MessageAdapter(
                 "square" -> dp(4).toFloat()
                 "plain" -> dp(6).toFloat()
                 // accent-bar cards are squares — square corners, no rounding
-                "accentbar" -> 0f
+                "accentbar", "blocks", "lines" -> 0f
+                "round" -> dp(16).toFloat()
                 else -> dp(10).toFloat()
             }
             // translucent fills (the accent-tinted sent bubble) must be
@@ -606,7 +701,8 @@ fun MessageRow.signature(): String = buildString {
     append(msg.date); append('|')
     append(msg.locked); append('|')
     append(msg.scheduledAt ?: 0L); append('|')
-    append(parts.size)
+    append(parts.size); append('|')
+    append(MessageReactions.summarize(reactions))
 }
 
 /** Signature of everything the full bind renders EXCEPT the meta line, so a
@@ -615,7 +711,49 @@ fun MessageRow.bodySignature(): String = buildString {
     append(msg.body); append('|')
     append(msg.locked); append('|')
     append(parts.size); append('|')
-    append(msg.isMine)
+    append(msg.isMine); append('|')
+    append(MessageReactions.summarize(reactions))
+}
+
+fun MessageRow.toReactionItem(): MessageReactions.Item {
+    val skip = isSystemLine ||
+        msg.status == MsgStatus.SCHEDULED ||
+        msg.status == MsgStatus.NOTE ||
+        io.github.theonionsarewatching.nova.data.MmsStub.isStub(msg.body)
+    return MessageReactions.Item(
+        id = msg.id,
+        body = msg.body,
+        date = msg.date,
+        isMine = msg.isMine,
+        address = msg.address,
+        senderName = senderName,
+        eligible = !skip,
+        mimeTypes = parts.map { it.mimeType }
+    )
+}
+
+/** Ring width around the reaction badge (about 1.5dp, at least 1px). */
+private fun reactionRing(dp: (Int) -> Int): Int = maxOf(1, (dp(3) + 1) / 2)
+
+/**
+ * Fixed height of the reaction badge for the current text size: one line of
+ * text (no font padding, no emoji fallback spacing) plus a small vertical pad
+ * and the ring. Also applies those text settings to the badge view.
+ */
+private fun reactionBadgeHeight(
+    holder: MessageAdapter.VH,
+    prefs: io.github.theonionsarewatching.nova.util.Prefs,
+    dp: (Int) -> Int
+): Int {
+    val v = holder.b.reactionsLine
+    v.textSize = prefs.timeTextSp.coerceAtLeast(11f)
+    v.includeFontPadding = false
+    if (android.os.Build.VERSION.SDK_INT >= 28) v.isFallbackLineSpacing = false
+    v.maxLines = 1
+    v.ellipsize = android.text.TextUtils.TruncateAt.END
+    v.gravity = Gravity.CENTER_VERTICAL
+    val fm = v.paint.fontMetricsInt
+    return (fm.descent - fm.ascent) + dp(2) * 2 + reactionRing(dp) * 2
 }
 
 private fun withAlpha(color: Int, alpha: Int): Int =
@@ -685,42 +823,84 @@ private fun bubbleFillColor(
     if (!isMine && senderKey != null && prefs.groupMemberColors) {
         return MemberPalette.colorFor(senderKey, night)
     }
+    val pal = ThemeUtils.palette(ctx)
     if (night) {
+        if (pal != null) return if (isMine) pal.bubbleMine else pal.bubbleOther
         return if (isMine) 0xFF37373E.toInt() else 0xFF2A2A2E.toInt()
     }
+    // Paper (light full theme): tints sit on its warm surface, not white
+    val base = pal?.surface ?: Color.WHITE
+    if (pal != null && !isMine && !prefs.colorIncoming) return pal.bubbleOther
+    if (pal != null && isMine && !prefs.sentColored) return pal.bubbleMine
     if (isMine) {
         if (!prefs.sentColored)
-            return androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
+            return ThemeUtils.attrColor(ctx, R.attr.dsmsBubbleOther, R.color.bubble_other)
         customSentColor(ctx)?.let { return it }
     }
     if (!isMine && prefs.colorIncoming) {
         // a chosen incoming color takes precedence over the default accent tint
         customIncomingColor(ctx)?.let { return it }
         return androidx.core.graphics.ColorUtils
-            .compositeColors(withAlpha(accent, 32), Color.WHITE)
+            .compositeColors(withAlpha(accent, 32), base)
     }
     // ALWAYS opaque: translucent fills let a busy chat background bleed
     // through the text — composite the tint over the surface instead
     return if (isMine) androidx.core.graphics.ColorUtils
-        .compositeColors(withAlpha(accent, 56), Color.WHITE)
+        .compositeColors(withAlpha(accent, 56), base)
     else androidx.core.graphics.ColorUtils.compositeColors(
-        androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other),
-        Color.WHITE
+        ThemeUtils.attrColor(ctx, R.attr.dsmsBubbleOther, R.color.bubble_other),
+        base
     )
 }
 
 /** The card behind plain / accent-bar messages: white over the light-grey
  *  chat background in light theme, dark grey in dark theme. */
 private fun cardColor(ctx: android.content.Context): Int =
-    if (ThemeUtils.isNight(ctx)) 0xFF2A2A2E.toInt() else Color.WHITE
+    ThemeUtils.palette(ctx)?.surface
+        ?: if (ThemeUtils.isNight(ctx)) 0xFF2A2A2E.toInt() else Color.WHITE
 
 /** Text color that reads on the given fill. */
 private fun onColor(fill: Int): Int =
     if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) Color.WHITE
     else 0xDE000000.toInt()
 
+/** contact cards used to be read from disk and their photo decoded
+ *  on the main thread every time the bubble came on screen (stutter). Now
+ *  the card is read once on a background thread and kept per part id; the
+ *  row shows the file name for that first moment. */
+private object VCardCache {
+    private val cache = android.util.LruCache<Long, CharSequence>(24)
+    private val pending = HashSet<Long>()
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun summary(ctx: android.content.Context, part: PartEntity, label: android.widget.TextView): CharSequence {
+        cache.get(part.id)?.let { return it }
+        if (pending.add(part.id)) {
+            val app = ctx.applicationContext
+            worker.execute {
+                val built = try { vcardSummary(app, part) } catch (_: Throwable) { part.fileName }
+                main.post {
+                    pending.remove(part.id)
+                    cache.put(part.id, built)
+                    // only if the row still shows this card
+                    if (label.getTag(R.id.dsms_vcard_part) == part.id) label.text = built
+                }
+            }
+        } else {
+            // a second row for the same part: refresh it too when ready
+            worker.execute {
+                main.post {
+                    cache.get(part.id)?.let { if (label.getTag(R.id.dsms_vcard_part) == part.id) label.text = it }
+                }
+            }
+        }
+        return part.fileName
+    }
+}
+
 /** name / numbers / emails pulled from a tiny .vcf for the in-bubble card —
- *  lines prefixed with small line icons (no emoji). */
+ *  lines prefixed with small line icons (no emoji). Background thread only. */
 private fun vcardSummary(ctx: android.content.Context, part: PartEntity): CharSequence {
     return try {
         val raw = java.io.File(part.filePath).readText().take(120000)
