@@ -557,6 +557,16 @@
     <string name="vibrate_always">Always</string>
     <string name="vibrate_only_mode">Only on vibrate</string>
     <string name="vibrate_never">Never</string>
+    <string name="pref_vibrate_pattern">Pattern</string>
+    <string name="vibrate_pattern_title">Pattern</string>
+    <string name="vibrate_pattern_default">Default</string>
+    <string name="vibrate_pattern_long">Long</string>
+    <string name="vibrate_pattern_two_short">Two short</string>
+    <string name="vibrate_pattern_three_short">Three short</string>
+    <string name="vibrate_pattern_heartbeat">Heartbeat</string>
+    <string name="vibrate_pattern_pulse">Pulse</string>
+    <string name="vibrate_pattern_gentle">Gentle</string>
+    <string name="vibrate_pattern_off">Off</string>
     <string name="color_gray">Gray</string>
     <string name="color_red">Red</string>
     <string name="color_orange">Orange</string>

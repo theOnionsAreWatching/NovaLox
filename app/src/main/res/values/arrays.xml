@@ -323,6 +323,26 @@
         <item>vibrate_only</item>
         <item>never</item>
     </string-array>
+    <string-array name="vibrate_pattern_entries">
+        <item>@string/vibrate_pattern_default</item>
+        <item>@string/vibrate_pattern_long</item>
+        <item>@string/vibrate_pattern_two_short</item>
+        <item>@string/vibrate_pattern_three_short</item>
+        <item>@string/vibrate_pattern_heartbeat</item>
+        <item>@string/vibrate_pattern_pulse</item>
+        <item>@string/vibrate_pattern_gentle</item>
+        <item>@string/vibrate_pattern_off</item>
+    </string-array>
+    <string-array name="vibrate_pattern_values">
+        <item>default</item>
+        <item>long</item>
+        <item>two_short</item>
+        <item>three_short</item>
+        <item>heartbeat</item>
+        <item>pulse</item>
+        <item>gentle</item>
+        <item>off</item>
+    </string-array>
 
     <string-array name="notif_mode_entries">
         <item>@string/notif_mode_single</item>

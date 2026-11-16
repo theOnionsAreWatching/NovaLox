@@ -31,6 +31,14 @@
         android:entryValues="@array/vibrate_values"
         android:defaultValue="always"
         android:summary="%s" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="vibrate_pattern"
+        android:title="@string/pref_vibrate_pattern"
+        android:entries="@array/vibrate_pattern_entries"
+        android:entryValues="@array/vibrate_pattern_values"
+        android:defaultValue="default"
+        android:summary="%s" />
     <Preference
         app:iconSpaceReserved="false"
         android:key="hint_notifications"

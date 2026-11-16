@@ -15,6 +15,7 @@ import io.github.theonionsarewatching.nova.data.MessageEntity
 import io.github.theonionsarewatching.nova.data.Repo
 import io.github.theonionsarewatching.nova.ui.ThreadActivity
 import io.github.theonionsarewatching.nova.util.Prefs
+import io.github.theonionsarewatching.nova.util.VibrationPattern
 import kotlinx.coroutines.launch
 
 object NotificationHelper {
@@ -56,9 +57,15 @@ object NotificationHelper {
         if (convo != null && convo.muted) return ensureMutedChannel(context)
         val tone = effectiveTone(context, convo)
         val vibrate = effectiveVibrate(context, convo)
+        val pattern = Prefs.get(context).vibratePattern
+        val buzz = VibrationPattern.shouldBuzz(vibrate, pattern)
         val overridden = convo != null &&
             (convo.customTone.isNotBlank() || convo.vibrateMode != 0)
-        val key = (tone + "|" + vibrate + "|L2").hashCode()
+        // Per-pattern channels: Android 8+ locks a channel's vibration once
+        // created. Default (and no-buzz) keep the old id so existing users
+        // keep their current channel; any other pattern gets its own id and
+        // waveform. Sound, per-chat tone/vibrate, mute and lights are unchanged.
+        val key = VibrationPattern.channelKeyHash(tone, vibrate, pattern)
         val id = if (overridden) "$CONVO_PREFIX${convo!!.id}_$key" else "$DEFAULT_PREFIX$key"
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -66,11 +73,12 @@ object NotificationHelper {
                 val name = if (overridden) convo!!.displayTitle()
                 else context.getString(R.string.channel_messages)
                 val ch = NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH)
-                ch.enableVibration(vibrate)
+                ch.enableVibration(buzz)
                 // flip phones with a notification LED: blink for new messages
                 ch.enableLights(true)
                 ch.lightColor = android.graphics.Color.WHITE
-                if (!vibrate) ch.vibrationPattern = null
+                if (!buzz) ch.vibrationPattern = null
+                else VibrationPattern.waveform(pattern)?.let { ch.vibrationPattern = it }
                 val attrs = android.media.AudioAttributes.Builder()
                     .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -242,8 +250,10 @@ object NotificationHelper {
             if (Build.VERSION.SDK_INT < 26) {
                 builder.setSound(soundUri(effectiveTone(context, convo)))
                 builder.setVibrate(
-                    if (effectiveVibrate(context, convo)) longArrayOf(0, 250, 150, 250)
-                    else longArrayOf(0)
+                    VibrationPattern.preOVibrate(
+                        effectiveVibrate(context, convo),
+                        Prefs.get(context).vibratePattern
+                    )
                 )
             }
         }

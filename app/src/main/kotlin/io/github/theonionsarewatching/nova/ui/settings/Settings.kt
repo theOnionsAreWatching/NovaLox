@@ -603,6 +603,24 @@ class SettingsActivity : BaseActivity() {
                 }
             }
 
+        // ListPreference.onClick opens the dialog before any click
+        // listener, so intercept here to keep a themed picker with a preview.
+        override fun onDisplayPreferenceDialog(preference: Preference) {
+            if (preference.key == "vibrate_pattern") {
+                val act = requireActivity() as BaseActivity
+                val pref = preference as androidx.preference.ListPreference
+                io.github.theonionsarewatching.nova.ui.VibrationPatternPicker.show(
+                    act, pref.value
+                ) { chosen ->
+                    pref.value = chosen
+                    io.github.theonionsarewatching.nova.notify.NotificationHelper
+                        .refreshAllChannels(act)
+                }
+                return
+            }
+            super.onDisplayPreferenceDialog(preference)
+        }
+
         override fun onResume() {
             preferenceManager.sharedPreferences
                 ?.registerOnSharedPreferenceChangeListener(changeToast)

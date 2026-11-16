@@ -80,6 +80,13 @@ class Prefs(context: Context) {
         }
         else -> true
     }
+
+    /** Waveform for new-message alerts. "default" keeps today's buzz. */
+    val vibratePattern: String
+        get() = VibrationPattern.normalize(
+            sp.getString(VibrationPattern.KEY, VibrationPattern.DEFAULT)
+        )
+
     var softkeysMapped: Boolean
         get() = sp.getBoolean("softkeys_mapped", false)
         set(v) = sp.edit().putBoolean("softkeys_mapped", v).apply()
