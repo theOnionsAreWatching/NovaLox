@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only the voice player's nested Options; respects system animation scale. -->
+    <style name="DSMS.AudioOptionsAnimation" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/audio_options_enter</item>
+        <item name="android:windowExitAnimation">@anim/audio_options_exit</item>
+    </style>
+</resources>

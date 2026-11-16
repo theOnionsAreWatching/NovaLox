@@ -41,12 +41,32 @@ class App : Application(), ImageLoaderFactory {
         // receivers ignore the event, and normal startup happens post-unlock.
         val um = getSystemService(android.os.UserManager::class.java)
         if (um != null && !um.isUserUnlocked) return
+        // set the app's light/dark mode before ANY screen is created
+        try { io.github.theonionsarewatching.nova.ui.ThemeUtils.applyNightMode(this) } catch (_: Exception) {}
         io.github.theonionsarewatching.nova.util.Formatters.init(this)
+        // soft keys work from the first start on the TCL Flip 2 (no setup)
+        try { io.github.theonionsarewatching.nova.util.SoftkeyAuto.applyIfNeeded(this) } catch (_: Exception) {}
         io.github.theonionsarewatching.nova.data.Repo.get(this).backfillPartDims()
         io.github.theonionsarewatching.nova.util.MmsUserAgent.applyToConfig(this)
         // pre-0.9.41 conversations stored "[Photo]"-style snippets; recompute
         // them once so the new italic words show everywhere
         val prefs0 = io.github.theonionsarewatching.nova.util.Prefs.get(this)
+        // Resize labels moved one step (the old "90%" look is
+        // now "100%", the new default). Saved values keep the same real size,
+        // so a saved 90% simply reads 100% now. Someone upgrading who never
+        // picked a size had the old default (real 1.0, now "110%"): write it
+        // down so their look doesn't change. Fresh installs get the new default.
+        if (!prefs0.sp.getBoolean("zoom_labels_v2", false)) {
+            val upgrading = prefs0.sp.contains("bg_legacy_normalized")
+            val e = prefs0.sp.edit()
+            if (upgrading && !prefs0.sp.contains("app_zoom")) e.putString("app_zoom", "1.0")
+            e.putBoolean("zoom_labels_v2", true).commit()
+        }
+        // Size now only 80%..120%: snap a saved value outside the list
+        prefs0.sp.getString("app_zoom", null)?.let { z ->
+            val snapped = io.github.theonionsarewatching.nova.util.ZoomSteps.snapZoom(z)
+            if (snapped != z) prefs0.sp.edit().putString("app_zoom", snapped).commit()
+        }
         // an older version stored the LIGHT app-default background as a
         // literal near-white hex; with dark="same as light" that near-white
         // then carried into dark theme forever. Normalize the legacy
@@ -101,15 +121,18 @@ class App : Application(), ImageLoaderFactory {
             contentResolver.registerContentObserver(Telephony.Mms.CONTENT_URI, true, telephonyObserver)
         } catch (_: Exception) {}
 
-        // contact rename/add: refresh the cached names (throttled inside)
+        // Photo changes may keep the SAME URI. Debounce provider notifications,
+        // but do not drop the final change behind the normal 60-second throttle.
+        val refreshContacts = Runnable { Repo.get(this@App).refreshContactNames(force = true) }
         val contactsObserver = object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
-                Repo.get(this@App).refreshContactNames()
+                handler.removeCallbacks(refreshContacts)
+                handler.postDelayed(refreshContacts, 400L)
             }
         }
         try {
             contentResolver.registerContentObserver(
-                ContactsContract.Contacts.CONTENT_URI, true, contactsObserver
+                ContactsContract.AUTHORITY_URI, true, contactsObserver
             )
         } catch (_: Exception) {}
     }
@@ -118,6 +141,8 @@ class App : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .components {
+                add(io.github.theonionsarewatching.nova.ui.ContactPhotoFetcher.Factory())
+                add(io.github.theonionsarewatching.nova.ui.MediaThumbnailFetcher.Factory())
                 add(VideoFrameDecoder.Factory())
                 // animated GIFs in bubbles and the viewer
                 if (android.os.Build.VERSION.SDK_INT >= 28) {

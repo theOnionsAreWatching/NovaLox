@@ -173,7 +173,7 @@ class MessageAdapter(
         val bubbleParams = holder.b.bubbleBox.layoutParams as LinearLayout.LayoutParams
         holder.b.body.setTypeface(null, Typeface.NORMAL)
         holder.b.body.setTextColor(
-            androidx.core.content.ContextCompat.getColor(ctx, R.color.text_primary)
+            ThemeUtils.attrColor(ctx, R.attr.dsmsText, R.color.text_primary)
         )
         when (prefs.messageStyle) {
             "accentbar" -> {
@@ -232,6 +232,39 @@ class MessageAdapter(
                 bubbleParams.marginStart = if (m.isMine) dp(28) else 0
                 bubbleParams.marginEnd = if (m.isMine) 0 else dp(28)
             }
+            "round", "outline", "blocks", "lines" -> {
+                // newer styles: round = fill, big corners, no tail;
+                // outline = no fill, thin accent (sent) / grey ring;
+                // blocks = full-width flat fill; lines = no background,
+                // full width, sent text marked by the accent side bar
+                val style = prefs.messageStyle
+                val fill = bubbleFillColor(ctx, m.isMine, accent, if (isGroup) m.address else null)
+                holder.b.accentBar.visibility = View.GONE
+                holder.b.bubbleBox.background = when (style) {
+                    "round" -> GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(fill) }
+                    "outline" -> GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.TRANSPARENT)
+                        setStroke(maxOf(1, dp(1) + dp(1) / 2), if (m.isMine) accent else Color.GRAY)
+                    }
+                    "blocks" -> GradientDrawable().apply { cornerRadius = 0f; setColor(fill) }
+                    else -> if (m.isMine) android.graphics.drawable.InsetDrawable(
+                        GradientDrawable().apply { setColor(accent) }, 0, 0, 0, 0).let {
+                            // a 3dp accent strip on the start side only
+                            android.graphics.drawable.LayerDrawable(arrayOf(it)).apply {
+                                setLayerWidth(0, dp(3))
+                                setLayerGravity(0, Gravity.START or Gravity.FILL_VERTICAL)
+                            }
+                        } else null
+                }
+                val full = style == "blocks" || style == "lines"
+                bubbleParams.width = if (full) ViewGroup.LayoutParams.MATCH_PARENT
+                    else ViewGroup.LayoutParams.WRAP_CONTENT
+                bubbleParams.gravity = if (full) Gravity.START
+                    else if (m.isMine) Gravity.END else Gravity.START
+                bubbleParams.marginStart = if (full) 0 else if (m.isMine) dp(28) else 0
+                bubbleParams.marginEnd = if (full) 0 else if (m.isMine) 0 else dp(28)
+            }
             else -> { // bubble: rounded body, the original bottom-corner tail
                 holder.b.accentBar.visibility = View.GONE
                 holder.b.bubbleBox.background = BottomTailBubbleDrawable(
@@ -250,7 +283,7 @@ class MessageAdapter(
         // neutral light fill, so forcing white text left it invisible.
         if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
             customSentColor(ctx) != null &&
-            prefs.messageStyle != "plain" && prefs.messageStyle != "accentbar"
+            prefs.messageStyle !in setOf("plain", "accentbar", "outline", "lines")
         ) {
             val fill = customSentColor(ctx)!!
             if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) {
@@ -260,6 +293,8 @@ class MessageAdapter(
         // the effective fill this row sits on — drives adaptive text below
         val effectiveFill = when (prefs.messageStyle) {
             "plain", "accentbar" -> cardColor(ctx)
+            // no fill of their own: the text sits on the chat background
+            "outline", "lines" -> backdropColor()
             else -> if (!ThemeUtils.isNight(ctx) && m.isMine && prefs.sentColored &&
                 customSentColor(ctx) != null)
                 customSentColor(ctx)!!
@@ -294,6 +329,11 @@ class MessageAdapter(
         } else if (m.body.isNotBlank()) {
             holder.b.body.visibility = View.VISIBLE
             holder.b.body.text = m.body
+            holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+            holder.b.body.compoundDrawablePadding = 0
+        } else if (io.github.theonionsarewatching.nova.data.MmsContentPolicy.emptyContent(m.isMms, m.body, row.parts.size)) {
+            holder.b.body.visibility = View.VISIBLE
+            holder.b.body.text = ctx.getString(if (m.status == MsgStatus.FAILED) R.string.mms_content_failed else R.string.mms_content_unavailable)
             holder.b.body.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
             holder.b.body.compoundDrawablePadding = 0
         } else {
@@ -415,13 +455,18 @@ class MessageAdapter(
                 holder.b.attachLabel,
                 android.content.res.ColorStateList.valueOf(bodyColor)
             )
+            // a contact card is read in the background; remember
+            // which part this row shows so a late result can't land on a
+            // recycled row
+            holder.b.attachLabel.setTag(R.id.dsms_vcard_part,
+                if (!multiNonVisual && other != null && other.isVCard()) other.id else null)
             holder.b.attachLabel.text = when {
                 // several non-visual parts collapse to a count; the tap opens
                 // the chooser so each one is still reachable
                 multiNonVisual -> ctx.getString(R.string.more_attachments, nonVisual.size)
                 other == null -> ctx.getString(R.string.more_attachments, row.parts.size)
                 other.isAudio() -> other.fileName
-                other.isVCard() -> vcardSummary(ctx, other)
+                other.isVCard() -> VCardCache.summary(ctx, other, holder.b.attachLabel)
                 else -> ctx.getString(R.string.attach_file, other.fileName)
             }
             if (!multiNonVisual && other != null && other.isAudio()) {
@@ -507,7 +552,8 @@ class MessageAdapter(
                 "square" -> dp(4).toFloat()
                 "plain" -> dp(6).toFloat()
                 // accent-bar cards are squares — square corners, no rounding
-                "accentbar" -> 0f
+                "accentbar", "blocks", "lines" -> 0f
+                "round" -> dp(16).toFloat()
                 else -> dp(10).toFloat()
             }
             // translucent fills (the accent-tinted sent bubble) must be
@@ -685,42 +731,84 @@ private fun bubbleFillColor(
     if (!isMine && senderKey != null && prefs.groupMemberColors) {
         return MemberPalette.colorFor(senderKey, night)
     }
+    val pal = ThemeUtils.palette(ctx)
     if (night) {
+        if (pal != null) return if (isMine) pal.bubbleMine else pal.bubbleOther
         return if (isMine) 0xFF37373E.toInt() else 0xFF2A2A2E.toInt()
     }
+    // Paper (light full theme): tints sit on its warm surface, not white
+    val base = pal?.surface ?: Color.WHITE
+    if (pal != null && !isMine && !prefs.colorIncoming) return pal.bubbleOther
+    if (pal != null && isMine && !prefs.sentColored) return pal.bubbleMine
     if (isMine) {
         if (!prefs.sentColored)
-            return androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other)
+            return ThemeUtils.attrColor(ctx, R.attr.dsmsBubbleOther, R.color.bubble_other)
         customSentColor(ctx)?.let { return it }
     }
     if (!isMine && prefs.colorIncoming) {
         // a chosen incoming color takes precedence over the default accent tint
         customIncomingColor(ctx)?.let { return it }
         return androidx.core.graphics.ColorUtils
-            .compositeColors(withAlpha(accent, 32), Color.WHITE)
+            .compositeColors(withAlpha(accent, 32), base)
     }
     // ALWAYS opaque: translucent fills let a busy chat background bleed
     // through the text — composite the tint over the surface instead
     return if (isMine) androidx.core.graphics.ColorUtils
-        .compositeColors(withAlpha(accent, 56), Color.WHITE)
+        .compositeColors(withAlpha(accent, 56), base)
     else androidx.core.graphics.ColorUtils.compositeColors(
-        androidx.core.content.ContextCompat.getColor(ctx, R.color.bubble_other),
-        Color.WHITE
+        ThemeUtils.attrColor(ctx, R.attr.dsmsBubbleOther, R.color.bubble_other),
+        base
     )
 }
 
 /** The card behind plain / accent-bar messages: white over the light-grey
  *  chat background in light theme, dark grey in dark theme. */
 private fun cardColor(ctx: android.content.Context): Int =
-    if (ThemeUtils.isNight(ctx)) 0xFF2A2A2E.toInt() else Color.WHITE
+    ThemeUtils.palette(ctx)?.surface
+        ?: if (ThemeUtils.isNight(ctx)) 0xFF2A2A2E.toInt() else Color.WHITE
 
 /** Text color that reads on the given fill. */
 private fun onColor(fill: Int): Int =
     if (androidx.core.graphics.ColorUtils.calculateLuminance(fill) < 0.5) Color.WHITE
     else 0xDE000000.toInt()
 
+/** contact cards used to be read from disk and their photo decoded
+ *  on the main thread every time the bubble came on screen (stutter). Now
+ *  the card is read once on a background thread and kept per part id; the
+ *  row shows the file name for that first moment. */
+private object VCardCache {
+    private val cache = android.util.LruCache<Long, CharSequence>(24)
+    private val pending = HashSet<Long>()
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    fun summary(ctx: android.content.Context, part: PartEntity, label: android.widget.TextView): CharSequence {
+        cache.get(part.id)?.let { return it }
+        if (pending.add(part.id)) {
+            val app = ctx.applicationContext
+            worker.execute {
+                val built = try { vcardSummary(app, part) } catch (_: Throwable) { part.fileName }
+                main.post {
+                    pending.remove(part.id)
+                    cache.put(part.id, built)
+                    // only if the row still shows this card
+                    if (label.getTag(R.id.dsms_vcard_part) == part.id) label.text = built
+                }
+            }
+        } else {
+            // a second row for the same part: refresh it too when ready
+            worker.execute {
+                main.post {
+                    cache.get(part.id)?.let { if (label.getTag(R.id.dsms_vcard_part) == part.id) label.text = it }
+                }
+            }
+        }
+        return part.fileName
+    }
+}
+
 /** name / numbers / emails pulled from a tiny .vcf for the in-bubble card —
- *  lines prefixed with small line icons (no emoji). */
+ *  lines prefixed with small line icons (no emoji). Background thread only. */
 private fun vcardSummary(ctx: android.content.Context, part: PartEntity): CharSequence {
     return try {
         val raw = java.io.File(part.filePath).readText().take(120000)

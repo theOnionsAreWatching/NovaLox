@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Theme colours (Light/Dark take them from @color, full themes override). -->
+<resources>
+    <attr name="dsmsText" format="color" />
+    <attr name="dsmsSurface" format="color" />
+    <attr name="dsmsDivider" format="color" />
+    <attr name="dsmsBubbleOther" format="color" />
+    <attr name="dsmsPill" format="color" />
+    <attr name="dsmsRim" format="color" />
+    <attr name="dsmsTextDisabled" format="color" />
+    <attr name="dsmsFocusFill" format="color" />
+</resources>

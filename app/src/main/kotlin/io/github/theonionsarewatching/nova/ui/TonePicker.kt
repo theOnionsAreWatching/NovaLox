@@ -57,7 +57,7 @@ object TonePicker {
             preview = null
         }
 
-        val dialog = AlertDialog.Builder(activity)
+        val dialog = DsmsAlertBuilder(activity)
             .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.tone_title)))
             .setSingleChoiceItems(labels.toTypedArray(), selected) { d, which ->
                 selected = which
@@ -131,14 +131,14 @@ object SoundDialog {
                     }
                 )
             )
-            AlertDialog.Builder(activity)
+            DsmsAlertBuilder(activity)
                 .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.sound_and_vibration_title)))
                 .setItems(arrayOf(toneRow, vibRow)) { _, which ->
                     when (which) {
                         0 -> TonePicker.pick(activity, c.customTone, R.string.tone_app_default) { tone ->
                             activity.lifecycleScope.launch {
                                 repo.setConversationTone(convoId, tone)
-                                Toast.makeText(activity, R.string.tone_saved, Toast.LENGTH_SHORT).show()
+                                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(activity, R.string.tone_saved, Toast.LENGTH_SHORT).show()
                             }
                         }
                         1 -> {
@@ -147,12 +147,12 @@ object SoundDialog {
                                 activity.getString(R.string.vib_on),
                                 activity.getString(R.string.vib_off)
                             )
-                            AlertDialog.Builder(activity)
+                            DsmsAlertBuilder(activity)
                                 .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.vibration_title)))
                                 .setSingleChoiceItems(opts, c.vibrateMode) { d, mode ->
                                     activity.lifecycleScope.launch {
                                         repo.setConversationVibrate(convoId, mode)
-                                        Toast.makeText(activity, R.string.tone_saved, Toast.LENGTH_SHORT).show()
+                                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(activity, R.string.tone_saved, Toast.LENGTH_SHORT).show()
                                     }
                                     d.dismiss()
                                 }

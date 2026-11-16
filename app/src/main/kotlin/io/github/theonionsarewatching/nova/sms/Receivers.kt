@@ -53,13 +53,15 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val address = messages[0].displayOriginatingAddress ?: return
         val body = messages.joinToString(separator = "") { it.messageBody ?: "" }
         val date = System.currentTimeMillis()
+        // the service centre's time stamp in the SMS itself
+        val sentAt = try { messages[0].timestampMillis } catch (_: Exception) { 0L }
         val subId = intent.getIntExtra("subscription", -1)
 
         val pending = goAsync()
         val repo = Repo.get(context)
         repo.scope.launch {
             try {
-                val result = repo.receiveSms(address, body, date, subId)
+                val result = repo.receiveSms(address, body, date, subId, sentAt)
                 if (result != null) {
                     val (msg, convo) = result
                     if (!msg.blockedByKeyword) {

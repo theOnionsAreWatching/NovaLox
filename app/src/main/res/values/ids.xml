@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="softkey_focus_wired" type="id" />
+    <item name="dsms_fixed_width" type="id" />
+    <item name="dsms_polish_hooked" type="id" />
+    <item name="dsms_vcard_part" type="id" />
+    <item name="dsms_default_row" type="id" />
+    <item name="dsms_photo_key" type="id" />
 </resources>

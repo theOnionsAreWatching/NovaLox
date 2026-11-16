@@ -60,6 +60,9 @@ class ComposeActivity : BaseActivity() {
         }
         binding.attachChip.setOnClickListener { manageAttachments() }
 
+        // notice the system's own paste into both boxes
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.watch(binding.recipientInput)
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.watch(binding.bodyInput)
         binding.recipientInput.addTextChangedListener(object : TextWatcher {
 
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -92,11 +95,81 @@ class ComposeActivity : BaseActivity() {
 
         lifecycleScope.launch {
             contacts = withContext(Dispatchers.IO) { ContactsHelper.loadAll(this@ComposeActivity) }
+            if (pickMode) filterSuggestions(binding.recipientInput.text?.toString().orEmpty())
         }
 
         handleIncomingIntent()
+        // a plain New message brings back the last unsent one (no recipient)
+        if (savedInstanceState == null && intent.action == null && recipients.isEmpty() &&
+            binding.bodyInput.text.isNullOrBlank() && pendingAttachments.isEmpty()) {
+            val p = Prefs.get(this)
+            val d = p.draft(NEW_DRAFT_ID)
+            val a = DraftPrompt.decode(p.draftAttachments(NEW_DRAFT_ID))
+            if (d.isNotBlank()) binding.bodyInput.setText(d)
+            if (a.isNotEmpty()) { pendingAttachments.addAll(a); updateAttachChip() }
+        }
+        // a plain "New message" opens as ONE pick screen: the
+        // name/number box on top, every contact below, filtered as he types.
+        // Picking a contact (or confirming a typed number) opens the chat.
+        pickMode = recipients.isEmpty() && !isShareIntent() &&
+            pendingAttachments.isEmpty() &&
+            binding.bodyInput.text.isNullOrBlank()
+        updateComposeSoftkeys()
+        // the pick screen's final layout (list area + its
+        // soft keys) from the very first frame; the contacts fill in when
+        // loaded. Before, the first frames had the message-box layout and
+        // the soft-key bar appeared only when the list came up.
+        if (pickMode) setSuggestionsShown(true)
+        softkeys?.refreshVisibility()
         updateRecipientLabel()
         binding.recipientInput.requestFocus()
+        // shared from another app (gallery etc.) with no number given: let him
+        // pick an existing chat first, or "New number…" to stay on this screen
+        if (savedInstanceState == null && isShareIntent() && recipients.isEmpty()) showShareTarget()
+    }
+
+    private fun isShareIntent() =
+        intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE
+
+    /** Copy job for shared media; a chosen chat waits for it to finish. */
+    private var stagingJob: kotlinx.coroutines.Job? = null
+
+    /** Share target: full-screen chat list, "New number…"
+     *  first, Cancel on the RIGHT soft key. */
+    private fun showShareTarget() {
+        ChatTargetPicker.show(
+            this, getString(R.string.share_to),
+            // stay here: type a number / pick a contact as before
+            onNew = { binding.recipientInput.requestFocus() },
+            onCancel = { cancelShare() },
+        ) { c -> shareInto(c.id) }
+    }
+
+    private fun cancelShare() {
+        draftDone = true
+        stagingJob?.cancel()
+        pendingAttachments.forEach { runCatching { java.io.File(it.first).delete() } }
+        pendingAttachments.clear()
+        finish()
+    }
+
+    /** Open the chosen chat with the shared text + (already copied and
+     *  limit-checked) attachments waiting in its compose box. */
+    private fun shareInto(convoId: Long) {
+        draftDone = true
+        lifecycleScope.launch {
+            try { stagingJob?.join() } catch (_: Exception) {}
+            val att = ArrayList(pendingAttachments)
+            pendingAttachments.clear()        // the thread owns the files now
+            val text = binding.bodyInput.text?.toString().orEmpty()
+            startActivity(Intent(this@ComposeActivity, ThreadActivity::class.java)
+                .putExtra(ThreadActivity.EXTRA_CONVO_ID, convoId)
+                .putExtra(ThreadActivity.EXTRA_SHARED_TEXT, text)
+                .putStringArrayListExtra(ThreadActivity.EXTRA_SHARED_PATHS, ArrayList(att.map { it.first }))
+                .putStringArrayListExtra(ThreadActivity.EXTRA_SHARED_MIMES, ArrayList(att.map { it.second }))
+                .putStringArrayListExtra(ThreadActivity.EXTRA_SHARED_NAMES, ArrayList(att.map { it.third })))
+            finish()
+        }
     }
 
     /** Returns true (and finishes) if we handed off to a thread. */
@@ -183,6 +256,28 @@ class ComposeActivity : BaseActivity() {
             (intent.getStringExtra(Intent.EXTRA_TEXT)
                 ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString())?.let { binding.bodyInput.setText(it) }
             intent.getStringExtra("prefill_body")?.let { binding.bodyInput.setText(it) }
+            // forwarded from a thread (several messages): files already copied
+            intent.getStringArrayListExtra(ThreadActivity.EXTRA_SHARED_PATHS)?.let { paths ->
+                val mimes = intent.getStringArrayListExtra(ThreadActivity.EXTRA_SHARED_MIMES)
+                val names = intent.getStringArrayListExtra(ThreadActivity.EXTRA_SHARED_NAMES)
+                var skipped = 0
+                paths.forEachIndexed { i, path ->
+                    val f = java.io.File(path)
+                    val mime = mimes?.getOrNull(i) ?: "application/octet-stream"
+                    if (f.exists() && io.github.theonionsarewatching.nova.util.AttachLimits
+                            .fits(this, pendingAttachments, mime, f.length())) {
+                        pendingAttachments.add(Triple(path, mime, names?.getOrNull(i) ?: f.name))
+                    } else { runCatching { f.delete() }; skipped++ }
+                }
+                // consume once, so a recreate does not add them twice
+                intent.removeExtra(ThreadActivity.EXTRA_SHARED_PATHS)
+                intent.removeExtra(ThreadActivity.EXTRA_SHARED_MIMES)
+                intent.removeExtra(ThreadActivity.EXTRA_SHARED_NAMES)
+                intent.removeExtra("prefill_body")
+                updateAttachChip()
+                if (skipped > 0) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this,
+                    getString(R.string.attach_skipped, skipped), android.widget.Toast.LENGTH_LONG).show()
+            }
 
             // shared FROM other apps (gallery etc.): stage the media as attachments
             val streams = ArrayList<Uri>()
@@ -194,6 +289,10 @@ class ComposeActivity : BaseActivity() {
                 intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
                     ?.let { streams.addAll(it) }
             }
+            // some galleries put the shared items only in ClipData
+            intent.clipData?.let { cd ->
+                for (i in 0 until cd.itemCount) cd.getItemAt(i).uri?.let { if (it !in streams) streams.add(it) }
+            }
             if (streams.isNotEmpty()) stageIncomingUris(streams)
         } catch (_: Exception) {
             // never crash on a malformed external intent — open blank instead
@@ -201,7 +300,68 @@ class ComposeActivity : BaseActivity() {
         updateRecipientLabel()
     }
 
+    /** true while the screen is the one-step contact picker
+     *  (no recipient chosen yet). "Add more" leaves it for a group. */
+    private var pickMode = false
+
+    private fun focusedSuggestion(): ContactsHelper.Contact? {
+        val f = currentFocus ?: return null
+        if (!isChildOf(f, binding.suggestionList)) return null
+        val pos = binding.suggestionList.findContainingViewHolder(f)?.bindingAdapterPosition ?: -1
+        return suggestionAdapter.itemAt(pos)
+    }
+
+    /** OK / Start in the box: a typed number (or e-mail) starts that chat;
+     *  a typed name starts the chat with the best-matching contact. */
+    private fun confirmTypedInPick() {
+        val typed = binding.recipientInput.text?.toString()?.trim().orEmpty()
+        if (typed.isBlank()) {
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.pick_type_first,
+                android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isValidRecipient(typed)) {
+            recipients.add(typed)
+            binding.recipientInput.setText("")
+            start()
+            return
+        }
+        val first = suggestionAdapter.itemAt(0)
+        if (first != null) pick(first) else {
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+                this, getString(R.string.invalid_recipient, typed),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun startFromPick() {
+        val c = focusedSuggestion()
+        if (c != null) pick(c) else confirmTypedInPick()
+    }
+
+    /** Left soft key "Add more": keep this person and add others (group). */
+    private fun addMoreFromPick() {
+        val c = focusedSuggestion()
+        val typed = binding.recipientInput.text?.toString()?.trim().orEmpty()
+        pickMode = false
+        when {
+            c != null -> pick(c)
+            typed.isNotBlank() -> addTypedRecipient()
+        }
+        updateComposeSoftkeys()
+        filterSuggestions(binding.recipientInput.text?.toString().orEmpty())
+        binding.recipientInput.requestFocus()
+    }
+
     private fun filterSuggestions(q: String) {
+        if (q.isBlank() && pickMode && contacts.isNotEmpty()) {
+            suggestionAdapter.hlQuery = ""
+            suggestionAdapter.hlDigits = ""
+            suggestionAdapter.submit(contacts.sortedBy { it.name.lowercase() })
+            setSuggestionsShown(true)
+            return
+        }
         if (q.isBlank()) {
             suggestionAdapter.submit(emptyList())
             setSuggestionsShown(false)
@@ -262,6 +422,12 @@ class ComposeActivity : BaseActivity() {
         if (recipients.none { PhoneUtils.normalize(it) == PhoneUtils.normalize(c.number) }) {
             recipients.add(c.number)
         }
+        if (pickMode) {
+            // one step: the chosen person's chat opens right away
+            binding.recipientInput.setText("")
+            start()
+            return
+        }
         binding.recipientInput.setText("")
         suggestionAdapter.submit(emptyList())
         binding.suggestionList.visibility = View.GONE
@@ -275,7 +441,7 @@ class ComposeActivity : BaseActivity() {
         if (typed.isBlank()) return
         if (recipients.none { PhoneUtils.normalize(it) == PhoneUtils.normalize(typed) }) {
             if (!isValidRecipient(typed)) {
-                android.widget.Toast.makeText(
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                     this, getString(R.string.invalid_recipient, typed),
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
@@ -296,7 +462,7 @@ class ComposeActivity : BaseActivity() {
             }?.name
             if (name != null) "$name  ($addr)" else addr
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.remove_recipient)
             .setItems(labels.toTypedArray()) { _, which ->
                 recipients.removeAt(which)
@@ -324,29 +490,101 @@ class ComposeActivity : BaseActivity() {
     }
 
     private fun pickAttachment() {
-        android.app.AlertDialog.Builder(this)
-            .setItems(arrayOf(
-                getString(R.string.attach_menu_photo),
-                getString(R.string.attach_menu_video),
+        // full Attach list. "Record audio" lives in the small first
+        // popup (AttachOrPaste) only; Photo / Video / From gallery are one
+        // "Photo/Video" item that opens the gallery picker (images+videos).
+        // Rows stay centered (exception to the compact left rows) and the
+        // pop-up is narrowed to its labels.
+        val labels = arrayOf(
+                getString(R.string.attach_menu_photo_video),
+                getString(R.string.attach_menu_camera),
                 getString(R.string.attach_menu_contact),
                 getString(R.string.attach_menu_audio),
-                getString(R.string.attach_menu_record),
                 getString(R.string.attach_menu_file),
                 getString(R.string.attach_menu_emoji)
-            )) { _, which ->
+            )
+        val d = Dialogs.centeredItems(DsmsAlertBuilder(this), labels) { which ->
                 when (which) {
-                    0 -> pickMedia("image/*", cameraImageIntent())
-                    1 -> pickMedia("video/*",
-                        Intent(android.provider.MediaStore.ACTION_VIDEO_CAPTURE))
+                    // our own Photo/Video grid; "Other gallery…" = old route
+                    0 -> MediaPickerDialog.show(
+                        this,
+                        maxItems = io.github.theonionsarewatching.nova.util.AttachLimits.MAX_ITEMS -
+                            pendingAttachments.size,
+                        maxVideos = if (pendingAttachments.any { it.second.startsWith("video/") }) 0 else 1,
+                        onOtherGallery = { pickFromGalleryApp() }
+                    ) { deliverPicked(it) }
+                    // the phone's own Contacts and Music apps
+                    // (our in-app lists only as a fallback when there is none)
+                    // Camera: in-app Photo / Video choice, then the camera app
+                    1 -> CameraCapture.choose(this, pendingAttachments)
                     2 -> pickContactAttachment()
-                    3 -> pickMedia("audio/*",
-                        Intent(android.provider.MediaStore.Audio.Media.RECORD_SOUND_ACTION))
-                    4 -> recordAudioAttachment()
-                    5 -> pickFileAttachment()
-                    6 -> EmojiPicker.show(this, binding.bodyInput)
+                    3 -> pickAudioFromMusicApp()
+                    4 -> pickFileAttachment()
+                    5 -> EmojiPicker.show(this, binding.bodyInput)
                 }
             }
-            .show()
+            .create()
+        // final width BEFORE the first frame (no jump)
+        Dialogs.narrowToLabels(d, labels)
+        d.show()
+    }
+
+    /** The gallery app's OWN picker, straight up (user request; on phones
+     *  whose GET_CONTENT chooser is broken — Schok — this is the reliable
+     *  route). Falls back to the pictures flow when no gallery responds.
+     *  Results come back through the same 211 handler as pickMedia.
+     *  (Copied from ThreadActivity for the one "Photo/Video" item.) */
+    private fun pickFromGalleryApp() {
+        // no system ask when All files access already covers reading media
+        // (it popped up on every Gallery press on the Flip 2)
+        if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            !(android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) &&
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), 71)
+        }
+        // pictures AND videos (user request). "image/* video/*" is not a
+        // valid single MIME — galleries ignored the video half. Layered:
+        // (1) GET_CONTENT */* with both types listed (galleries that honor
+        //     EXTRA_MIME_TYPES show one combined grid),
+        // (2) PICK on the media provider (many OEM galleries show all media),
+        // (3) the old image-only PICK as the floor.
+        // The chosen layer is logged so field logs tell us per phone.
+        fun tryStart(i: Intent, tag: String): Boolean = try {
+            startActivityForResult(i, 211)
+            io.github.theonionsarewatching.nova.util.DiagLog.log(
+                this, "attach", "gallery picker via $tag")
+            true
+        } catch (_: Exception) { false }
+        val both = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            InAppPickers.askMultiple(this)
+        }
+        val pickAll = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "*/*")
+            // most galleries ignore this on PICK; harmless where they do
+            InAppPickers.askMultiple(this)
+        }
+        val pickImages = Intent(Intent.ACTION_PICK).apply {
+            setDataAndType(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+            InAppPickers.askMultiple(this)
+        }
+        // the phone's REAL gallery app first, opened
+        // explicitly (never the file manager / DocumentsUI, no chooser)
+        val gallery = InAppPickers.galleryIntent(this)
+        if (gallery != null && tryStart(gallery, "gallery-app " + gallery.component?.packageName)) return
+        // ORDER MATTERS (08-09 log: "via get-content-both" opened the Files
+        // UI, not the gallery): ACTION_PICK is the gallery's verb — it goes
+        // first; GET_CONTENT-with-both-types is the fallback for phones whose
+        // gallery ignores PICK; image-only PICK is the floor.
+        if (!tryStart(pickAll, "pick-all-media") &&
+            !(both.resolveActivity(packageManager) != null && tryStart(both, "get-content-both")) &&
+            !tryStart(pickImages, "pick-images")
+        ) {
+            pickMedia("image/*", null)
+        }
     }
 
     /** Typed picker: gallery/file apps filtered to [mime], with a capture app
@@ -355,7 +593,10 @@ class ComposeActivity : BaseActivity() {
     private fun pickMedia(mime: String, capture: Intent?) {
         // media-store uris returned by gallery/music apps need this on older
         // Android; without it the copy dies with a SecurityException
+        // no system ask when All files access already covers reading media
+        // (it popped up on every Gallery press on the Flip 2)
         if (android.os.Build.VERSION.SDK_INT <= 32 &&
+            !(android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) &&
             checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) !=
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -364,7 +605,7 @@ class ComposeActivity : BaseActivity() {
         try {
             val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = mime
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                InAppPickers.askMultiple(this)
             }
             val chooser = Intent.createChooser(pick, getString(R.string.softkey_attach))
             if (capture != null) {
@@ -382,7 +623,7 @@ class ComposeActivity : BaseActivity() {
             android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 72)
-            android.widget.Toast.makeText(
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                 this, R.string.mic_permission_hint, android.widget.Toast.LENGTH_SHORT
             ).show()
             return
@@ -409,26 +650,63 @@ class ComposeActivity : BaseActivity() {
         }
     } catch (_: Exception) { null }
 
+    /** Files: the system file picker directly (ACTION_OPEN_DOCUMENT goes
+     *  straight to it; GET_CONTENT + chooser listed every app twice). If
+     *  the phone has no file picker, our own D-pad file browser. */
     private fun pickFileAttachment() {
-        try {
-            val i = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*", "audio/*", "text/x-vcard"))
-                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                addCategory(Intent.CATEGORY_OPENABLE)
-            }
-            @Suppress("DEPRECATION")
-            startActivityForResult(Intent.createChooser(i, getString(R.string.softkey_attach)), 211)
-        } catch (_: Exception) {}
+        // the phone's file manager, opened DIRECTLY (explicit
+        // component, no chooser); none found -> our own D-pad file browser
+        val direct = InAppPickers.fileManagerIntent(this)
+        if (direct != null) {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(direct, 211)
+                return
+            } catch (_: Exception) {}
+        }
+        FileBrowserDialog.show(this,
+            listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".3gp", ".m4a", ".amr", ".mp3", ".ogg", ".vcf"),
+            { uri, _ -> deliverPicked(listOf(uri)) })
     }
 
+    /** Hand in-app picks to the same code as a picker app's result. */
+    private fun deliverPicked(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val data = Intent()
+        val clip = android.content.ClipData.newRawUri("pick", uris[0])
+        for (k in 1 until uris.size) clip.addItem(android.content.ClipData.Item(uris[k]))
+        data.clipData = clip
+        @Suppress("DEPRECATION")
+        onActivityResult(211, RESULT_OK, data)
+    }
+
+    /** Attach > Contact: the phone's Contacts app (result: 231). */
     private fun pickContactAttachment() {
         try {
             @Suppress("DEPRECATION")
             startActivityForResult(
                 Intent(Intent.ACTION_PICK, android.provider.ContactsContract.Contacts.CONTENT_URI), 231
             )
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // no Contacts app answers: our own list as the fallback
+            InAppPickers.pickContact(this) { stageContactVcf(it) }
+        }
+    }
+
+    /** Attach > Audio: the phone's Music app, opened directly (result: the
+     *  normal attach handler, 211). Fallback: our own list. */
+    private fun pickAudioFromMusicApp() {
+        val music = InAppPickers.musicIntent(this)
+        if (music != null) {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(music, 211)
+                return
+            } catch (_: Exception) {}
+        }
+        InAppPickers.pickAudio(this, onRecord = { recordAudioAttachment() }) {
+            deliverPicked(listOf(it))
+        }
     }
 
     private fun stageContactVcf(contactUri: android.net.Uri) {
@@ -474,7 +752,9 @@ class ComposeActivity : BaseActivity() {
             binding.sendRow.visibility = View.GONE
             binding.btnGroupMode.visibility = View.GONE
             binding.attachChip.visibility = View.GONE
-            binding.softkeyBar.root.visibility = View.GONE
+            // the pick screen keeps its labelled soft keys (Add more / Start)
+            binding.softkeyBar.root.visibility =
+                if (pickMode && softkeys?.shouldShow() == true) View.VISIBLE else View.GONE
         } else {
             binding.bodyScroll.visibility = View.VISIBLE
             binding.sendRow.visibility = View.VISIBLE
@@ -487,6 +767,36 @@ class ComposeActivity : BaseActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (pickMode) {
+            // BACK leaves the pick screen (there is no list to minimize here)
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) goBack()
+                return true
+            }
+            // OK in the box confirms what was typed (acts on key-up)
+            if (binding.recipientInput.hasFocus() &&
+                (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    event.keyCode == KeyEvent.KEYCODE_ENTER)
+            ) {
+                if (event.action == KeyEvent.ACTION_UP) confirmTypedInPick()
+                return true
+            }
+            // DOWN from the box goes into the list, first row
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+                binding.recipientInput.hasFocus() &&
+                binding.suggestionList.visibility == View.VISIBLE &&
+                suggestionAdapter.itemCount > 0
+            ) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    binding.suggestionList.scrollToPosition(0)
+                    binding.suggestionList.post {
+                        binding.suggestionList.findViewHolderForAdapterPosition(0)
+                            ?.itemView?.requestFocus()
+                    }
+                }
+                return true
+            }
+        }
         // BACK while suggestions are up: minimize the list, stay on the screen
         if (event.keyCode == KeyEvent.KEYCODE_BACK &&
             binding.suggestionList.visibility == View.VISIBLE
@@ -601,10 +911,15 @@ class ComposeActivity : BaseActivity() {
             data?.data?.let { stageContactVcf(it) }
             return
         }
+        if (requestCode == CameraCapture.REQ) {
+            CameraCapture.onResult(this, resultCode, data, pendingAttachments,
+                add = { p, m, n -> pendingAttachments.add(Triple(p, m, n)); updateAttachChip() },
+                fromUri = { stageIncomingUris(listOf(it)) })
+            return
+        }
         if (requestCode != 211 || resultCode != RESULT_OK) return
         val uris = ArrayList<Uri>()
-        data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
-        data?.data?.let { if (uris.isEmpty()) uris.add(it) }
+        uris.addAll(InAppPickers.resultUris(this, data))
         if (uris.isEmpty()) {
             val cam = cameraOutPath?.let { java.io.File(it) }
             cameraOutPath = null
@@ -620,10 +935,18 @@ class ComposeActivity : BaseActivity() {
     /** Copies content URIs into app storage and stages them as attachments.
      *  Used by the attach picker AND by media shared from other apps. */
     private fun stageIncomingUris(uris: List<Uri>) {
-        lifecycleScope.launch {
+        stagingJob = lifecycleScope.launch {
+            var skipped = 0
             for (uri in uris) {
+                if (pendingAttachments.size >= io.github.theonionsarewatching.nova.util.AttachLimits.MAX_ITEMS) { skipped++; continue }
                 try {
-                    val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+                    val mime = contentResolver.getType(uri)
+                            ?: android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                                uri.lastPathSegment.orEmpty().substringAfterLast('.', "").lowercase())
+                            ?: "application/octet-stream"
+                    // */* share: only media and contact cards can go in an MMS
+                    if (!(mime.startsWith("image/") || mime.startsWith("video/") ||
+                            mime.startsWith("audio/") || mime.contains("vcard"))) { skipped++; continue }
                     val ext = io.github.theonionsarewatching.nova.util.MimeExt.forMime(mime)
                     // carry the source's display name (song title, photo name)
                     val display = try {
@@ -638,10 +961,18 @@ class ComposeActivity : BaseActivity() {
                         ?.plus("_") ?: ""
                     val dir = java.io.File(filesDir, "parts").apply { mkdirs() }
                     val out = java.io.File(dir, "${baseName}new_${System.currentTimeMillis()}_${uris.indexOf(uri)}$ext")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        out.outputStream().use { output -> input.copyTo(output) }
+                    // copy off the main thread: several photos would freeze the screen
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            out.outputStream().use { output -> input.copyTo(output) }
+                        }
                     }
-                    if (out.exists() && out.length() > 0) {
+                    if (out.exists() && out.length() > 0 &&
+                    !io.github.theonionsarewatching.nova.util.AttachLimits.fits(this@ComposeActivity, pendingAttachments, mime, out.length())
+                ) {
+                    // over the MMS limits (multi-select): drop it, tell the user below
+                    out.delete(); skipped++
+                } else if (out.exists() && out.length() > 0) {
                         pendingAttachments.add(Triple(out.absolutePath, mime, out.name))
                     }
                 } catch (e: Exception) {
@@ -652,6 +983,10 @@ class ComposeActivity : BaseActivity() {
                     }
             }
             updateAttachChip()
+            if (skipped > 0) io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+                this@ComposeActivity, getString(R.string.attach_skipped, skipped),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -670,7 +1005,7 @@ class ComposeActivity : BaseActivity() {
     private fun manageAttachments() {
         if (pendingAttachments.isEmpty()) return
         val labels = pendingAttachments.map { it.third } + getString(R.string.remove_all)
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(getString(R.string.attached_n, pendingAttachments.size))
             .setItems(labels.toTypedArray()) { _, which ->
                 if (which < pendingAttachments.size) {
@@ -688,7 +1023,7 @@ class ComposeActivity : BaseActivity() {
     private fun pickGroupMode() {
         val labels = arrayOf(getString(R.string.mode_broadcast), getString(R.string.mode_group_mms))
         val current = if (groupMode == GroupMode.GROUP_MMS) 1 else 0
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.group_send_mode)
             .setSingleChoiceItems(labels, current) { d, which ->
                 groupMode = if (which == 1) GroupMode.GROUP_MMS else GroupMode.BROADCAST
@@ -699,11 +1034,23 @@ class ComposeActivity : BaseActivity() {
     }
 
     private fun updateComposeSoftkeys(sk: Softkeys? = softkeys) {
+        if (pickMode) {
+            sk?.set(
+                getString(R.string.softkey_add_more), null, getString(R.string.softkey_start),
+                onLeft = { addMoreFromPick() },
+                onCenter = null,
+                onRight = { startFromPick() }
+            )
+            return
+        }
         val attachLabel = if (clipboardText().isNullOrBlank())
             getString(R.string.softkey_attach) else getString(R.string.softkey_options)
         val attachAction = { AttachOrPaste.open(this, binding.bodyInput,
             onAttach = { pickAttachment() },
-            onRecord = { recordAudioAttachment() }) }
+            onRecord = { recordAudioAttachment() },
+            extra = if (!hasUnsent()) emptyList() else listOf(
+                getString(R.string.draft_save_exit) to { saveNewDraft(); draftDone = true; goBack() },
+                getString(R.string.draft_discard_item) to { discardNewDraft() })) }
         if (Prefs.get(this).sendOnLeft) {
             // send-on-left: mirrored — Send on the left softkey, attach on the
             // right; the on-screen + also remains next to the schedule button
@@ -738,15 +1085,66 @@ class ComposeActivity : BaseActivity() {
         goBack()
     }
 
+    // ---- drafts on the New message screen ----
+    /** set once sent / saved / discarded: onPause then saves nothing */
+    private var draftDone = false
+
+    private fun hasUnsent() = !binding.bodyInput.text.isNullOrBlank() || pendingAttachments.isNotEmpty()
+
+    /** Save what is typed: to the recipient's chat (it shows in the list as
+     *  "Draft: …"), or, with no recipient yet, as the New message draft that
+     *  comes back next time. Empty boxes save nothing (no ghost chats). */
+    private fun saveNewDraft() {
+        if (draftDone || pickMode) return
+        val prefs = Prefs.get(this)
+        val body = binding.bodyInput.text?.toString().orEmpty()
+        val atts = pendingAttachments.toList()
+        if (body.isBlank() && atts.isEmpty()) return
+        addTypedRecipient()
+        val to = ArrayList(recipients)
+        if (to.isEmpty()) {
+            prefs.setDraft(NEW_DRAFT_ID, body)
+            prefs.setDraftAttachments(NEW_DRAFT_ID, DraftPrompt.encode(atts))
+            return
+        }
+        prefs.setDraft(NEW_DRAFT_ID, ""); prefs.setDraftAttachments(NEW_DRAFT_ID, "")
+        val app = applicationContext
+        @Suppress("OPT_IN_USAGE")
+        kotlinx.coroutines.GlobalScope.launch {
+            val r = io.github.theonionsarewatching.nova.data.Repo.get(app)
+            val convo = r.getOrCreateConversation(to)
+            prefs.setDraft(convo.id, body)
+            prefs.setDraftAttachments(convo.id, DraftPrompt.encode(atts))
+            r.db.conversations().setDraft(convo.id, body.ifBlank { atts.firstOrNull()?.third ?: "" })
+            io.github.theonionsarewatching.nova.data.ChangeBus.ping()
+        }
+    }
+
+    private fun discardNewDraft() {
+        draftDone = true
+        val prefs = Prefs.get(this)
+        prefs.setDraft(NEW_DRAFT_ID, ""); prefs.setDraftAttachments(NEW_DRAFT_ID, "")
+        pendingAttachments.forEach { runCatching { java.io.File(it.first).delete() } }
+        pendingAttachments.clear()
+        binding.bodyInput.setText("")
+        goBack()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (!isChangingConfigurations) saveNewDraft()
+    }
+
     private fun startScheduled() {
+        draftDone = true
         addTypedRecipient()
         if (recipients.isEmpty()) {
-            android.widget.Toast.makeText(this, R.string.no_recipients, android.widget.Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_recipients, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         val body = binding.bodyInput.text?.toString()?.trim().orEmpty()
         if (body.isEmpty()) {
-            android.widget.Toast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.schedule_needs_text, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         io.github.theonionsarewatching.nova.ui.ScheduleTimePicker.show(this) { at ->
@@ -766,15 +1164,21 @@ class ComposeActivity : BaseActivity() {
     private fun start() {
         addTypedRecipient()
         if (recipients.isEmpty()) {
-            android.widget.Toast.makeText(this, R.string.no_recipients, android.widget.Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_recipients, android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         val body = binding.bodyInput.text?.toString()?.trim().orEmpty()
+        draftDone = true
+        Prefs.get(this).let { it.setDraft(NEW_DRAFT_ID, ""); it.setDraftAttachments(NEW_DRAFT_ID, "") }
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.clearIfStillPasted(applicationContext)
         lifecycleScope.launch {
             val convo = repo.getOrCreateConversation(recipients)
             if (convo.isGroup && convo.groupMode != groupMode) {
                 repo.db.conversations().setGroupMode(convo.id, groupMode)
             }
+            // a draft saved while this screen was paused (picker, Home) is used up
+            Prefs.get(this@ComposeActivity).let { it.setDraft(convo.id, ""); it.setDraftAttachments(convo.id, "") }
+            repo.db.conversations().setDraft(convo.id, "")
             if (pendingAttachments.isNotEmpty()) {
                 repo.sendAttachment(convo.id, body, pendingAttachments.toList())
             } else if (body.isNotBlank()) {
@@ -799,6 +1203,8 @@ class ComposeActivity : BaseActivity() {
             notifyDataSetChanged()
         }
 
+        fun itemAt(i: Int): ContactsHelper.Contact? = items.getOrNull(i)
+
         class VH(val b: ItemSuggestionBinding) : RecyclerView.ViewHolder(b.root)
 
         override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): VH {
@@ -819,6 +1225,7 @@ class ComposeActivity : BaseActivity() {
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val c = items[position]
+            HL_COLOR = ThemeUtils.accentColor(holder.itemView.context)
             holder.b.suggestionName.text =
                 highlightName(c.name, hlQuery, if (hlT9) hlDigits else "")
             holder.b.suggestionNumber.text = highlightNumber(c.number, hlDigits)
@@ -840,7 +1247,8 @@ private fun t9Of(t: String): String = t.lowercase().map { ch ->
     }
 }.joinToString("")
 
-private const val HL_COLOR = 0xFF3D74FF.toInt()
+/** match highlight = the user's current accent (set on each bind) */
+private var HL_COLOR = 0xFF3D74FF.toInt()
 
 /** Bold + color the matched stretch (letters or T9 digits) inside a name. */
 private fun highlightName(name: String, q: String, digits: String): CharSequence {
@@ -878,3 +1286,6 @@ private fun highlightNumber(number: String, digits: String): CharSequence {
         setSpan(android.text.style.ForegroundColorSpan(HL_COLOR), s2, e2, 0)
     }
 }
+
+/** prefs key id of the New message draft that has no recipient yet */
+private const val NEW_DRAFT_ID = -77L

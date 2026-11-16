@@ -1,17 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- conversation row as a rounded card. Card / focus / stripe /
+     badge colors are set in code from the accent and theme
+     (ThemeUtils.convoCardBackground, ConversationAdapter).
+     perf: no elevation/shadow on the cards any more. A shadow on
+     every row is redrawn for each moving row on every scroll frame, which is
+     heavy on a keypad phone's GPU; the cards still stand out on the tinted
+     page color. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:layout_marginStart="6dp"
+    android:layout_marginEnd="6dp"
+    android:layout_marginTop="3dp"
+    android:layout_marginBottom="3dp"
     android:orientation="horizontal"
-    android:paddingStart="10dp"
-    android:paddingEnd="10dp"
+    android:paddingStart="4dp"
+    android:paddingEnd="8dp"
     android:gravity="center_vertical">
+
+    <!-- unread stripe on the start edge (INVISIBLE keeps rows aligned) -->
+    <View
+        android:id="@+id/unreadStripe"
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        android:layout_marginEnd="4dp"
+        android:visibility="invisible" />
 
     <FrameLayout
         android:id="@+id/avatarFrame"
         android:layout_width="42dp"
         android:layout_height="42dp"
-        android:layout_marginEnd="10dp">
+        android:layout_marginEnd="8dp">
 
         <TextView
             android:id="@+id/avatarLetter"
@@ -48,50 +67,52 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:ellipsize="end"
-                android:maxLines="1" />
+                android:maxLines="1"
+                android:textStyle="bold" />
 
             <ImageView
                 android:id="@+id/iconPin"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="3dp"
                 android:src="@drawable/ic_pin"
                 android:visibility="gone"
                 android:contentDescription="@string/pin" />
 
             <ImageView
                 android:id="@+id/iconGroupMode"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="3dp"
                 android:scaleType="centerInside"
                 android:visibility="gone"
                 android:contentDescription="@string/group_send_mode" />
 
             <ImageView
                 android:id="@+id/iconStatus"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="3dp"
                 android:scaleType="centerInside"
                 android:visibility="gone"
                 android:contentDescription="@string/notif_status" />
 
             <ImageView
                 android:id="@+id/iconScheduled"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginStart="3dp"
                 android:src="@drawable/ic_schedule"
                 android:visibility="gone"
                 android:contentDescription="@string/schedule_send" />
 
             <TextView
-                android:id="@+id/convoUnread"
+                android:id="@+id/convoTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
-                android:textStyle="bold" />
+                android:maxLines="1"
+                android:alpha="0.6" />
         </LinearLayout>
 
         <LinearLayout
@@ -107,14 +128,21 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:alpha="0.75" />
+                android:alpha="0.7" />
 
+            <!-- unread count badge (accent circle / pill); GONE when 0 -->
             <TextView
-                android:id="@+id/convoTime"
+                android:id="@+id/convoUnread"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
-                android:alpha="0.75" />
+                android:minWidth="18dp"
+                android:gravity="center"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp"
+                android:maxLines="1"
+                android:textStyle="bold"
+                android:visibility="gone" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

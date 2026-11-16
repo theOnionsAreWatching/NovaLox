@@ -20,6 +20,8 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/back"
             android:scaleType="centerInside"
+            android:padding="7dp"
+            android:tint="?android:attr/textColorPrimary"
             android:src="@drawable/ic_back" />
 
         <LinearLayout
@@ -90,7 +92,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/divider" />
+        android:background="?attr/dsmsDivider" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -172,7 +174,7 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/divider" />
+        android:background="?attr/dsmsDivider" />
 
     <LinearLayout
         android:id="@+id/attachmentRow"

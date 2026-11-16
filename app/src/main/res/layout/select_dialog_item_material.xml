@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- D-SMS override of AppCompat's pop-up list row: compact, left-aligned
+     (start side, so RTL text lines up right), so more
+     items fit without scrolling. Only the title stays centered. Centered
+     rows are kept only where asked: see dialog_item_centered.xml. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/text1"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="36dp"
+    android:textAppearance="?attr/textAppearanceListItemSmall"
+    android:textColor="?attr/textColorAlertDialogListItem"
+    android:gravity="start|center_vertical"
+    android:textAlignment="viewStart"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp" />

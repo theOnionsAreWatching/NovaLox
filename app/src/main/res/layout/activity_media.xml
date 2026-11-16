@@ -1,20 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- thin see-through strips (top counter, bottom soft keys)
+     over the picture, auto-hiding. truly full screen. The picture fills the whole screen;
+     the counter (top) and the soft keys + video progress (bottom) float over
+     it and auto-hide; any key brings them back. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="@android:color/black">
 
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/pager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <LinearLayout
+        android:id="@+id/mediaTopBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="top"
         android:orientation="horizontal"
-        android:padding="6dp">
+        android:background="@drawable/bg_viewer_top"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="8dp">
 
         <TextView
             android:id="@+id/mediaCounter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:shadowColor="#000000"
+            android:shadowRadius="3"
             android:textColor="@android:color/white" />
 
         <TextView
@@ -25,17 +42,25 @@
             android:gravity="end"
             android:ellipsize="middle"
             android:maxLines="1"
+            android:textSize="11sp"
+            android:alpha="0.85"
+            android:shadowColor="#000000"
+            android:shadowRadius="3"
             android:textColor="@android:color/white" />
     </LinearLayout>
 
-    <androidx.viewpager2.widget.ViewPager2
-        android:id="@+id/pager"
+    <LinearLayout
+        android:id="@+id/mediaBottomBar"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bg_viewer_bottom"
+        android:paddingTop="10dp"
+        android:orientation="vertical">
 
     <LinearLayout
         android:id="@+id/videoProgressRow"
+        android:background="@android:color/transparent"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -73,4 +98,5 @@
     <include
         android:id="@+id/softkeyBar"
         layout="@layout/view_softkey_bar" />
-</LinearLayout>
+    </LinearLayout>
+</FrameLayout>

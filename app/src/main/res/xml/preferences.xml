@@ -1,162 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
-
     <Preference
         app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
         android:key="open_search"
-        android:title="@string/pref_search_messages" />
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_appearance">
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="theme"
-            android:title="@string/pref_theme"
-            android:entries="@array/theme_entries"
-            android:entryValues="@array/theme_values"
-            android:defaultValue="system"
-            android:summary="%s" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="app_zoom"
-            android:title="@string/pref_resize"
-            android:summary="@string/pref_resize_summary"
-            android:entries="@array/scale_entries"
-            android:entryValues="@array/scale_values"
-            android:defaultValue="1.0" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_customize"
-            android:title="@string/pref_customize"
-            android:summary="@string/pref_customize_summary" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_sound">
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="default_tone"
-            android:title="@string/pref_default_tone" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="vibrate_mode"
-            android:title="@string/pref_vibrate"
-            android:entries="@array/vibrate_entries"
-            android:entryValues="@array/vibrate_values"
-            android:defaultValue="always"
-            android:summary="%s" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_notifications">
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="notif_mode"
-            android:title="@string/pref_notif_mode"
-            android:entries="@array/notif_mode_entries"
-            android:entryValues="@array/notif_mode_values"
-            android:defaultValue="single"
-            android:summary="%s" />
-        <ListPreference
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="notif_clear_mode"
-            android:title="@string/pref_notif_clear"
-            android:entries="@array/notif_clear_entries"
-            android:entryValues="@array/notif_clear_values"
-            android:defaultValue="app"
-            android:summary="%s" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_mms">
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="auto_download_mms"
-            android:title="@string/pref_auto_mms"
-            android:summary="@string/pref_auto_mms_summary"
-            android:defaultValue="true" />
-        <ListPreference
-            app:iconSpaceReserved="false"
-            android:key="default_group_mode"
-            android:title="@string/pref_default_group_mode"
-            android:entries="@array/group_mode_entries"
-            android:entryValues="@array/group_mode_values"
-            android:defaultValue="group_mms"
-            android:summary="%s" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="save_to_sd"
-            android:title="@string/pref_save_to_sd"
-            android:summary="@string/pref_save_to_sd_summary"
-            android:defaultValue="false" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_mms_advanced"
-            android:title="@string/pref_mms_advanced"
-            android:summary="@string/pref_mms_advanced_summary" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_messages">
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_delivery"
-            android:title="@string/pref_delivery_group"
-            android:summary="@string/pref_delivery_group_summary" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_keywords"
-            android:title="@string/open_keywords_pref" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_blocked"
-            android:title="@string/open_blocked_pref" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_hidden"
-            android:title="@string/open_hidden_pref" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_other">
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="resync"
-            android:title="@string/resync_pref" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="refresh_contacts"
-            android:title="@string/refresh_contacts_pref" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_softkeys_settings"
-            android:title="@string/pref_softkey_settings"
-            android:summary="@string/pref_softkey_settings_summary" />
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="check_updates"
-            android:title="@string/pref_check_updates" />
-        <SwitchPreferenceCompat
-            app:singleLineTitle="false"
-            app:iconSpaceReserved="false"
-            android:key="delete_apk_after_update"
-            android:title="@string/pref_delete_apk"
-            android:summary="@string/pref_delete_apk_summary"
-            android:defaultValue="true" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/settings_advanced">
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="open_advanced"
-            android:title="@string/pref_advanced_group"
-            android:summary="@string/pref_advanced_group_summary" />
-    </PreferenceCategory>
-
-    <PreferenceCategory app:iconSpaceReserved="false" android:title="@string/about_title">
-        <Preference
-            app:iconSpaceReserved="false"
-            android:key="about_footer"
-            android:selectable="true"
-            android:title="@string/about_app_name"
-            android:summary="@string/about_summary" />
-    </PreferenceCategory>
+        android:title="@string/st_search" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_notifications"
+        android:title="@string/st_notifications" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_messages"
+        android:title="@string/st_messages" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_appearance"
+        android:title="@string/st_appearance" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_keys"
+        android:title="@string/st_keys" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_blocked_hidden"
+        android:title="@string/st_blocked" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_storage"
+        android:title="@string/st_storage" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_backup"
+        android:title="@string/st_backup" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="open_advanced"
+        android:title="@string/st_advanced" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:layout="@layout/pref_row_main"
+        android:key="about_footer"
+        android:title="@string/about_app_name" />
 </PreferenceScreen>

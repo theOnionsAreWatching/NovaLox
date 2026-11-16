@@ -21,6 +21,8 @@ class Prefs(context: Context) {
     var softkeySetupDone: Boolean
         get() = sp.getBoolean("softkey_setup_done", false)
         set(v) = sp.edit().putBoolean("softkey_setup_done", v).apply()
+    /** "Note to self" chat shown (default OFF) */
+    val notesEnabled: Boolean get() = sp.getBoolean("notes_chat", false)
     var learnedOwnNumbers: Set<String>
         get() = (sp.getString("learned_own_numbers", "") ?: "")
             .split(",").filter { it.isNotBlank() }.toSet()
@@ -58,7 +60,8 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_update_check", 0L)
         set(v) = sp.edit().putLong("last_update_check", v).apply()
     val appZoom: Float
-        get() = (sp.getString("app_zoom", "1.0") ?: "1.0").toFloatOrNull() ?: 1.0f
+        // default = real 0.9, labelled "100%"
+        get() = ZoomSteps.snapZoom(sp.getString("app_zoom", "0.9")).toFloat()
     var defaultTone: String
         get() = sp.getString("default_tone", "") ?: ""
         set(v) = sp.edit().putString("default_tone", v).apply()
@@ -83,7 +86,15 @@ class Prefs(context: Context) {
 
     // ---- appearance ----
     // system / light / dark
-    val theme: String get() = sp.getString("theme", "system") ?: "system"
+    // Canonical aliases also migrate old settings restored from a backup, without
+    // losing the user's light/dark choice or changing their independent accent.
+    val theme: String get() = when (val saved = sp.getString("theme", "system")) {
+        "black", "midnight" -> "graphite"
+        "forest" -> "dusk"
+        "paper" -> "linen"
+        "system", "light", "dark", "graphite", "dusk", "linen" -> saved!!
+        else -> "system"
+    }
     // dark-theme chat background: "default" = plain dark, "same" = reuse the
     // light-theme background, "#RRGGBB" = a color chosen for dark specifically
     var darkChatBg: String
@@ -138,6 +149,8 @@ class Prefs(context: Context) {
     // center D-pad key = Send while the cursor is in the message box
     val sendOnLeft: Boolean get() = sp.getBoolean("send_on_left", false)
     val saveToSd: Boolean get() = sp.getBoolean("save_to_sd", false)
+    /** Chats with unread messages sit at the top (under pinned) until read. */
+    val unreadOnTop: Boolean get() = sp.getBoolean("unread_on_top", true)
     var autoRetryIds: Set<String>
         get() = sp.getStringSet("auto_retry_ids", emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet("auto_retry_ids", v).apply()
@@ -148,6 +161,11 @@ class Prefs(context: Context) {
     val t9ContactMatch: Boolean get() = sp.getBoolean("t9_contact_match", true)
     // per-conversation compose drafts, autosaved on leaving the thread
     fun draft(convoId: Long): String = sp.getString("draft_$convoId", "") ?: ""
+    fun draftAttachments(convoId: Long): String = sp.getString("draft_att_$convoId", "") ?: ""
+    fun setDraftAttachments(convoId: Long, v: String) {
+        if (v.isBlank()) sp.edit().remove("draft_att_$convoId").apply()
+        else sp.edit().putString("draft_att_$convoId", v).apply()
+    }
     fun setDraft(convoId: Long, v: String) {
         if (v.isBlank()) sp.edit().remove("draft_$convoId").apply()
         else sp.edit().putString("draft_$convoId", v).apply()
@@ -177,6 +195,10 @@ class Prefs(context: Context) {
      *  handsets send), "3gp" (AMR in a 3GPP container) or "amr" (raw AMR).
      *  Raw AMR is what Verizon's MMSC most eagerly transcodes to QCELP. */
     val voiceFormat: String get() = sp.getString("voice_format", "m4a") ?: "m4a"
+    // play voice notes through the earpiece (like a call) instead of the speaker
+    var voiceEarpiece: Boolean
+        get() = sp.getBoolean("voice_earpiece", false)
+        set(v) { sp.edit().putBoolean("voice_earpiece", v).apply() }
     // 0.9.52: the boolean spoof switch became a profile picker. Migration:
     // an existing explicit OFF carries over; everything else starts on the
     // carrier identity (the previous behavior).
@@ -247,4 +269,15 @@ class Prefs(context: Context) {
             instance ?: Prefs(context.applicationContext).also { instance = it }
         }
     }
+}
+
+object ZoomSteps {
+    /** Only 80%..120% (real 0.7..1.1). Anything else, from old
+     *  installs or restored files, snaps to the nearest allowed step. */
+    val ZOOM_VALUES = listOf("0.7", "0.8", "0.9", "1.0", "1.1")
+    fun snapZoom(raw: String?): String {
+        val v = raw?.toFloatOrNull() ?: return "0.9"
+        return ZOOM_VALUES.minByOrNull { kotlin.math.abs(it.toFloat() - v) } ?: "0.9"
+    }
+
 }

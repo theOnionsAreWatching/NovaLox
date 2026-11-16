@@ -41,9 +41,10 @@ object NumberListPicker {
         }
 
         val input = EditText(activity).apply {
-            hint = activity.getString(R.string.np_hint)
+            hint = activity.getString(R.string.recipient_hint)
             setSingleLine(true)
         }
+        column.addView(Dialogs.inputHelp(activity, activity.getString(R.string.np_hint)))
         column.addView(input)
 
         val suggestions = LinearLayout(activity).apply {
@@ -90,9 +91,9 @@ object NumberListPicker {
                 row.addView(TextView(activity).apply {
                     text = "\u2715"  // ✕ remove
                     textSize = 16f
-                    setPadding(dp(12), dp(2), dp(4), dp(2))
+                    setPadding(dp(14), dp(4), dp(14), dp(4))
                     isFocusable = true
-                    ThemeUtils.applyFocusHighlight(this)
+                    ThemeUtils.applyDialogRowFocus(this)
                     setOnClickListener { chosen.remove(num); refreshChosen() }
                 })
                 chosenList.addView(row)
@@ -120,9 +121,9 @@ object NumberListPicker {
                 suggestions.addView(TextView(activity).apply {
                     text = activity.getString(R.string.add_number_row) + "  " + q.trim()
                     textSize = 14f
-                    setPadding(dp(6), dp(8), dp(6), dp(8))
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
                     isFocusable = true
-                    ThemeUtils.applyFocusHighlight(this)
+                    ThemeUtils.applyDialogRowFocus(this)
                     setOnClickListener { addNumber(q.trim()) }
                 })
             }
@@ -134,14 +135,15 @@ object NumberListPicker {
                 suggestions.addView(TextView(activity).apply {
                     text = "${m.name}  ${m.number}"
                     textSize = 14f
-                    setPadding(dp(6), dp(8), dp(6), dp(8))
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
                     isFocusable = true
-                    ThemeUtils.applyFocusHighlight(this)
+                    ThemeUtils.applyDialogRowFocus(this)
                     setOnClickListener { addNumber(m.number) }
                 })
             }
         }
 
+        io.github.theonionsarewatching.nova.util.ClipboardGuard.watch(input)
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -163,10 +165,13 @@ object NumberListPicker {
                     clip.take(30) + if (clip.length > 30) "\u2026" else ""
                 textSize = 13f
                 setTextColor(Color.GRAY)
-                setPadding(dp(6), dp(8), dp(6), dp(8))
+                setPadding(dp(16), dp(8), dp(16), dp(8))
                 isFocusable = true
-                ThemeUtils.applyFocusHighlight(this)
-                setOnClickListener { input.setText(clip.trim()); input.setSelection(input.length()) }
+                ThemeUtils.applyDialogRowFocus(this)
+                setOnClickListener {
+                    io.github.theonionsarewatching.nova.util.ClipboardGuard.markPasted(clip)
+                    input.setText(clip.trim()); input.setSelection(input.length())
+                }
             }, 1)
         }
 
@@ -180,8 +185,8 @@ object NumberListPicker {
         }
 
         val scroll = ScrollView(activity).apply { addView(column) }
-        AlertDialog.Builder(activity)
-            .setTitle(titleRes)
+        DsmsFrameworkAlertBuilder(activity)
+            .setCustomTitle(Dialogs.title(activity, activity.getString(titleRes)))
             .setView(scroll)
             .setPositiveButton(R.string.save) { _, _ -> onDone(chosen.toList()) }
             .setNegativeButton(android.R.string.cancel, null)

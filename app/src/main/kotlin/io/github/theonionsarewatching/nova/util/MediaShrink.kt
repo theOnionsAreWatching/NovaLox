@@ -19,6 +19,57 @@ object MediaShrink {
      * Returns JPEG bytes no larger than [budget], or null when the input can't
      * be decoded (caller then sends the original and lets the engine decide).
      */
+    /** Same as [shrinkToBudget], but decodes straight from the file so the
+     *  (often multi-MB) original never has to sit in memory as a byte array. */
+    fun shrinkFileToBudget(path: String, budget: Int, maxEdge: Int = MAX_EDGE): ByteArray? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxEdge) {
+                sample *= 2
+            }
+            val bmp = BitmapFactory.decodeFile(
+                path, BitmapFactory.Options().apply { inSampleSize = sample }
+            ) ?: return null
+            compressLadder(bmp, budget)
+        } catch (_: Exception) {
+            null
+        } catch (_: OutOfMemoryError) {
+            null
+        }
+    }
+
+    /** Quality ladder, then dimension reduction if still too big. Recycles
+     *  the intermediate bitmaps it creates. */
+    private fun compressLadder(start: Bitmap, budget: Int): ByteArray {
+        var bmp = start
+        try {
+            while (true) {
+                for (quality in intArrayOf(90, 80, 70, 60, 50, 40)) {
+                    val out = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                    if (out.size() <= budget) return out.toByteArray()
+                }
+                val nw = (bmp.width * 3) / 4
+                val nh = (bmp.height * 3) / 4
+                if (maxOf(nw, nh) < 320) {
+                    val out = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 40, out)
+                    return out.toByteArray()
+                }
+                val next = Bitmap.createScaledBitmap(bmp, nw, nh, true)
+                if (next !== bmp) bmp.recycle()
+                bmp = next
+            }
+            @Suppress("UNREACHABLE_CODE")
+            throw IllegalStateException("unreachable")
+        } finally {
+            runCatching { bmp.recycle() }
+        }
+    }
+
     fun shrinkToBudget(input: ByteArray, budget: Int, maxEdge: Int = MAX_EDGE): ByteArray? {
         return try {
             // pass 1: bounds only, choose a power-of-two sample size

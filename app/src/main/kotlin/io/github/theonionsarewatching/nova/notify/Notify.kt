@@ -21,6 +21,9 @@ object NotificationHelper {
 
     private const val DEFAULT_PREFIX = "messages_"
     private const val CONVO_PREFIX = "msg_"
+    /** One shared quiet channel for muted conversations. Starts with
+     *  DEFAULT_PREFIX so refreshAllChannels also clears it. */
+    private const val MUTED_CHANNEL = "${DEFAULT_PREFIX}muted_v1"
 
     /** Effective settings after applying the per-conversation override, if any.
      *  tone: "" = system default sound, "silent" = none, else a sound URI. */
@@ -47,6 +50,10 @@ object NotificationHelper {
     /** Channels are immutable once created, so the id embeds the settings —
      *  changing tone or vibration simply produces a fresh channel. */
     private fun ensureChannel(context: Context, convo: ConversationEntity?): String {
+        // muted: on Android 8+ the CHANNEL decides sound / vibration / light,
+        // and builder.setSilent() alone does not stop a loud channel. So a
+        // muted conversation always posts to its own quiet channel.
+        if (convo != null && convo.muted) return ensureMutedChannel(context)
         val tone = effectiveTone(context, convo)
         val vibrate = effectiveVibrate(context, convo)
         val overridden = convo != null &&
@@ -73,6 +80,22 @@ object NotificationHelper {
             }
         }
         return id
+    }
+
+    private fun ensureMutedChannel(context: Context): String {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(MUTED_CHANNEL) == null) {
+                val ch = NotificationChannel(MUTED_CHANNEL,
+                    context.getString(R.string.channel_muted), NotificationManager.IMPORTANCE_LOW)
+                ch.setSound(null, null)
+                ch.enableVibration(false)
+                ch.vibrationPattern = null
+                ch.enableLights(false)
+                nm.createNotificationChannel(ch)
+            }
+        }
+        return MUTED_CHANNEL
     }
 
     /** Shown from boot when the default-SMS role was lost across a reboot. */
@@ -205,15 +228,25 @@ object NotificationHelper {
                     .setShowsUserInterface(false)
                     .build()
             )
-        builder.setLights(android.graphics.Color.WHITE, 500, 500)
-        if (Build.VERSION.SDK_INT < 26) {
-            builder.setSound(soundUri(effectiveTone(context, convo)))
-            builder.setVibrate(
-                if (effectiveVibrate(context, convo)) longArrayOf(0, 250, 150, 250)
-                else longArrayOf(0)
-            )
+        if (convo.muted) {
+            // muted: still shown, but no sound, no buzz, no light, no pop-up.
+            // The quiet channel (8+) does the real work; these cover < 8 and
+            // make an update of an existing notification (single mode id
+            // 1000) not alert again.
+            builder.setSilent(true)
+            builder.setOnlyAlertOnce(true)
+            builder.setPriority(NotificationCompat.PRIORITY_LOW)
+            builder.setLights(0, 0, 0)
+        } else {
+            builder.setLights(android.graphics.Color.WHITE, 500, 500)
+            if (Build.VERSION.SDK_INT < 26) {
+                builder.setSound(soundUri(effectiveTone(context, convo)))
+                builder.setVibrate(
+                    if (effectiveVibrate(context, convo)) longArrayOf(0, 250, 150, 250)
+                    else longArrayOf(0)
+                )
+            }
         }
-        if (convo.muted) builder.setSilent(true)
 
         val single = io.github.theonionsarewatching.nova.util.Prefs.get(context)
             .notifMode != "per_convo"
@@ -253,8 +286,49 @@ object NotificationHelper {
         }
     }
 
-    fun cancel(context: Context, convoId: Long) {
+    /** [refreshSingle]: from the notification's own buttons (background
+     *  thread, after the read state is saved). */
+    fun cancel(context: Context, convoId: Long, refreshSingle: Boolean = false) {
         NotificationManagerCompat.from(context).cancel(convoId.toInt())
+        if (!refreshSingle) return
+        // in the default "one notification" mode everything is
+        // shown under id 1000, which the line above never touched, so after
+        // Mark read / Mark all read / Reply the notification stayed up.
+        if (io.github.theonionsarewatching.nova.util.Prefs.get(context).notifMode != "per_convo") {
+            refreshSingle(context)
+        }
+    }
+
+    /** Single mode: nothing unread left -> remove notification 1000;
+     *  other chats still unread -> update it quietly ("N new messages",
+     *  no sound or buzz again). */
+    fun refreshSingle(context: Context) {
+        val nm = NotificationManagerCompat.from(context)
+        val (convos, total) = try {
+            kotlinx.coroutines.runBlocking {
+                val db = io.github.theonionsarewatching.nova.data.Repo.get(context).db
+                db.messages().unreadConvoCount() to db.messages().totalUnread()
+            }
+        } catch (_: Exception) { 0 to 0 }
+        if (total <= 0 || convos <= 0) { nm.cancel(1000); return }
+        var flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if (Build.VERSION.SDK_INT >= 23) flags = flags or PendingIntent.FLAG_IMMUTABLE
+        val home = Intent(context, io.github.theonionsarewatching.nova.ui.MainActivity::class.java)
+            .apply { this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP }
+        val markAll = Intent(context, MarkReadReceiver::class.java).putExtra("convo_id", -2L)
+        val text = context.getString(R.string.new_messages_count, total)
+        val builder = NotificationCompat.Builder(context, ensureChannel(context, null))
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.app_name))
+            .setContentText(text)
+            .setNumber(total)
+            .setContentIntent(PendingIntent.getActivity(context, 999, home, flags))
+            .addAction(0, context.getString(R.string.action_mark_all_read),
+                PendingIntent.getBroadcast(context, 998, markAll, flags))
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+        try { nm.notify(1000, builder.build()) } catch (_: SecurityException) {}
     }
 }
 
@@ -273,7 +347,7 @@ class ReplyReceiver : BroadcastReceiver() {
                 repo.sendText(convoId, text)
                 repo.db.messages().markThreadRead(convoId)
                 repo.refreshConversation(convoId)
-                NotificationHelper.cancel(context, convoId)
+                NotificationHelper.cancel(context, convoId, refreshSingle = true)
             } catch (_: Exception) {} finally { pending.finish() }
         }
     }
@@ -295,7 +369,7 @@ class MarkReadReceiver : BroadcastReceiver() {
                 repo.refreshConversation(convoId)
                 }
                 io.github.theonionsarewatching.nova.data.ChangeBus.ping()
-                NotificationHelper.cancel(context, convoId)
+                NotificationHelper.cancel(context, convoId, refreshSingle = true)
             } finally {
                 pending.finish()
             }

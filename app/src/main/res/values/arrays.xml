@@ -36,14 +36,12 @@
     </string-array>
 
     <string-array name="theme_entries">
-        <item>Follow system</item>
-        <item>Light</item>
-        <item>Dark</item>
+        <item>Follow system</item><item>Light</item><item>Dark</item>
+        <item>Graphite</item><item>Dusk</item><item>Linen</item>
     </string-array>
     <string-array name="theme_values">
-        <item>system</item>
-        <item>light</item>
-        <item>dark</item>
+        <item>system</item><item>light</item><item>dark</item>
+        <item>graphite</item><item>dusk</item><item>linen</item>
     </string-array>
 
     <string-array name="accent_entries">
@@ -56,6 +54,20 @@
         <item>Purple</item>
         <item>Pink</item>
         <item>Gray</item>
+        <item>Amber</item>
+        <item>Gold</item>
+        <item>Coral</item>
+        <item>Crimson</item>
+        <item>Rose</item>
+        <item>Violet</item>
+        <item>Indigo</item>
+        <item>Sky blue</item>
+        <item>Cyan</item>
+        <item>Mint</item>
+        <item>Lime</item>
+        <item>Olive</item>
+        <item>Brown</item>
+        <item>Slate</item>
     </string-array>
     <string-array name="accent_values">
         <item>system</item>
@@ -67,19 +79,41 @@
         <item>purple</item>
         <item>pink</item>
         <item>gray</item>
+        <item>amber</item>
+        <item>gold</item>
+        <item>coral</item>
+        <item>crimson</item>
+        <item>rose</item>
+        <item>violet</item>
+        <item>indigo</item>
+        <item>sky</item>
+        <item>cyan</item>
+        <item>mint</item>
+        <item>lime</item>
+        <item>olive</item>
+        <item>brown</item>
+        <item>slate</item>
     </string-array>
 
     <string-array name="style_entries">
         <item>Bubbles</item>
         <item>Accent bar (full width)</item>
         <item>Plain (indent only)</item>
-            <item>Square</item>
+        <item>Square</item>
+        <item>Round (no tail)</item>
+        <item>Outline</item>
+        <item>Full-width blocks</item>
+        <item>Lines (no bubbles)</item>
     </string-array>
     <string-array name="style_values">
         <item>bubble</item>
         <item>accentbar</item>
         <item>plain</item>
-            <item>square</item>
+        <item>square</item>
+        <item>round</item>
+        <item>outline</item>
+        <item>blocks</item>
+        <item>lines</item>
     </string-array>
 
     <string-array name="msg_size_entries">
@@ -174,6 +208,24 @@
         <item>1.15</item>
         <item>1.3</item>
         <item>1.5</item>
+    </string-array>
+
+    <!-- Settings > Resize. The real size factors are the
+         same as before; the labels moved one step so the old 90% look is
+         called 100% (the default). Text-size uses scale_* unchanged. -->
+    <string-array name="zoom_entries">
+        <item>80%</item>
+        <item>90%</item>
+        <item>100%</item>
+        <item>110%</item>
+        <item>120%</item>
+    </string-array>
+    <string-array name="zoom_values">
+        <item>0.7</item>
+        <item>0.8</item>
+        <item>0.9</item>
+        <item>1.0</item>
+        <item>1.1</item>
     </string-array>
 
     <string-array name="stroke_entries">

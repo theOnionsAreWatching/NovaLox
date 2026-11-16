@@ -46,7 +46,7 @@ object ConvoMenus {
             SoundDialog.show(activity, c.id)
         }
         items += activity.getString(R.string.hide_conversation) to {
-            AlertDialog.Builder(activity)
+            DsmsAlertBuilder(activity)
                 .setMessage(R.string.hide_confirm)
                 .setPositiveButton(R.string.hide) { _, _ ->
                     activity.lifecycleScope.launch {
@@ -66,18 +66,18 @@ object ConvoMenus {
                 if (blocked) {
                     activity.lifecycleScope.launch {
                         repo.unblockNumber(number)
-                        android.widget.Toast.makeText(activity, R.string.number_unblocked,
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(activity, R.string.number_unblocked,
                             android.widget.Toast.LENGTH_SHORT).show()
                         onChanged()
                     }
                 } else {
-                    AlertDialog.Builder(activity)
+                    DsmsAlertBuilder(activity)
                         .setTitle(R.string.block_number)
                         .setMessage(R.string.block_number_warning)
                         .setPositiveButton(R.string.block_number) { _, _ ->
                             activity.lifecycleScope.launch {
                                 val systemOk = repo.blockNumber(number)
-                                android.widget.Toast.makeText(activity,
+                                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(activity,
                                     if (systemOk) R.string.number_blocked
                                     else R.string.number_blocked_local,
                                     android.widget.Toast.LENGTH_SHORT).show()
@@ -89,7 +89,7 @@ object ConvoMenus {
                 }
             }
         }
-        AlertDialog.Builder(activity)
+        DsmsAlertBuilder(activity)
             .setTitle(R.string.block_and_menu)
             .setItems(items.map { it.first }.toTypedArray()) { _, w -> items[w].second() }
             .show()

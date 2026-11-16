@@ -18,6 +18,23 @@ import io.github.theonionsarewatching.nova.databinding.ItemMediaPageBinding
 import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * the picture viewer, redone.
+ *
+ * - The picture fills the whole screen (status bar hidden). It is decoded
+ *   from the original file at up to 4x the screen size, and drawn through
+ *   a matrix ([ZoomImageView]), so it is sharp at every zoom step.
+ * - No big bars: a thin see-through counter strip on top and the soft-key
+ *   strip at the bottom float over the picture and fade out after 2.5 s.
+ *   Any key brings them back; while hidden, a soft-key press only shows
+ *   them (so the labels are seen before acting).
+ * - Keys (actions on key-up): * zoom in, # zoom out, OK zoom 2x / back.
+ *   Not zoomed: Left / Right = previous / next picture. Zoomed: the D-pad
+ *   pans (on key-down, repeats while held). BACK leaves zoom first, then
+ *   the viewer.
+ * - Soft keys: left "All" (choose a picture from a list, when there are
+ *   several; else Back), center Play/Pause for videos, right "Save".
+ */
 class MediaViewerActivity : BaseActivity() {
 
     companion object {
@@ -39,23 +56,27 @@ class MediaViewerActivity : BaseActivity() {
         val partId = intent.getLongExtra(EXTRA_PART_ID, -1L)
 
         binding.pager.orientation = ViewPager2.ORIENTATION_HORIZONTAL
+        // keep the neighbours ready: Left / Right shows the next picture at once
+        binding.pager.offscreenPageLimit = 1
+        goFullScreen()
 
-        // this screen's labels sit centered in their cells so neither hugs an
-        // edge — "Save" was clipping its last glyph at the right boundary
-        binding.softkeyBar.softLeft.gravity = android.view.Gravity.CENTER
-        binding.softkeyBar.softRight.gravity = android.view.Gravity.CENTER
-        softkeys = Softkeys(this, binding.softkeyBar).also {
-            it.set(
-                getString(R.string.back), getString(R.string.play), getString(R.string.save),
-                onLeft = { finish() },
-                onCenter = { playCurrent() },
-                onRight = { saveCurrent() }
-            )
+        // the soft-key strip is see-through over the picture: white labels
+        // with a soft shadow read on any photo (the viewer stays dark on
+        // purpose, whatever the app theme)
+        val bar = binding.softkeyBar
+        bar.root.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        for (t in listOf(bar.softLeft, bar.softCenter, bar.softRight)) {
+            t.setTextColor(android.graphics.Color.WHITE)
+            t.setShadowLayer(3f * resources.displayMetrics.density, 0f, 0f, android.graphics.Color.BLACK)
+            t.gravity = android.view.Gravity.CENTER
         }
+        softkeys = Softkeys(this, binding.softkeyBar)
 
         binding.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 stopPlayback()
+                // a picture left zoomed is shown at its start size next time
+                resetOtherPages()
                 updateCounter(position)
                 updateMediaSoftkeys()
             }
@@ -64,7 +85,7 @@ class MediaViewerActivity : BaseActivity() {
         lifecycleScope.launch {
             parts = repo.db.parts().mediaForConvo(convoId)
             if (parts.isEmpty()) { finish(); return@launch }
-            binding.pager.adapter = PageAdapter(parts) { playCurrent() }
+            binding.pager.adapter = PageAdapter(parts) { showBarsBriefly() }
             val start = parts.indexOfFirst { it.id == partId }.coerceAtLeast(0)
             binding.pager.setCurrentItem(start, false)
             updateCounter(start)
@@ -72,9 +93,65 @@ class MediaViewerActivity : BaseActivity() {
         }
     }
 
+    // ---------------- thin auto-hiding bars ----------------
+    private val barsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var barsShown = true
+    private val hideBarsRunnable = Runnable { setBars(false) }
+    private var revealSwallowCode = 0
+    private var revealAt = 0L
+
+    private fun goFullScreen() {
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat
+                .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        scheduleHideBars()
+    }
+
+    private fun setBars(show: Boolean) {
+        barsShown = show
+        for (v in listOf(binding.mediaTopBar, binding.mediaBottomBar)) {
+            v.animate().cancel()
+            if (show) {
+                v.visibility = View.VISIBLE
+                v.animate().alpha(1f).setDuration(120).start()
+            } else {
+                v.animate().alpha(0f).setDuration(250)
+                    .withEndAction { if (!barsShown) v.visibility = View.INVISIBLE }.start()
+            }
+        }
+    }
+
+    private fun scheduleHideBars() {
+        barsHandler.removeCallbacks(hideBarsRunnable)
+        // a playing video keeps its progress strip up
+        barsHandler.postDelayed(hideBarsRunnable, 2500)
+    }
+
+    private fun showBarsBriefly() {
+        if (!barsShown) setBars(true)
+        scheduleHideBars()
+    }
+
+    private fun isRevealOnlyKey(code: Int): Boolean = code != KeyEvent.KEYCODE_BACK && (
+        code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_SOFT_LEFT ||
+            code == KeyEvent.KEYCODE_SOFT_RIGHT ||
+            (code == prefs.softkeyLeftCode && code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER) ||
+            (code == prefs.softkeyRightCode && code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER))
+
+    override fun onDestroy() {
+        barsHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
     private fun updateCounter(position: Int) {
-        binding.mediaCounter.text = getString(R.string.media_counter, position + 1, parts.size)
         val p = parts.getOrNull(position)
+        val iv = if (p?.isImage() == true) currentImageView() else null
+        // the zoom level shows next to the counter while zoomed
+        val zoom = if (iv != null && (iv.isZoomedIn || iv.percent < 100))
+            "  \u00B7  " + getString(R.string.viewer_zoom_pct, iv.percent) else ""
+        binding.mediaCounter.text = getString(R.string.media_counter, position + 1, parts.size) + zoom
         binding.mediaName.text = p?.fileName ?: ""
     }
 
@@ -132,84 +209,137 @@ class MediaViewerActivity : BaseActivity() {
     private fun isVideoPlaying(): Boolean =
         try { currentVideoView()?.isPlaying == true } catch (_: Exception) { false }
 
-    /** Center softkey reads Play for a stopped/paused video, Pause while playing,
-     *  and nothing at all on images. */
+
+    /** Soft keys: left "All" (several pictures) or Back, center Play/Pause
+     *  for videos, right Save. */
     private fun updateMediaSoftkeys(forcePlaying: Boolean? = null) {
         val p = currentPart()
         val playing = forcePlaying ?: isVideoPlaying()
         val center = when {
             p != null && p.isVideo() && playing -> getString(R.string.pause)
             p != null && p.isVideo() -> getString(R.string.play)
-            p != null && p.isImage() -> getString(R.string.zoom)
             else -> ""
         }
+        val several = parts.size > 1
         softkeys?.set(
-            getString(R.string.back), center, getString(R.string.save),
-            onLeft = { finish() },
-            onCenter = { if (currentPart()?.isImage() == true) enterZoom() else playCurrent() },
-            onRight = { saveCurrent() }
+            if (several) getString(R.string.viewer_all) else getString(R.string.back),
+            center, getString(R.string.save),
+            onLeft = { if (several) chooseMedia() else finish() },
+            onCenter = { if (currentPart()?.isVideo() == true) playCurrent() },
+            onRight = { saveCurrent() },
+            onMenu = { viewerOptions() }
         )
-        // "Zoom" renders exactly like Back and Save — same size, same face
-        binding.softkeyBar.softCenter.setTextSize(
-            android.util.TypedValue.COMPLEX_UNIT_PX, binding.softkeyBar.softLeft.textSize
-        )
-        binding.softkeyBar.softCenter.typeface = binding.softkeyBar.softLeft.typeface
-        // the viewer's bar shows even with softkeys off: pictures always
-        // offer Zoom in the center, videos Play
+        // the viewer's bar shows even with softkeys off
         binding.softkeyBar.root.visibility =
             if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode)
                 View.GONE else View.VISIBLE
+        updateCounter(binding.pager.currentItem)
     }
 
-    // ---------------- zoom mode ----------------
-    // center D-pad on a picture enters zoom: # zooms in, * zooms out (each
-    // label shows only when that step is possible), the D-pad pans instead of
-    // switching pictures, BACK returns to the normal viewer. Videos untouched.
+    /** "All": pick which picture / video to show, as a themed list with
+     *  small previews; the current one is preselected. */
+    private fun chooseMedia() {
+        val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+        val labels = parts.mapIndexed { i, p ->
+            getString(R.string.media_counter, i + 1, parts.size) +
+                (if (p.isVideo()) "  \u25B6" else "")
+        }
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount() = parts.size
+            override fun getItem(i: Int) = parts[i]
+            override fun getItemId(i: Int) = parts[i].id
+            override fun getView(i: Int, convert: View?, parent: ViewGroup): View {
+                val row = (convert as? android.widget.LinearLayout) ?: android.widget.LinearLayout(parent.context).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(3), dp(12), dp(3))
+                    background = androidx.core.content.ContextCompat.getDrawable(parent.context, R.drawable.bg_dialog_item)
+                    addView(android.widget.ImageView(parent.context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    }, android.widget.LinearLayout.LayoutParams(dp(40), dp(40)))
+                    addView(android.widget.TextView(parent.context).apply {
+                        textSize = 15f
+                        setPadding(dp(10), 0, 0, 0)
+                        androidx.core.content.ContextCompat.getColorStateList(parent.context, R.color.dialog_item_text)
+                            ?.let { setTextColor(it) }
+                    })
+                }
+                val p = parts[i]
+                (row.getChildAt(0) as android.widget.ImageView).load(File(p.filePath)) {
+                    size(dp(40), dp(40))
+                    if (p.isVideo()) videoFrameMillis(1000)
+                }
+                (row.getChildAt(1) as android.widget.TextView).text = labels[i]
+                return row
+            }
+        }
+        val d = DsmsAlertBuilder(this)
+            .setCustomTitle(Dialogs.title(this, getString(R.string.viewer_all_title)))
+            .setAdapter(adapter) { _, which -> binding.pager.setCurrentItem(which, false) }
+            .create()
+        // the cursor starts on the picture being viewed (DialogPolish)
+        d.window?.decorView?.setTag(R.id.dsms_default_row, binding.pager.currentItem)
+        d.show()
+    }
 
-    private var zoomMode = false
-    private var zoomScale = 1f
-    // pinch zoom lives at the ACTIVITY dispatch level: it survives page
-    // swipes, needs no laid-out view to attach to (the old per-view attach
-    // ran before the pager laid out its first page, burned its one-shot
-    // flag, and died), and only intercepts while a pinch is in progress or
-    // zoom mode is panning — pager swipes and video controls are untouched
+    // ---------------- zoom ----------------
+    private fun currentImageView(): ZoomImageView? {
+        val rv = binding.pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
+            ?: return null
+        val page = rv.layoutManager?.findViewByPosition(binding.pager.currentItem) ?: return null
+        return page.findViewById(R.id.pageImage)
+    }
+
+    private fun currentPicture(): ZoomImageView? =
+        if (currentPart()?.isImage() == true) currentImageView() else null
+
+    private fun resetOtherPages() {
+        val rv = binding.pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+        for (i in 0 until rv.childCount) {
+            val iv = rv.getChildAt(i).findViewById<ZoomImageView>(R.id.pageImage) ?: continue
+            if (iv !== currentImageView()) iv.reset()
+        }
+    }
+
+    /** zoomed pictures own the swipe (touch phones pan instead) */
+    private fun onZoomChanged() {
+        val z = currentPicture()?.isZoomedIn == true
+        binding.pager.isUserInputEnabled = !z
+        updateCounter(binding.pager.currentItem)
+    }
+
+    // touch phones: pinch / double tap zoom, drag pans while zoomed
     private var panLastX = 0f
     private var panLastY = 0f
     private val tapDetector by lazy {
         android.view.GestureDetector(this,
             object : android.view.GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
-                    // double tap toggles zoom: in at 2x, back out to fit
-                    if (zoomMode) exitZoom()
-                    else { enterZoom(); setZoomScale(2f) }
-                    return true
+                    currentPicture()?.toggle(); onZoomChanged(); return true
                 }
             })
     }
-
     private val pinchDetector by lazy {
         android.view.ScaleGestureDetector(this,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
-                    if (!zoomMode) enterZoom()
-                    val next = (zoomScale * d.scaleFactor).coerceIn(1f, 6f)
-                    setZoomScale(next)
-                    if (next <= 1.02f) exitZoom()   // pinching fully in leaves zoom
-                    return true
+                    currentPicture()?.scaleBy(d.scaleFactor); onZoomChanged(); return true
                 }
             })
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) showBarsBriefly()
         if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode) {
             tapDetector.onTouchEvent(ev)
             pinchDetector.onTouchEvent(ev)
             if (pinchDetector.isInProgress) return true
-            if (zoomMode) {
+            val iv = currentPicture()
+            if (iv != null && iv.isZoomedIn) {
                 when (ev.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> { panLastX = ev.x; panLastY = ev.y }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        panBy(ev.x - panLastX, ev.y - panLastY)
+                        iv.pan(ev.x - panLastX, ev.y - panLastY)
                         panLastX = ev.x; panLastY = ev.y
                     }
                 }
@@ -217,110 +347,6 @@ class MediaViewerActivity : BaseActivity() {
             }
         }
         return super.dispatchTouchEvent(ev)
-    }
-
-    private fun currentImageView(): android.widget.ImageView? {
-        val rv = binding.pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView
-            ?: return null
-        val page = rv.layoutManager?.findViewByPosition(binding.pager.currentItem) ?: return null
-        return page.findViewById(R.id.pageImage)
-    }
-
-    private fun enterZoom() {
-        val iv = currentImageView() ?: return
-        zoomMode = true
-        zoomScale = 1f
-        binding.pager.isUserInputEnabled = false
-        iv.scaleX = 1f; iv.scaleY = 1f; iv.translationX = 0f; iv.translationY = 0f
-        updateZoomSoftkeys()
-    }
-
-    private fun exitZoom() {
-        zoomMode = false
-        currentImageView()?.apply {
-            scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f
-        }
-        binding.pager.isUserInputEnabled = true
-        updateMediaSoftkeys()
-    }
-
-    private fun zoomStep(zoomIn: Boolean) {
-        setZoomScale(
-            if (zoomIn) (zoomScale * 1.5f).coerceAtMost(4f)
-            else (zoomScale / 1.5f).let { if (it < 1.15f) 1f else it }
-        )
-    }
-
-    private fun setZoomScale(v: Float) {
-        val iv = currentImageView() ?: return
-        zoomScale = v
-        iv.scaleX = zoomScale
-        iv.scaleY = zoomScale
-        clampPan(iv)
-        updateZoomSoftkeys()
-    }
-
-    private fun panBy(dx: Float, dy: Float) {
-        val iv = currentImageView() ?: return
-        iv.translationX += dx
-        iv.translationY += dy
-        clampPan(iv)
-    }
-
-    private fun clampPan(iv: android.widget.ImageView) {
-        val maxX = (zoomScale - 1f) * iv.width / 2f
-        val maxY = (zoomScale - 1f) * iv.height / 2f
-        iv.translationX = iv.translationX.coerceIn(-maxX, maxX)
-        iv.translationY = iv.translationY.coerceIn(-maxY, maxY)
-    }
-
-    private fun updateZoomSoftkeys() {
-        val canOut = zoomScale > 1f
-        val canIn = zoomScale < 4f
-        val barOn = softkeys?.shouldShow() == true
-        softkeys?.set(
-            if (canOut) getString(R.string.zoom_out_label) else null,
-            null,
-            if (canIn) getString(R.string.zoom_in_label) else null,
-            onLeft = { zoomStep(false) },
-            onCenter = null,
-            onRight = { zoomStep(true) },
-            // MENU defaults to the left action — that would make the MENU key
-            // zoom out. Keep MENU inert inside zoom mode (BACK exits).
-            onMenu = {}
-        )
-        // softkey bar ON: the softkeys themselves zoom — each shows just its
-        // magnifier. Bar OFF (forced-visible viewer bar): * and # zoom, with
-        // the magnifiers sitting right beside those key labels.
-        if (canOut) {
-            binding.softkeyBar.softLeft.text = iconLabel(
-                if (barOn) "" else "* ", R.drawable.ic_zoom_out, binding.softkeyBar.softLeft
-            )
-        }
-        if (canIn) {
-            binding.softkeyBar.softRight.text = iconLabel(
-                if (barOn) "" else "# ", R.drawable.ic_zoom_in, binding.softkeyBar.softRight
-            )
-        }
-        binding.softkeyBar.root.visibility =
-            if (io.github.theonionsarewatching.nova.util.Prefs.get(this).touchMode)
-                View.GONE else View.VISIBLE
-    }
-
-    /** "<txt> [icon]" as one centered piece, icon sized off the label font. */
-    private fun iconLabel(
-        txt: String, iconRes: Int, tv: android.widget.TextView
-    ): CharSequence {
-        val d = androidx.core.content.ContextCompat.getDrawable(this, iconRes)!!.mutate()
-        val sz = (tv.textSize * 1.6f).toInt()
-        d.setBounds(0, 0, sz, sz)
-        d.setTint(tv.currentTextColor)
-        val ssb = android.text.SpannableStringBuilder(txt).append("\u25A1")
-        ssb.setSpan(
-            android.text.style.ImageSpan(d, android.text.style.ImageSpan.ALIGN_BOTTOM),
-            ssb.length - 1, ssb.length, 0
-        )
-        return ssb
     }
 
     private fun playCurrent() {
@@ -419,7 +445,7 @@ class MediaViewerActivity : BaseActivity() {
     /** MENU: fallback actions for files this phone's codecs struggle with. */
     private fun viewerOptions() {
         val p = currentPart() ?: return
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setItems(arrayOf(
                 getString(R.string.open_with_system), getString(R.string.save)
             )) { _, which ->
@@ -449,8 +475,8 @@ class MediaViewerActivity : BaseActivity() {
     private fun saveCurrent() {
         val p = currentPart() ?: return
         lifecycleScope.launch {
-            val loc = Saver.save(this@MediaViewerActivity, File(p.filePath), p.fileName, p.mimeType)
-            android.widget.Toast.makeText(
+            val loc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Saver.save(this@MediaViewerActivity, File(p.filePath), p.fileName, p.mimeType) }
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                 this@MediaViewerActivity,
                 if (loc != null) getString(R.string.saved_to, loc) else getString(R.string.save_failed),
                 android.widget.Toast.LENGTH_SHORT
@@ -463,84 +489,87 @@ class MediaViewerActivity : BaseActivity() {
         stopPlayback()
     }
 
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (zoomMode) {
-            // volume passes through; everything else belongs to zoom mode
-            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
-                event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
-            ) return super.dispatchKeyEvent(event)
-            // PHYSICAL SOFTKEYS ZOOM: the bar's zoom actions were wired but this
-            // branch swallowed every key before handleKey ever saw it — labels
-            // showed, softkeys did nothing. ORDER MATTERS: zoom's own keys are
-            // handled FIRST — on plenty of flips a softkey is physically the
-            // BACK key, and letting handleKey see BACK would turn "exit zoom"
-            // into "zoom in" with no way out (same for softkeys that emit
-            // D-pad/*/# codes, which would break panning). Softkeys only get
-            // the codes zoom mode doesn't already own.
-            val zoomOwned = when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_POUND, KeyEvent.KEYCODE_STAR,
-                KeyEvent.KEYCODE_BACK -> true
-                else -> false
+        val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN)
+            return super.dispatchKeyEvent(event)
+        // bars: any key shows them; while hidden a soft key only shows them
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val wasHidden = !barsShown
+            showBarsBriefly()
+            if (wasHidden && isRevealOnlyKey(code) && event.repeatCount == 0) {
+                revealSwallowCode = code; revealAt = System.currentTimeMillis()
+                return true   // this press only shows the bars
             }
-            if (!zoomOwned && softkeys?.handleKey(event) == true) return true
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                val step = 60 * resources.displayMetrics.density
-                when (event.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> panBy(step, 0f)
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> panBy(-step, 0f)
-                    KeyEvent.KEYCODE_DPAD_UP -> panBy(0f, step)
-                    KeyEvent.KEYCODE_DPAD_DOWN -> panBy(0f, -step)
-                    KeyEvent.KEYCODE_POUND -> zoomStep(true)
-                    KeyEvent.KEYCODE_STAR -> zoomStep(false)
-                    KeyEvent.KEYCODE_BACK -> exitZoom()
-                }
+            // the MENU echo some flips send with a soft key
+            if (code == KeyEvent.KEYCODE_MENU && System.currentTimeMillis() - revealAt < 400) {
+                revealSwallowCode = code; return true
             }
+        } else if (event.action == KeyEvent.ACTION_UP && code == revealSwallowCode) {
+            revealSwallowCode = 0
             return true
         }
-        if (softkeys?.handleKey(event) == true) return true
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    if (isVideoPlaying()) {
-                        // tap = skip back a bit; hold = rewind
-                        seekBy(forward = false, repeatCount = event.repeatCount)
-                        return true
-                    }
-                    binding.pager.setCurrentItem((binding.pager.currentItem - 1).coerceAtLeast(0), true)
+
+        val iv = currentPicture()
+        val zoomed = iv?.isZoomedIn == true
+        val step = 48 * resources.displayMetrics.density
+        when (code) {
+            // * zoom in, # zoom out — on key-up
+            KeyEvent.KEYCODE_STAR, KeyEvent.KEYCODE_POUND -> {
+                if (event.action == KeyEvent.ACTION_UP && iv != null) {
+                    if (code == KeyEvent.KEYCODE_STAR) iv.zoomIn() else iv.zoomOut()
+                    onZoomChanged()
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_BACK -> if (zoomed) {
+                // BACK leaves zoom first (key-up), then the viewer
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) { iv!!.reset(); onZoomChanged() }
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> if (iv != null && iv.canPanY()) {
+                // pan (held key keeps moving)
+                if (event.action == KeyEvent.ACTION_DOWN)
+                    iv.pan(0f, if (code == KeyEvent.KEYCODE_DPAD_UP) step else -step)
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                val back = code == KeyEvent.KEYCODE_DPAD_LEFT
+                if (zoomed) {
+                    if (event.action == KeyEvent.ACTION_DOWN) iv!!.pan(if (back) step else -step, 0f)
                     return true
                 }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (isVideoPlaying()) {
-                        // tap = skip forward a bit; hold = fast-forward
-                        seekBy(forward = true, repeatCount = event.repeatCount)
-                        return true
-                    }
-                    binding.pager.setCurrentItem(
-                        (binding.pager.currentItem + 1).coerceAtMost((parts.size - 1).coerceAtLeast(0)), true
-                    )
+                if (isVideoPlaying()) {
+                    // tap = skip a bit; hold = fast seek
+                    if (event.action == KeyEvent.ACTION_DOWN) seekBy(forward = !back, repeatCount = event.repeatCount)
                     return true
                 }
-                KeyEvent.KEYCODE_MENU -> {
-                    viewerOptions()
-                    return true
+                // not zoomed: previous / next picture, on key-up
+                if (event.action == KeyEvent.ACTION_UP) {
+                    val next = (binding.pager.currentItem + if (back) -1 else 1)
+                        .coerceIn(0, (parts.size - 1).coerceAtLeast(0))
+                    if (next != binding.pager.currentItem) binding.pager.setCurrentItem(next, true)
                 }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    if (currentPart()?.isImage() == true) enterZoom() else playCurrent()
-                    return true
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                if (event.action == KeyEvent.ACTION_UP) {
+                    if (iv != null) { iv.toggle(); onZoomChanged() } else playCurrent()
                 }
+                return true
             }
         }
+        if (softkeys?.handleKey(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 
-    class PageAdapter(
+    inner class PageAdapter(
         private val parts: List<PartEntity>,
         private val onTap: () -> Unit
     ) : RecyclerView.Adapter<PageAdapter.VH>() {
 
-        class VH(val b: ItemMediaPageBinding) : RecyclerView.ViewHolder(b.root)
+        inner class VH(val b: ItemMediaPageBinding) : RecyclerView.ViewHolder(b.root)
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
             VH(ItemMediaPageBinding.inflate(LayoutInflater.from(parent.context), parent, false))
@@ -549,26 +578,69 @@ class MediaViewerActivity : BaseActivity() {
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val p = parts[position]
+            val img = holder.b.pageImage as ZoomImageView
+            img.onChanged = null
+            img.tag = null
             holder.b.pageImage.visibility = View.GONE
             holder.b.pageVideo.visibility = View.GONE
             holder.b.pageLabel.visibility = View.GONE
             when {
                 p.isImage() -> {
                     holder.b.pagePlayBadge.visibility = View.GONE
-                    holder.b.pageImage.visibility = View.VISIBLE
-                    holder.b.pageImage.load(File(p.filePath))
+                    img.visibility = View.VISIBLE
+                    img.fillAllowed = true
+                    // sharp — decode from the original file
+                    // at up to 4x the screen's long side (room for full
+                    // zoom), never upscaled, full colour, no crossfade blur
+                    val dm = holder.itemView.resources.displayMetrics
+                    val maxPx = (maxOf(dm.widthPixels, dm.heightPixels) * 4).coerceIn(960, 1600)
+                    // SHARPNESS FIX. Real cause of the blurry,
+                    // jagged look: the big decode (up to 1280 px, kept for
+                    // zoom) was drawn at ~1/4-1/5 size through the image
+                    // matrix as a HARDWARE bitmap. The GPU shrinks that with
+                    // plain bilinear filtering and no mipmaps, which reads
+                    // only 4 of every ~25 source pixels: thin text breaks
+                    // up and edges stair-step. The phone's Gallery decodes
+                    // to the screen size instead. Now: a normal (software)
+                    // bitmap with MIPMAPS, so the GPU shrinks it from
+                    // properly averaged smaller copies (sharp at the start
+                    // size, like Gallery) and still has every original
+                    // pixel when zooming in. The stored file is the
+                    // original part as received (no recompression here).
+                    img.load(File(p.filePath)) {
+                        size(maxPx, maxPx)
+                        scale(coil.size.Scale.FIT)
+                        precision(coil.size.Precision.INEXACT)
+                        allowRgb565(false)
+                        allowHardware(false)          // mipmaps need a normal bitmap
+                        crossfade(false)
+                        // the thread's small thumbnail must not stand in
+                        memoryCacheKey("viewer:${p.id}:$maxPx")
+                        listener(onSuccess = { _, r ->
+                            (r.drawable as? android.graphics.drawable.BitmapDrawable)?.let { bd ->
+                                bd.bitmap?.setHasMipMap(true)
+                                bd.setFilterBitmap(true)
+                                bd.setAntiAlias(true)
+                                img.invalidate()
+                            }
+                        })
+                    }
+                    img.onChanged = {
+                        if (binding.pager.currentItem == holder.bindingAdapterPosition) onZoomChanged()
+                    }
                 }
                 p.isVideo() -> {
                     holder.b.pageVideo.visibility = View.VISIBLE
                     holder.b.pageVideo.tag = "video_${p.id}"
-                    holder.b.pageImage.visibility = View.VISIBLE
-                    holder.b.pageImage.tag = "poster_${p.id}"
-                    holder.b.pageImage.load(File(p.filePath)) {
+                    img.visibility = View.VISIBLE
+                    img.tag = "poster_${p.id}"
+                    img.fillAllowed = false
+                    img.load(File(p.filePath)) {
                         videoFrameMillis(1000) // frame zero is often black
+                        crossfade(false)
                     }
-                    // play badge on a DEDICATED overlay view (not a foreground on
-                    // the async-loaded poster, which didn't render reliably). The
-                    // overlay is tagged so playback can hide it.
+                    // play badge on a DEDICATED overlay view, tagged so
+                    // playback can hide it
                     holder.b.pagePlayBadge.visibility = View.VISIBLE
                     holder.b.pagePlayBadge.tag = "badge_${p.id}"
                 }

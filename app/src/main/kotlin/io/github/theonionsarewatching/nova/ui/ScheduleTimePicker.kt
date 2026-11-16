@@ -30,8 +30,8 @@ object ScheduleTimePicker {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.schedule_send)
+        DsmsFrameworkAlertBuilder(activity)
+            .setCustomTitle(Dialogs.title(activity, activity.getString(R.string.schedule_send)))
             .setItems(
                 arrayOf(
                     activity.getString(R.string.sched_today),
@@ -62,7 +62,7 @@ object ScheduleTimePicker {
             gravity = Gravity.CENTER_VERTICAL
             isFocusable = true
             isFocusableInTouchMode = false
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            setPadding(dp(18), dp(10), dp(18), dp(10))
         }
         row.addView(TextView(activity).apply {
             text = label
@@ -78,7 +78,7 @@ object ScheduleTimePicker {
         val right = TextView(activity).apply { text = "\u203A"; textSize = 20f; setPadding(dp(10), 0, dp(10), 0) }
         row.addView(left); row.addView(valueView); row.addView(right)
 
-        ThemeUtils.applyFocusHighlight(row)
+        ThemeUtils.applyDialogRowFocusGroup(row)
         row.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (keyCode) {
@@ -121,8 +121,8 @@ object ScheduleTimePicker {
         }
         summaryView?.text = summary?.invoke() ?: ""
         val scroll = ScrollView(activity).apply { addView(column) }
-        AlertDialog.Builder(activity)
-            .setTitle(title)
+        DsmsFrameworkAlertBuilder(activity)
+            .setCustomTitle(Dialogs.title(activity, activity.getString(title)))
             .setView(scroll)
             .setPositiveButton(positiveLabel) { _, _ -> onPositive() }
             .setNegativeButton(android.R.string.cancel, null)
@@ -171,7 +171,7 @@ object ScheduleTimePicker {
 
         buildDialog(activity, R.string.schedule_send, rows, summaryFn, R.string.schedule_confirm) {
             if (cal.timeInMillis <= System.currentTimeMillis()) {
-                android.widget.Toast.makeText(activity, R.string.schedule_in_past, android.widget.Toast.LENGTH_SHORT).show()
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(activity, R.string.schedule_in_past, android.widget.Toast.LENGTH_SHORT).show()
             } else onPicked(cal.timeInMillis)
         }
     }

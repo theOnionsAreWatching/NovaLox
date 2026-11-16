@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings row: D-pad focus = light accent tint + 2dp accent outline,
+     like the conversation cards. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:exitFadeDuration="80">
+    <item android:state_focused="true">
+        <inset android:insetLeft="6dp" android:insetRight="6dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="@color/pref_focus_fill" />
+                <stroke android:width="2dp" android:color="?attr/colorPrimary" />
+                <corners android:radius="10dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:state_selected="true">
+        <inset android:insetLeft="6dp" android:insetRight="6dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="@color/pref_focus_fill" />
+                <stroke android:width="2dp" android:color="?attr/colorPrimary" />
+                <corners android:radius="10dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:state_pressed="true">
+        <inset android:insetLeft="6dp" android:insetRight="6dp"
+            android:insetTop="2dp" android:insetBottom="2dp">
+            <shape android:shape="rectangle">
+                <solid android:color="@color/pref_focus_fill" />
+                <stroke android:width="2dp" android:color="?attr/colorPrimary" />
+                <corners android:radius="10dp" />
+            </shape>
+        </inset>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

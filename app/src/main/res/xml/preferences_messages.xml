@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings clean-up. Keys are unchanged so
+     backups and settings files stay compatible. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="auto_download_mms"
+        android:title="@string/st_auto_mms"
+        android:summary="@string/st_auto_mms_sum"
+        android:defaultValue="true" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="unread_on_top"
+        android:title="@string/st_unread_top"
+        android:summary="@string/st_unread_top_sum"
+        android:defaultValue="true" />
+    <ListPreference
+        app:iconSpaceReserved="false"
+        android:key="default_group_mode"
+        android:title="@string/st_group_mode"
+        android:entries="@array/group_mode_entries"
+        android:entryValues="@array/group_mode_values"
+        android:defaultValue="group_mms"
+        android:summary="%s" />
+    <Preference
+        app:iconSpaceReserved="false"
+        android:key="open_delivery"
+        android:title="@string/st_reports"
+        android:summary="@string/st_reports_sum" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="t9_contact_match"
+        android:title="@string/st_t9"
+        android:summary="@string/st_t9_sum"
+        android:defaultValue="true" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="voice_earpiece"
+        android:title="@string/st_earpiece"
+        android:summary="@string/st_earpiece_sum"
+        android:defaultValue="false" />
+    <SwitchPreferenceCompat
+        app:iconSpaceReserved="false"
+        android:key="notes_chat"
+        android:title="@string/pref_notes_chat"
+        android:summary="@string/pref_notes_chat_summary"
+        android:defaultValue="false" />
+</PreferenceScreen>

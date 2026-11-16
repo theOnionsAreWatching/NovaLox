@@ -177,25 +177,46 @@ object Sender {
                 context, "mms-send",
                 "carrier limits: max=${limits.maxBytes / 1024} KB imgW=${limits.maxImageWidth} imgH=${limits.maxImageHeight}"
             )
-            data class Att(val bytes: ByteArray, val mime: String, val name: String)
+            // Memory: the old code read EVERY attachment fully into memory
+            // first and kept those copies alive while shrinking (two copies of
+            // a multi-MB photo at once). Now sizes come from File.length(), the
+            // too-big check runs before anything is read, photos that need
+            // shrinking are decoded straight from the file, and each file is
+            // read at most once.
+            data class Att(val file: File, val size: Long, val mime: String, val name: String)
+            // an attachment that can't be read used to be skipped
+            // quietly and the MMS went out without it. Now the send stops, the
+            // message is marked Failed and a themed message says why.
+            val failUnreadable = { name: String, why: String ->
+                io.github.theonionsarewatching.nova.util.DiagLog.log(
+                    context, "mms-send", "REFUSED: attachment $name unreadable ($why) (msg=$messageId)")
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+                        context, context.getString(R.string.attachment_unreadable, name),
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+                val repoF = Repo.get(context)
+                repoF.scope.launch { repoF.onMmsSent(messageId, ok = false) }
+            }
             val loaded = ArrayList<Att>()
             for ((path, mime, name) in attachments) {
-                try {
-                    loaded.add(Att(File(path).readBytes(), mime, name))
-                } catch (_: Exception) {}
+                val f = try { File(path).takeIf { it.isFile && it.canRead() } } catch (_: Exception) { null }
+                if (f == null) { failUnreadable(name, "missing"); return }
+                loaded.add(Att(f, f.length(), mime, name))
             }
             val shrinkable = { a: Att ->
                 a.mime.startsWith("image/") && !a.mime.equals("image/gif", true)
             }
-            val fixedBytes = text.toByteArray().size +
-                loaded.filter { !shrinkable(it) }.sumOf { it.bytes.size }
-            if (fixedBytes > cap) {
+            val fixedBytesL = text.toByteArray().size.toLong() +
+                loaded.filter { !shrinkable(it) }.sumOf { it.size }
+            if (fixedBytesL > cap) {
                 io.github.theonionsarewatching.nova.util.DiagLog.log(
                     context, "mms-send",
-                    "REFUSED: non-image attachments total ${fixedBytes / 1024} KB, over the ~800 KB MMS limit (msg=$messageId)"
+                    "REFUSED: non-image attachments total ${fixedBytesL / 1024} KB, over the ~800 KB MMS limit (msg=$messageId)"
                 )
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
                         context, R.string.attachment_too_large, android.widget.Toast.LENGTH_LONG
                     ).show()
                 }
@@ -203,27 +224,35 @@ object Sender {
                 repo.scope.launch { repo.onMmsSent(messageId, ok = false) }
                 return
             }
+            val fixedBytes = fixedBytesL.toInt()
             val imageCount = loaded.count { shrinkable(it) }
             val perImageBudget = if (imageCount == 0) 0
                 else ((cap - fixedBytes) / imageCount).coerceAtLeast(60 * 1024)
             val finalAtts = ArrayList<Triple<ByteArray, String, String>>()
             for (a in loaded) {
-                if (shrinkable(a) && a.bytes.size > perImageBudget) {
+                if (shrinkable(a) && a.size > perImageBudget) {
                     val edge = maxOf(limits.maxImageWidth, limits.maxImageHeight)
                         .takeIf { it > 0 }?.coerceAtMost(1600) ?: 1600
                     val shrunk = io.github.theonionsarewatching.nova.util
-                        .MediaShrink.shrinkToBudget(a.bytes, perImageBudget, edge)
+                        .MediaShrink.shrinkFileToBudget(a.file.absolutePath, perImageBudget, edge)
                     if (shrunk != null) {
                         val jpgName = a.name.substringBeforeLast('.', a.name) + ".jpg"
                         io.github.theonionsarewatching.nova.util.DiagLog.log(
                             context, "mms-send",
-                            "shrunk ${a.name}: ${a.bytes.size / 1024} KB -> ${shrunk.size / 1024} KB"
+                            "shrunk ${a.name}: ${a.size / 1024} KB -> ${shrunk.size / 1024} KB"
                         )
                         finalAtts.add(Triple(shrunk, "image/jpeg", jpgName))
                         continue
                     }
                 }
-                finalAtts.add(Triple(a.bytes, a.mime, a.name))
+                // read once, only now (same bytes the old code sent)
+                try {
+                    finalAtts.add(Triple(a.file.readBytes(), a.mime, a.name))
+                } catch (e: Exception) {
+                    failUnreadable(a.name, e.javaClass.simpleName); return
+                } catch (_: OutOfMemoryError) {
+                    failUnreadable(a.name, "out of memory, ${a.size / 1024} KB"); return
+                }
             }
 
             // ---- preferred path: our own builder (honest delivery-report flag,

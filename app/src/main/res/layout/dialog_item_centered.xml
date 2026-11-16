@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Centered pop-up row, used only where centered rows stay (emoji
+     categories, the full Attach list). Everything else uses the compact
+     left-aligned select_dialog_item_material. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/text1"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="38dp"
+    android:textAppearance="?attr/textAppearanceListItemSmall"
+    android:textColor="?attr/textColorAlertDialogListItem"
+    android:gravity="center"
+    android:textAlignment="center"
+    android:paddingLeft="10dp"
+    android:paddingRight="10dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
+    android:maxLines="2"
+    android:ellipsize="end" />

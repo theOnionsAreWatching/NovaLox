@@ -1,5 +1,6 @@
 package io.github.theonionsarewatching.nova.ui.settings
 
+import io.github.theonionsarewatching.nova.ui.DsmsAlertBuilder
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
@@ -15,6 +16,7 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.theonionsarewatching.nova.R
+import io.github.theonionsarewatching.nova.data.BackupHelper
 import io.github.theonionsarewatching.nova.data.BinRow
 import io.github.theonionsarewatching.nova.data.ChangeBus
 import io.github.theonionsarewatching.nova.data.ConversationEntity
@@ -33,7 +35,21 @@ import kotlinx.coroutines.launch
 class SettingsActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings)
+        val binding = io.github.theonionsarewatching.nova.databinding.ActivitySettingsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        // small accent header, same on every Settings screen: the title is
+        // the name of the row that opened it
+        val titleRes = intent.getIntExtra(SettingsFragment.ARG_TITLE, 0)
+        binding.settingsTitle.text = getString(if (titleRes != 0) titleRes else R.string.st_settings)
+        binding.settingsTitle.setTextColor(ThemeUtils.accentColor(this))
+        // soft keys like the rest of the app: act on key-up (Softkeys),
+        // Back = up one level (this screen closes, the one below shows)
+        softkeys = io.github.theonionsarewatching.nova.ui.Softkeys(this, binding.softkeyBar).also {
+            it.set(getString(R.string.back), getString(R.string.softkey_select), null,
+                onLeft = { finish() },
+                onCenter = { currentFocus?.performClick() })
+        }
+        ThemeUtils.styleSoftkeyBar(binding.softkeyBar)
         if (savedInstanceState == null) {
             val frag = SettingsFragment().apply {
                 val xml = intent.getIntExtra(SettingsFragment.ARG_XML, 0)
@@ -59,7 +75,7 @@ class SettingsActivity : BaseActivity() {
             }
             startActivityForResult(i, io.github.theonionsarewatching.nova.ui.ChatBackground.REQ_BG_DOC_ALL)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(this, R.string.no_file_picker,
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.no_file_picker,
                 android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -112,69 +128,101 @@ class SettingsActivity : BaseActivity() {
     }
 
     class SettingsFragment : PreferenceFragmentCompat() {
-        companion object { const val ARG_XML = "xml_res" }
+        companion object {
+            const val ARG_XML = "xml_res"
+            const val ARG_TITLE = "title_res"
+            const val REQ_PICK_BACKUP = 302
+            const val REQ_PICK_SETTINGS = 303
+        }
 
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             val xmlRes = arguments?.getInt(ARG_XML)?.takeIf { it != 0 } ?: R.xml.preferences
             setPreferencesFromResource(xmlRes, rootKey)
-
-            find("open_customize") {
-                // its own activity, like the other sub-screens — the fragment
-                // backstack left the restored list unfocusable for the D-pad
-                startActivity(
-                    Intent(requireContext(), SettingsActivity::class.java)
-                        .putExtra(SettingsFragment.ARG_XML, R.xml.preferences_customize)
-                )
+            // Preserve explanations while restoring the current value preview.
+            fun previews(group: androidx.preference.PreferenceGroup) {
+                for (i in 0 until group.preferenceCount) {
+                    val pref = group.getPreference(i)
+                    val explanation = pref.summary?.toString().orEmpty().let {
+                        if (pref is androidx.preference.ListPreference && (it == pref.entry?.toString() || it == "%s")) "" else it
+                    }
+                    when (pref) {
+                        is androidx.preference.ListPreference -> pref.summaryProvider = Preference.SummaryProvider<androidx.preference.ListPreference> {
+                            listOf(it.entry?.toString().orEmpty(), explanation).filter { t -> t.isNotBlank() }.distinct().joinToString(" — ")
+                        }
+                        is androidx.preference.TwoStatePreference -> if (pref.key != "save_to_sd") pref.summaryProvider = Preference.SummaryProvider<androidx.preference.TwoStatePreference> {
+                            listOf(if (it.isChecked) "On" else "Off", explanation).filter { t -> t.isNotBlank() }.joinToString(" — ")
+                        }
+                    }
+                    if (!pref.isSelectable && pref.summary != null && pref !is androidx.preference.PreferenceCategory) {
+                        // Bottom help must be reachable by keypad, not stranded below
+                        // the last focusable setting. OK opens a scrollable full copy.
+                        pref.isSelectable = true
+                        pref.setOnPreferenceClickListener {
+                            DsmsAlertBuilder(requireContext())
+                                .setTitle(pref.title ?: "Help")
+                                .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessageText(requireActivity(), pref.summary.toString()))
+                                .setPositiveButton(android.R.string.ok, null).show()
+                            true
+                        }
+                    }
+                    if (pref is androidx.preference.PreferenceGroup) previews(pref)
+                }
             }
+            previews(preferenceScreen)
+            findPreference<Preference>("open_search")?.summary = "Find a setting and see its current value"
+            findPreference<Preference>("open_notifications")?.summary = "Sound, vibration, clear notifications"
+            findPreference<Preference>("open_messages")?.summary = "SMS, MMS, drafts and reports"
+            findPreference<Preference>("open_appearance")?.summary = "Theme, size, colours and backgrounds"
+            findPreference<Preference>("open_keys")?.summary = "Softkeys, Send key and keypad help"
+            findPreference<Preference>("open_storage")?.summary = "SIM messages, saved files and retention"
+
 
             find("open_keywords") { startActivity(Intent(requireContext(), KeywordsActivity::class.java)) }
             find("open_blocked") { startActivity(Intent(requireContext(), BlockedMessagesActivity::class.java)) }
+            find("open_sim_messages") { startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SimMessagesActivity::class.java)) }
             find("open_bin") { startActivity(Intent(requireContext(), RecycleBinActivity::class.java)) }
             find("open_hidden") { startActivity(Intent(requireContext(), HiddenConversationsActivity::class.java)) }
             find("open_softkeys") { startActivity(Intent(requireContext(), SoftkeyConfigActivity::class.java)) }
-            find("open_sizes") { startActivity(Intent(requireContext(), SizeSettingsActivity::class.java)) }
-            fun openXml(xml: Int) = startActivity(
+            // every sub-screen is its own activity (the fragment backstack
+            // left the restored list unfocusable for the D-pad); hardware
+            // Back / left soft key close it = up one level
+            fun openXml(xml: Int, title: Int) = startActivity(
                 Intent(requireContext(), SettingsActivity::class.java)
                     .putExtra(SettingsFragment.ARG_XML, xml)
+                    .putExtra(SettingsFragment.ARG_TITLE, title)
             )
-            find("open_mms_advanced") { openXml(R.xml.preferences_mms_advanced) }
-            find("open_delivery") { openXml(R.xml.preferences_delivery) }
-            find("open_softkeys_settings") { openXml(R.xml.preferences_softkeys) }
-            find("open_advanced") { openXml(R.xml.preferences_advanced) }
-            find("open_advanced_display") { openXml(R.xml.preferences_advanced_display) }
-            find("open_message_color") { openXml(R.xml.preferences_message_color) }
+            find("open_notifications") { openXml(R.xml.preferences_notifications, R.string.st_notifications) }
+            find("open_messages") { openXml(R.xml.preferences_messages, R.string.st_messages) }
+            find("open_appearance") { openXml(R.xml.preferences_appearance, R.string.st_appearance) }
+            find("open_keys") { openXml(R.xml.preferences_softkeys, R.string.st_keys) }
+            find("open_blocked_hidden") { openXml(R.xml.preferences_blocked, R.string.st_blocked) }
+            find("open_storage") { openXml(R.xml.preferences_storage, R.string.st_storage) }
+            find("open_backup") { openXml(R.xml.preferences_backup, R.string.st_backup) }
+            find("open_advanced") { openXml(R.xml.preferences_advanced, R.string.st_advanced) }
+            find("open_carrier") { openXml(R.xml.preferences_mms_advanced, R.string.st_carrier) }
+            find("open_delivery") { openXml(R.xml.preferences_delivery, R.string.st_reports) }
+            find("open_advanced_display") { openXml(R.xml.preferences_advanced_display, R.string.st_more_display) }
+            find("open_message_color") { openXml(R.xml.preferences_message_color, R.string.st_message_colors) }
             find("clear_mms_cache") {
                 val ctx = requireContext()
-                AlertDialog.Builder(ctx)
-                    .setTitle(R.string.pref_clear_cache)
+                DsmsAlertBuilder(ctx)
+                    .setTitle(R.string.st_clear_cache)
                     .setMessage(R.string.clear_cache_warning)
                     .setPositiveButton(android.R.string.ok) { _, _ ->
                         viewLifecycleOwner.lifecycleScope.launch {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 io.github.theonionsarewatching.nova.data.Repo.get(ctx).clearMmsCache()
                             }
-                            Toast.makeText(ctx, R.string.clear_cache_done, Toast.LENGTH_SHORT).show()
+                            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.clear_cache_done, Toast.LENGTH_SHORT).show()
                         }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
-            findPreference<androidx.preference.SwitchPreferenceCompat>("auto_delete_old")
-                ?.setOnPreferenceChangeListener { pref, newValue ->
-                    if (newValue == true) {
-                        val ctx = requireContext()
-                        AlertDialog.Builder(ctx)
-                            .setTitle(R.string.pref_auto_delete)
-                            .setMessage(R.string.auto_delete_warning)
-                            .setPositiveButton(android.R.string.ok) { _, _ ->
-                                (pref as androidx.preference.SwitchPreferenceCompat).isChecked = true
-                                promptAutoDeleteCount()
-                            }
-                            .setNegativeButton(android.R.string.cancel, null)
-                            .show()
-                        false
-                    } else true
-                }
+            // Keep per chat: one list over the SAME two saved keys as the
+            // old switch + number (auto_delete_old / auto_delete_keep), so a
+            // user's setting, backups and settings files carry over as-is
+            find("keep_per_chat") { showKeepPerChat() }
             find("accent_picker") { showAccentPicker() }
             find("default_tone") {
                 val act = requireActivity() as BaseActivity
@@ -187,7 +235,7 @@ class SettingsActivity : BaseActivity() {
                     updateToneSummary()
                 }
             }
-            findPreference<androidx.preference.SwitchPreferenceCompat>("vibrate")
+            findPreference<Preference>("vibrate_mode")
                 ?.setOnPreferenceChangeListener { _, _ ->
                     // channels embed the vibrate flag; rebuild them after the pref lands
                     view?.post {
@@ -197,58 +245,66 @@ class SettingsActivity : BaseActivity() {
                     true
                 }
             find("open_search") {
-                startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SearchActivity::class.java))
+                startActivity(Intent(requireContext(), io.github.theonionsarewatching.nova.ui.SettingsSearchActivity::class.java))
             }
             find("backup_now") {
                 if (io.github.theonionsarewatching.nova.util.BackgroundTasks.running) {
                     attachTaskDialog(); return@find
                 }
-                val name = "nova-backup-" + java.text.SimpleDateFormat(
-                    "yyyyMMdd-HHmm", java.util.Locale.US
-                ).format(java.util.Date()) + ".zip"
-                val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/zip"
-                    putExtra(Intent.EXTRA_TITLE, name)
-                }
-                try {
-                    @Suppress("DEPRECATION")
-                    startActivityForResult(i, 301)
-                } catch (_: Exception) {
-                    // no system file picker on this device (common on stripped ROMs):
-                    // write straight to Downloads/D-SMS instead
-                    backupToDownloads()
-                }
+                // what to back up; the file goes straight to D-SMS/Backups (Saver)
+                // (no "save as" picker: it is missing or awkward on keypad ROMs)
+                val choices = arrayOf(
+                    getString(R.string.backup_sms_only),
+                    getString(R.string.backup_mms_only),
+                    getString(R.string.backup_both)
+                )
+                DsmsAlertBuilder(requireContext())
+                    .setTitle(R.string.backup_what)
+                    .setItems(choices) { _, which ->
+                        val content = when (which) {
+                            0 -> BackupHelper.Content.SMS
+                            1 -> BackupHelper.Content.MMS
+                            else -> BackupHelper.Content.ALL
+                        }
+                        backupToDownloads(content)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
             }
             find("restore_backup") {
                 if (io.github.theonionsarewatching.nova.util.BackgroundTasks.running) {
                     attachTaskDialog(); return@find
                 }
-                AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.restore_title)
-                    .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessage(
-                        requireActivity(), R.string.restore_warning))
-                    .setPositiveButton(R.string.restore) { _, _ ->
-                        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = "application/zip"
-                        }
-                        try {
-                            @Suppress("DEPRECATION")
-                            startActivityForResult(i, 302)
-                        } catch (_: Exception) {
-                            restoreFromDownloads()
-                        }
+                // usual places -> whole phone -> "Could not find it" / Select manually
+                startRestoreSearch(io.github.theonionsarewatching.nova.data.BackupHelper.FileKind.BACKUP)
+            }
+            find("save_settings") {
+                val ctx = requireContext().applicationContext
+                lifecycleScope.launch {
+                    val out = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        io.github.theonionsarewatching.nova.data.BackupHelper.saveSettingsToDownloads(ctx)
                     }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+                    if (!isAdded) return@launch
+                    DsmsAlertBuilder(requireContext())
+                        .setMessage(out.message ?: getString(
+                            if (out.ok) R.string.settings_saved else R.string.err_unknown))
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            }
+            find("restore_settings") {
+                if (io.github.theonionsarewatching.nova.util.BackgroundTasks.running) {
+                    attachTaskDialog(); return@find
+                }
+                // usual places -> whole phone -> "Could not find it" / Select manually
+                startRestoreSearch(io.github.theonionsarewatching.nova.data.BackupHelper.FileKind.SETTINGS)
             }
             find("reimport") {
-                AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.pref_reimport)
+                DsmsAlertBuilder(requireContext())
+                    .setTitle(R.string.st_rebuild)
                     .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessage(
                         requireActivity(), R.string.reimport_warning))
-                    .setPositiveButton(R.string.pref_reimport) { _, _ ->
+                    .setPositiveButton(R.string.st_rebuild) { _, _ ->
                         val ctx = requireContext()
                         val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
                         if (bt.running) { attachTaskDialog(); return@setPositiveButton }
@@ -273,8 +329,8 @@ class SettingsActivity : BaseActivity() {
                     val entryIdx = (pref as androidx.preference.ListPreference)
                         .findIndexOfValue(newValue.toString())
                     val label = pref.entries.getOrNull(entryIdx) ?: newValue.toString()
-                    AlertDialog.Builder(requireContext())
-                        .setTitle(R.string.pref_resize)
+                    DsmsAlertBuilder(requireContext())
+                        .setTitle(R.string.st_app_size)
                         .setMessage(getString(R.string.resize_restart_confirm, label))
                         .setPositiveButton(R.string.resize_and_restart) { _, _ ->
                             // commit(), not apply(): apply() writes to disk on a
@@ -306,16 +362,11 @@ class SettingsActivity : BaseActivity() {
                     io.github.theonionsarewatching.nova.ui.ChatBackground.ALL_THREADS, host
                 )
             }
-            find("auto_delete_keep_row") { promptAutoDeleteCount() }
-            findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
-                val version = try {
-                    requireContext().packageManager
-                        .getPackageInfo(requireContext().packageName, 0).versionName
-                } catch (_: Exception) { "" }
-                pref.summary = "NovaLox $version\nPolyForm Noncommercial 1.0.0\n" +
-                    "github.com/theOnionsAreWatching\nby theonionsarewatching"
-            }
+            find("key_guide") { showKeyGuide() }
             find("about_footer") {
+                // OK opens About (version, license, key guide). Never wired
+                // before, so Settings had no way to show it.
+                showAboutDetails()
                 // seven taps in a row, each within 3 seconds of the last
                 val now = System.currentTimeMillis()
                 if (now - lastAboutTap > 3000L) aboutTaps = 0
@@ -323,29 +374,23 @@ class SettingsActivity : BaseActivity() {
                 aboutTaps++
                 if (aboutTaps >= 7) {
                     aboutTaps = 0
-                    val tv = android.widget.TextView(requireContext()).apply {
-                        text = getString(R.string.onions_toast)
-                        gravity = android.view.Gravity.CENTER
-                        textSize = 16f
-                        setPadding(48, 28, 48, 28)
-                        setBackgroundColor(0xCC222222.toInt())
-                        setTextColor(0xFFFFFFFF.toInt())
-                    }
-                    @Suppress("DEPRECATION")
-                    Toast(requireContext()).apply {
-                        duration = Toast.LENGTH_LONG
-                        view = tv
-                        setGravity(android.view.Gravity.CENTER, 0, 0)
-                    }.show()
+                    // themed like every other toast
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(
+                        requireContext(), getString(R.string.onions_toast), Toast.LENGTH_LONG
+                    ).apply { setGravity(android.view.Gravity.CENTER, 0, 0) }.show()
                 }
             }
-            // fill the About summary with the live version name
+            // About: app name + version (credit/license in the details pop-up).
+            // Version comes from the installed package (= versionName in
+            // app/build.gradle.kts), so it always matches the build.
             findPreference<androidx.preference.Preference>("about_footer")?.let { pref ->
                 val v = try {
                     requireContext().packageManager
                         .getPackageInfo(requireContext().packageName, 0).versionName
                 } catch (_: Exception) { "" }
-                pref.summary = getString(R.string.about_summary_fmt, v)
+                // short, one line: app name + version (details on OK)
+                pref.title = getString(R.string.st_about)
+                pref.summary = getString(R.string.about_app_name) + " " + v
             }
             val customUaPref =
                 findPreference<androidx.preference.EditTextPreference>("mms_custom_ua")
@@ -375,7 +420,7 @@ class SettingsActivity : BaseActivity() {
             findPreference<androidx.preference.SwitchPreferenceCompat>("softkeys_focusable")
                 ?.setOnPreferenceChangeListener { pref, newValue ->
                     if (newValue == true) {
-                        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        DsmsAlertBuilder(requireContext())
                             .setTitle(R.string.pref_softkeys_focusable)
                             .setMessage(R.string.softkeys_focusable_warning)
                             .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -394,11 +439,11 @@ class SettingsActivity : BaseActivity() {
                     onTop = {
                         // default: follow the accent (clears any custom color)
                         io.github.theonionsarewatching.nova.util.Prefs.get(act).sentColor = ""
-                        Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
                     }
                 ) { hex ->
                     io.github.theonionsarewatching.nova.util.Prefs.get(act).sentColor = hex
-                    Toast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(act, R.string.sent_color_set, Toast.LENGTH_SHORT).show()
                 }
             }
             find("incoming_color") {
@@ -410,37 +455,43 @@ class SettingsActivity : BaseActivity() {
                         // accent-colored incoming bubbles (a lighter accent tint)
                         io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = "accent"
                         ChangeBus.ping()
-                        Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                     }
                 ) { hex ->
                     io.github.theonionsarewatching.nova.util.Prefs.get(act).incomingColor = hex
                     ChangeBus.ping()
-                    Toast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(act, R.string.incoming_color_set, Toast.LENGTH_SHORT).show()
                 }
             }
             find("export_contacts") {
                 val ctx = requireContext()
-                AlertDialog.Builder(ctx)
+                DsmsAlertBuilder(ctx)
                     .setTitle(R.string.pref_export_contacts)
                     .setMessage(R.string.export_contacts_confirm)
                     .setPositiveButton(R.string.export_go) { _, _ ->
-                        Toast.makeText(ctx, R.string.exporting_contacts, Toast.LENGTH_SHORT).show()
+                        io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.exporting_contacts, Toast.LENGTH_SHORT).show()
                         viewLifecycleOwner.lifecycleScope.launch {
                             val vcf = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 io.github.theonionsarewatching.nova.util.ContactVcf.exportAll(ctx)
                             }
                             if (vcf.isBlank()) {
-                                Toast.makeText(ctx, R.string.export_contacts_empty, Toast.LENGTH_LONG).show()
+                                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.export_contacts_empty, Toast.LENGTH_LONG).show()
                                 return@launch
                             }
-                            val tmp = java.io.File(ctx.cacheDir, "contacts-export.vcf")
-                            tmp.writeText(vcf)
                             val stamp = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
                                 .format(java.util.Date())
-                            val ok = io.github.theonionsarewatching.nova.ui.Saver
-                                .saveToDownloads(ctx, tmp, "contacts-$stamp.vcf", "text/x-vcard")
-                            Toast.makeText(ctx,
-                                if (ok) R.string.export_contacts_done else R.string.export_contacts_failed,
+                            val loc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { 
+                                val tmp = java.io.File(ctx.cacheDir, "contacts-export.vcf")
+                                tmp.writeText(vcf)
+                                val r = io.github.theonionsarewatching.nova.ui.Saver.save(ctx, tmp,
+                                    "contacts-$stamp.vcf", "text/x-vcard",
+                                    io.github.theonionsarewatching.nova.ui.Saver.Kind.CONTACTS)
+                                tmp.delete()
+                                r
+                            }
+                            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx,
+                                if (loc != null) ctx.getString(R.string.export_contacts_done, loc)
+                                else ctx.getString(R.string.export_contacts_failed),
                                 Toast.LENGTH_LONG).show()
                         }
                     }
@@ -451,16 +502,18 @@ class SettingsActivity : BaseActivity() {
                 val ctx = requireContext()
                 viewLifecycleOwner.lifecycleScope.launch {
                     val f = io.github.theonionsarewatching.nova.util.DiagLog.file(ctx)
-                    val ok = f.exists() && io.github.theonionsarewatching.nova.ui.Saver
-                        .saveToDownloads(ctx, f, "novalox-log.txt", "text/plain")
-                    Toast.makeText(ctx,
-                        if (ok) R.string.log_saved else R.string.log_empty,
+                    val loc = if (!f.exists()) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { io.github.theonionsarewatching.nova.ui.Saver
+                        .save(ctx, f, "novalox-log.txt", "text/plain",
+                            io.github.theonionsarewatching.nova.ui.Saver.Kind.LOGS) }
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx,
+                        if (loc != null) ctx.getString(R.string.log_saved, loc)
+                        else ctx.getString(R.string.log_empty),
                         Toast.LENGTH_LONG).show()
                 }
             }
             find("check_updates") {
                 val ctx = requireContext()
-                Toast.makeText(ctx, R.string.checking_updates, Toast.LENGTH_SHORT).show()
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.checking_updates, Toast.LENGTH_SHORT).show()
                 viewLifecycleOwner.lifecycleScope.launch {
                     val current = try {
                         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
@@ -470,19 +523,19 @@ class SettingsActivity : BaseActivity() {
                     }
                     when (result) {
                         is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpToDate ->
-                            Toast.makeText(ctx,
+                            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx,
                                 getString(R.string.up_to_date_detail, current, result.latestTag),
                                 Toast.LENGTH_LONG).show()
                         is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.Failed ->
-                            Toast.makeText(ctx, R.string.update_check_failed, Toast.LENGTH_LONG).show()
+                            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.update_check_failed, Toast.LENGTH_LONG).show()
                         is io.github.theonionsarewatching.nova.util.UpdateChecker.Check.UpdateAvailable -> {
                             val release = result.release
-                            AlertDialog.Builder(ctx)
+                            DsmsAlertBuilder(ctx)
                                 .setTitle(getString(R.string.update_available, release.tag))
                                 .setMessage(R.string.update_prompt)
                                 .setPositiveButton(R.string.download) { _, _ ->
                                     io.github.theonionsarewatching.nova.util.UpdateChecker.download(ctx, release)
-                                    Toast.makeText(ctx, R.string.update_downloading, Toast.LENGTH_LONG).show()
+                                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(ctx, R.string.update_downloading, Toast.LENGTH_LONG).show()
                                 }
                                 .setNegativeButton(R.string.later, null)
                                 .show()
@@ -492,20 +545,37 @@ class SettingsActivity : BaseActivity() {
             }
             find("resync") {
                 Repo.get(requireContext()).syncRecentFromTelephony()
-                Toast.makeText(requireContext(), R.string.resync_started, Toast.LENGTH_SHORT).show()
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(requireContext(), R.string.resync_started, Toast.LENGTH_SHORT).show()
             }
             find("refresh_contacts") {
                 Repo.get(requireContext()).refreshContactNames(force = true)
-                Toast.makeText(requireContext(), R.string.contacts_refreshing, Toast.LENGTH_SHORT).show()
+                io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(requireContext(), R.string.contacts_refreshing, Toast.LENGTH_SHORT).show()
             }
 
             // restart-sensitive prefs: recreate the settings screen so the change is visible
-            for (key in listOf("theme", "layout_direction")) {
+            for (key in listOf("layout_direction", "ui_scale", "focus_stroke")) {
                 findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                    requireActivity().recreate()
+                    view?.post { activity?.recreate() }
                     true
                 }
             }
+            // theme: apply the new light/dark mode at once. AppCompat then
+            // rebuilds EVERY open screen (this one included) when the mode
+            // really changes; the generation bump makes any screen it missed
+            // rebuild when it comes back to the front.
+            find("theme") { showThemePicker() }
+        }
+
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+            super.onViewCreated(view, savedInstanceState)
+            // rows carry their own accent focus outline; no grey lines
+            setDivider(null)
+            val pad = (4 * resources.displayMetrics.density).toInt()
+            listView.setPadding(0, pad, 0, pad)
+            listView.clipToPadding = false
+            // smooth D-pad glide, no flicker animations
+            listView.layoutManager = io.github.theonionsarewatching.nova.ui.SteadyLinearLayoutManager(requireContext())
+            listView.itemAnimator = null
         }
 
         /** Kill and relaunch so the new size applies to EVERY screen at once. */
@@ -528,7 +598,7 @@ class SettingsActivity : BaseActivity() {
                 val pref = findPreference<Preference>(key) ?: return@OnSharedPreferenceChangeListener
                 val title = pref.title?.toString().orEmpty()
                 if (title.isNotBlank()) {
-                    Toast.makeText(requireContext(),
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(requireContext(),
                         getString(R.string.setting_updated_fmt, title), Toast.LENGTH_SHORT).show()
                 }
             }
@@ -537,8 +607,22 @@ class SettingsActivity : BaseActivity() {
             preferenceManager.sharedPreferences
                 ?.registerOnSharedPreferenceChangeListener(changeToast)
             super.onResume()
+            activity?.intent?.getStringExtra("focus_preference")?.let { key ->
+                view?.post {
+                    scrollToPreference(key)
+                    val pos = (listView.adapter as? androidx.preference.PreferenceGroup.PreferencePositionCallback)
+                        ?.getPreferenceAdapterPosition(key) ?: -1
+                    if (pos >= 0) listView.post { listView.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus() }
+                }
+                activity?.intent?.removeExtra("focus_preference")
+            }
+            // back from the all-files access screen during a restore search
+            resumePendingWholeSearch()
             updateAccentSummary()
+            updateThemeSummary()
             updateToneSummary()
+            updateKeepSummary()
+            updateBackupSummaries()
             // "Save to SD card" is only selectable while a card is mounted;
             // re-checked here so inserting/removing a card takes effect on
             // return without reopening settings. The pref VALUE is left alone —
@@ -583,8 +667,97 @@ class SettingsActivity : BaseActivity() {
                 Triple("red", getString(R.string.accent_red_name), c(R.color.accent_red)),
                 Triple("purple", getString(R.string.accent_purple_name), c(R.color.accent_purple)),
                 Triple("pink", getString(R.string.accent_pink_name), c(R.color.accent_pink)),
-                Triple("gray", getString(R.string.accent_gray_name), c(R.color.accent_gray))
+                Triple("gray", getString(R.string.accent_gray_name), c(R.color.accent_gray)),
+                Triple("amber", getString(R.string.accent_amber_name), c(R.color.accent_amber)),
+                Triple("gold", getString(R.string.accent_gold_name), c(R.color.accent_gold)),
+                Triple("coral", getString(R.string.accent_coral_name), c(R.color.accent_coral)),
+                Triple("crimson", getString(R.string.accent_crimson_name), c(R.color.accent_crimson)),
+                Triple("rose", getString(R.string.accent_rose_name), c(R.color.accent_rose)),
+                Triple("violet", getString(R.string.accent_violet_name), c(R.color.accent_violet)),
+                Triple("indigo", getString(R.string.accent_indigo_name), c(R.color.accent_indigo)),
+                Triple("sky", getString(R.string.accent_sky_name), c(R.color.accent_sky)),
+                Triple("cyan", getString(R.string.accent_cyan_name), c(R.color.accent_cyan)),
+                Triple("mint", getString(R.string.accent_mint_name), c(R.color.accent_mint)),
+                Triple("lime", getString(R.string.accent_lime_name), c(R.color.accent_lime)),
+                Triple("olive", getString(R.string.accent_olive_name), c(R.color.accent_olive)),
+                Triple("brown", getString(R.string.accent_brown_name), c(R.color.accent_brown)),
+                Triple("slate", getString(R.string.accent_slate_name), c(R.color.accent_slate))
             )
+        }
+
+        /** (value, label, dot colour, page colour) for every theme. */
+        private fun themeOptions(): List<Pair<String, String>> {
+            val labels = resources.getStringArray(R.array.theme_entries)
+            val values = resources.getStringArray(R.array.theme_values)
+            return values.indices.map { values[it] to labels[it] }
+        }
+
+        private fun themeDot(v: String): Pair<Int, Int> = when (v) {
+            // (fill, ring): page colour of the theme, ring = its surface/text
+            "light" -> 0xFFF4F4F6.toInt() to 0xFF9E9E9E.toInt()
+            "dark" -> 0xFF2A2A2E.toInt() to 0xFF9E9E9E.toInt()
+            "graphite" -> 0xFF191F27.toInt() to 0xFFB6C3D3.toInt()
+            "dusk" -> 0xFF24212C.toInt() to 0xFFC5B7CE.toInt()
+            "linen" -> 0xFFF6F2EA.toInt() to 0xFF6C6357.toInt()
+            else -> 0xFF9E9E9E.toInt() to 0xFF616161.toInt()   // follow system
+        }
+
+        private fun updateThemeSummary() {
+            val cur = io.github.theonionsarewatching.nova.util.Prefs.get(requireContext()).theme
+            findPreference<Preference>("theme")?.summary =
+                themeOptions().firstOrNull { it.first == cur }?.second ?: cur
+        }
+
+        /** Theme picker: a dot in each theme's colours, opens on the current
+         *  one. Applies at once: AppCompat rebuilds every screen when light/
+         *  dark changes; the generation bump rebuilds the rest. */
+        private fun showThemePicker() {
+            val ctx = requireContext()
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+            val options = themeOptions()
+            val checked = options.indexOfFirst { it.first == prefs.theme }.coerceAtLeast(0)
+            val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+            val adapter = object : android.widget.ArrayAdapter<Pair<String, String>>(ctx, 0, options) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val item = options[position]
+                    val row = (convertView as? android.widget.LinearLayout)
+                        ?: android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            setPadding(dp(12), dp(8), dp(12), dp(8))
+                            addView(View(ctx).apply {
+                                layoutParams = android.widget.LinearLayout.LayoutParams(dp(22), dp(22))
+                                    .apply { marginEnd = dp(16) }
+                            })
+                            addView(android.widget.TextView(ctx).apply { textSize = 16f; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) })
+                        }
+                    val (fill, ring) = themeDot(item.first)
+                    row.getChildAt(0).background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(fill); setStroke(dp(2), ring)
+                    }
+                    (row.getChildAt(1) as android.widget.TextView).text =
+                        if (position == checked) "${item.second}  \u2713" else item.second
+                    ThemeUtils.applyDialogRowFocusGroup(row)
+                    return row
+                }
+            }
+            DsmsAlertBuilder(ctx)
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs.title(
+                    requireActivity(), getString(R.string.pref_theme)))
+                .setAdapter(adapter) { _, which ->
+                    val v = options[which].first
+                    if (v == prefs.theme) return@setAdapter
+                    prefs.sp.edit().putString("theme", v).apply()
+                    val act = requireActivity()
+                    io.github.theonionsarewatching.nova.ui.ThemeUtils.bumpThemeGeneration()
+                    val before = androidx.appcompat.app.AppCompatDelegate.getDefaultNightMode()
+                    io.github.theonionsarewatching.nova.ui.ThemeUtils.applyNightModeValue(v)
+                    if (androidx.appcompat.app.AppCompatDelegate.getDefaultNightMode() == before) act.recreate()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+                .also { it.window?.decorView?.setTag(R.id.dsms_default_row, checked) }
         }
 
         private fun updateAccentSummary() {
@@ -602,11 +775,14 @@ class SettingsActivity : BaseActivity() {
             val version = try {
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
             } catch (_: Exception) { "" }
-            val msg = getString(R.string.about_details, version)
+            val msg = getString(R.string.about_details, version) + "\n\n" + getString(R.string.keys_help)
             val view = io.github.theonionsarewatching.nova.ui.Dialogs
                 .scrollableMessageText(requireActivity(), msg)
-            AlertDialog.Builder(ctx)
-                .setTitle(R.string.about_app_name)
+            // D-pad: the text takes focus so UP/DOWN scroll it
+            view.isFocusable = true
+            DsmsAlertBuilder(ctx)
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs
+                    .title(requireActivity(), getString(R.string.about_app_name)))
                 .setView(view)
                 .setPositiveButton(R.string.about_open_repo) { _, _ ->
                     try {
@@ -618,32 +794,140 @@ class SettingsActivity : BaseActivity() {
                 .show()
         }
 
-        private fun promptAutoDeleteCount() {
+        /** Settings > About > Key guide: the scroll keys, D-pad scrollable. */
+        private fun showKeyGuide() {
+            val view = io.github.theonionsarewatching.nova.ui.Dialogs
+                .scrollableMessageText(requireActivity(), getString(R.string.keys_help))
+            view.isFocusable = true
+            DsmsAlertBuilder(requireContext())
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs
+                    .title(requireActivity(), getString(R.string.key_guide_title)))
+                .setView(view)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            view.requestFocus()
+        }
+
+        /** Backup & restore subtitles: the real folder in use right now
+         *  (top of storage, Download/D-SMS, or the SD card). */
+        private fun updateBackupSummaries() {
+            val ctx = context ?: return
+            val S = io.github.theonionsarewatching.nova.ui.Saver
+            findPreference<Preference>("backup_now")?.summary =
+                getString(R.string.st_backup_now_sum, S.currentFolder(ctx, io.github.theonionsarewatching.nova.ui.Saver.Kind.BACKUPS))
+            findPreference<Preference>("save_settings")?.summary =
+                getString(R.string.st_save_settings_sum, S.currentFolder(ctx, io.github.theonionsarewatching.nova.ui.Saver.Kind.SETTINGS))
+            findPreference<Preference>("export_contacts")?.summary =
+                getString(R.string.st_export_contacts_sum, S.currentFolder(ctx, io.github.theonionsarewatching.nova.ui.Saver.Kind.CONTACTS))
+        }
+
+        private val keepCounts = intArrayOf(100, 500, 1000, 2000, 5000)
+
+        /** "All messages" when auto-delete is off, else "Last N messages". */
+        private fun updateKeepSummary() {
+            val pref = findPreference<Preference>("keep_per_chat") ?: return
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(requireContext())
+            pref.summary = if (!prefs.autoDeleteOld) getString(R.string.st_keep_all)
+                else getString(R.string.st_keep_n, prefs.autoDeleteKeep)
+        }
+
+        /** Keep per chat: All / 100 … 5000 / Other. Reads and writes the old
+         *  keys (auto_delete_old + auto_delete_keep): All = off, a number =
+         *  on with that count. The cursor starts on the current choice. */
+        private fun showKeepPerChat() {
             val ctx = requireContext()
             val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+            val on = prefs.autoDeleteOld
+            val keep = prefs.autoDeleteKeep
+            val custom = on && keep !in keepCounts
+            val labels = ArrayList<String>()
+            labels.add(getString(R.string.st_keep_all))
+            keepCounts.forEach { labels.add(getString(R.string.st_keep_n, it)) }
+            labels.add(if (custom) getString(R.string.st_keep_other_n, keep) else getString(R.string.st_keep_other))
+            val last = labels.size - 1
+            val checked = when {
+                !on -> 0
+                custom -> last
+                else -> keepCounts.indexOf(keep) + 1
+            }
+            DsmsAlertBuilder(ctx)
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs.title(
+                    requireActivity(), getString(R.string.st_keep)))
+                .setSingleChoiceItems(labels.toTypedArray(), checked) { d, which ->
+                    d.dismiss()
+                    when (which) {
+                        checked -> if (which == last) askKeepCount(keep)
+                        0 -> { prefs.autoDeleteOld = false; keepChanged() }
+                        last -> askKeepCount(keep)
+                        else -> applyKeep(keepCounts[which - 1])
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        private fun keepChanged() {
+            updateKeepSummary()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(requireContext(),
+                getString(R.string.setting_updated_fmt, getString(R.string.st_keep)),
+                Toast.LENGTH_SHORT).show()
+        }
+
+        /** Turning it on warns first (old messages are deleted for good). */
+        private fun applyKeep(n: Int) {
+            val ctx = requireContext()
+            val prefs = io.github.theonionsarewatching.nova.util.Prefs.get(ctx)
+            if (prefs.autoDeleteOld) {
+                prefs.autoDeleteKeep = n
+                keepChanged()
+                askApplyNow(n)
+                return
+            }
+            DsmsAlertBuilder(ctx)
+                .setTitle(R.string.st_keep)
+                .setMessage(R.string.auto_delete_warning)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    // count first, then on: never enforce the old count
+                    prefs.autoDeleteKeep = n
+                    prefs.autoDeleteOld = true
+                    keepChanged()
+                    askApplyNow(n)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        private fun askKeepCount(current: Int) {
+            val ctx = requireContext()
             val input = android.widget.EditText(ctx).apply {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                setText(prefs.autoDeleteKeep.toString())
+                setText(current.toString())
+                setSelection(text.length)
             }
-            AlertDialog.Builder(ctx)
+            DsmsAlertBuilder(ctx)
                 .setTitle(R.string.auto_delete_count_title)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
-                    val keep = input.text.toString().toIntOrNull()?.coerceAtLeast(1) ?: 1000
-                    prefs.autoDeleteKeep = keep
-                    if (!prefs.autoDeleteOld) return@setPositiveButton
-                    AlertDialog.Builder(ctx)
-                        .setMessage(getString(R.string.auto_delete_apply_warning, keep))
-                        .setPositiveButton(android.R.string.ok) { _, _ ->
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    io.github.theonionsarewatching.nova.data.Repo.get(ctx)
-                                        .enforceAutoDelete(keep)
-                                }
-                            }
+                    val n = input.text.toString().toIntOrNull()?.coerceAtLeast(1)
+                        ?: return@setPositiveButton
+                    applyKeep(n)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        /** Same "Apply now?" step as before: trims long chats right away. */
+        private fun askApplyNow(keep: Int) {
+            val ctx = requireContext()
+            DsmsAlertBuilder(ctx)
+                .setMessage(getString(R.string.auto_delete_apply_warning, keep))
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            io.github.theonionsarewatching.nova.data.Repo.get(ctx)
+                                .enforceAutoDelete(keep)
                         }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
+                    }
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
@@ -665,12 +949,12 @@ class SettingsActivity : BaseActivity() {
                         ?: android.widget.LinearLayout(ctx).apply {
                             orientation = android.widget.LinearLayout.HORIZONTAL
                             gravity = android.view.Gravity.CENTER_VERTICAL
-                            setPadding(dp(20), dp(12), dp(20), dp(12))
+                            setPadding(dp(12), dp(8), dp(12), dp(8))
                             addView(View(ctx).apply {
                                 layoutParams = android.widget.LinearLayout.LayoutParams(dp(22), dp(22))
                                     .apply { marginEnd = dp(16) }
                             })
-                            addView(android.widget.TextView(ctx).apply { textSize = 15f })
+                            addView(android.widget.TextView(ctx).apply { textSize = 16f; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) })  // Settings-size text
                         }
                     val swatch = row.getChildAt(0)
                     val label = row.getChildAt(1) as android.widget.TextView
@@ -679,19 +963,23 @@ class SettingsActivity : BaseActivity() {
                         setColor(item.third)
                     }
                     label.text = if (position == checked) "${item.second}  \u2713" else item.second
+                    ThemeUtils.applyDialogRowFocusGroup(row)
                     return row
                 }
             }
 
-            AlertDialog.Builder(ctx)
+            DsmsAlertBuilder(ctx)
                 .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs.title(
                     requireActivity(), getString(R.string.pref_accent)))
                 .setAdapter(adapter) { _, which ->
                     prefs.sp.edit().putString("accent", options[which].first).apply()
+                    io.github.theonionsarewatching.nova.ui.ThemeUtils.bumpThemeGeneration()
                     requireActivity().recreate()
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
+                // cursor starts on the chosen color (DialogPolish.startFocus)
+                .also { it.window?.decorView?.setTag(R.id.dsms_default_row, checked) }
         }
 
         @Deprecated("Deprecated in Java")
@@ -700,40 +988,344 @@ class SettingsActivity : BaseActivity() {
             val uri = data?.data ?: return
             if (resultCode != android.app.Activity.RESULT_OK) return
             when (requestCode) {
+                // 301 (system "save as") is no longer started; kept for a
+                // result that arrives after an app update
                 301 -> runBackupTask(exporting = true, uri = uri)
-                302 -> runBackupTask(exporting = false, uri = uri)
+                REQ_PICK_BACKUP -> confirmRestore(BackupHelper.FileKind.BACKUP, uri, displayName(uri))
+                REQ_PICK_SETTINGS -> confirmRestore(BackupHelper.FileKind.SETTINGS, uri, displayName(uri))
             }
         }
 
-        private fun backupToDownloads() {
+        private fun displayName(uri: android.net.Uri): String {
+            try {
+                requireContext().contentResolver.query(uri,
+                    arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                )?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { return it } }
+            } catch (_: Exception) {}
+            return uri.lastPathSegment ?: uri.toString()
+        }
+
+        private fun backupToDownloads(
+            content: io.github.theonionsarewatching.nova.data.BackupHelper.Content
+        ) {
             val ctx = requireContext()
             val bt = io.github.theonionsarewatching.nova.util.BackgroundTasks
             if (bt.running) { attachTaskDialog(); return }
             if (!bt.start(ctx, R.string.backing_up, R.string.backup_done, R.string.backup_failed)) return
+            bt.cancellable = true
             attachTaskDialog()
             bt.scope.launch {
-                val name = try {
+                val out = try {
                     io.github.theonionsarewatching.nova.data.BackupHelper
-                        .exportToDownloads(ctx.applicationContext) { p, d -> bt.report(p, d) }
-                } catch (_: Exception) { null }
-                bt.finish(name != null)
+                        .exportToDownloads(ctx.applicationContext, content) { p, d ->
+                            if (bt.cancelRequested) throw io.github.theonionsarewatching.nova.data.BackupHelper.Cancelled()
+                            bt.report(p, d)
+                        }
+                } catch (e: io.github.theonionsarewatching.nova.data.BackupHelper.Cancelled) {
+                    io.github.theonionsarewatching.nova.data.BackupHelper.Outcome(true,
+                        ctx.getString(R.string.backup_cancelled), cancelled = true)
+                } catch (e: Throwable) {
+                    io.github.theonionsarewatching.nova.data.BackupHelper.Outcome(false,
+                        io.github.theonionsarewatching.nova.data.BackupHelper
+                            .reasonFor(ctx.applicationContext, e, reading = false))
+                }
+                bt.finish(out.ok, out.message, cancelled = out.cancelled)
             }
         }
 
-        private fun restoreFromDownloads() {
+        /** Like openAllFilesAccess, but reports whether the screen opened. */
+        private fun openAllFilesAccessOk(): Boolean {
+            if (android.os.Build.VERSION.SDK_INT < 30) return false
             val ctx = requireContext()
-            val backups = io.github.theonionsarewatching.nova.data.BackupHelper.findLocalBackups(ctx)
-            if (backups.isEmpty()) {
-                Toast.makeText(ctx, R.string.no_backups_found, Toast.LENGTH_LONG).show()
-                return
+            val app = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                android.net.Uri.parse("package:" + ctx.packageName))
+            val all = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            for (i in listOf(app, all)) {
+                try { startActivity(i); return true } catch (_: Exception) {}
             }
-            AlertDialog.Builder(ctx)
-                .setTitle(R.string.restore_title)
-                .setItems(backups.map { it.displayName }.toTypedArray()) { _, which ->
-                    runBackupTask(exporting = false, uri = backups[which].uri)
+            return false
+        }
+
+        private fun openAllFilesAccess() {
+            if (android.os.Build.VERSION.SDK_INT < 30) return
+            val ctx = requireContext()
+            val app = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                android.net.Uri.parse("package:" + ctx.packageName))
+            val all = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            for (i in listOf(app, all)) {
+                try { startActivity(i); return } catch (_: Exception) {}
+            }
+            DsmsAlertBuilder(ctx)
+                .setMessage(R.string.no_access_screen)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+
+        // ---------------- restore: find the file ----------------
+        // 1) usual places (D-SMS/Backups or Settings, old Download/D-SMS, Download) -> list + "Select manually"
+        // 2) none: whole-phone search (needs all-files access on Android 11+;
+        //    "Allow access" is offered first, refusing skips to 3)
+        // 3) still none: "Could not find it" -> Select manually / Cancel
+
+        /** Kind waiting for the user to come back from the all-files access screen. */
+        private var pendingWholeSearch: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind? = null
+
+        private fun startRestoreSearch(kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind) {
+            val ctx = requireContext().applicationContext
+            lifecycleScope.launch {
+                val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try { BackupHelper.findLocal(ctx, kind) } catch (_: Exception) { null }
+                }
+                if (!isAdded) return@launch
+                if (found != null && found.files.isNotEmpty()) showFoundList(kind, found.files)
+                else askAccessThenSearchPhone(kind)
+            }
+        }
+
+        private fun showFoundList(
+            kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind,
+            files: List<BackupHelper.LocalBackup>
+        ) {
+            if (!isAdded) return
+            val title = if (kind == BackupHelper.FileKind.BACKUP) R.string.pick_backup else R.string.pick_settings_file
+            // name, with the folder underneath when it's not the usual one
+            val labels = files.map { f ->
+                if (f.where.isBlank() || f.where.startsWith("Download")) f.displayName
+                else f.displayName + "\n" + f.where
+            } + getString(R.string.select_manually)
+            DsmsAlertBuilder(requireContext())
+                .setTitle(title)
+                .setItems(labels.toTypedArray()) { _, which ->
+                    if (which < files.size) confirmRestore(kind, files[which].uri, files[which].displayName)
+                    else browseFor(kind)
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
+        }
+
+        private fun askAccessThenSearchPhone(kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind) {
+            if (!isAdded) return
+            val needAccess = android.os.Build.VERSION.SDK_INT >= 30 &&
+                !android.os.Environment.isExternalStorageManager()
+            if (!needAccess) { searchWholePhone(kind); return }
+            DsmsAlertBuilder(requireContext())
+                .setTitle(R.string.search_phone_title)
+                .setMessage(R.string.search_phone_need_access)
+                .setPositiveButton(R.string.allow_access) { _, _ ->
+                    pendingWholeSearch = kind
+                    if (!openAllFilesAccessOk()) { pendingWholeSearch = null; showNotFound(kind) }
+                }
+                .setNegativeButton(R.string.skip) { _, _ -> showNotFound(kind) }
+                // BACK = refused too: still offer manual selection
+                .setOnCancelListener { showNotFound(kind) }
+                .show()
+        }
+
+        /** Called from onResume: back from the all-files access screen. */
+        private fun resumePendingWholeSearch() {
+            val kind = pendingWholeSearch ?: return
+            pendingWholeSearch = null
+            val granted = android.os.Build.VERSION.SDK_INT < 30 ||
+                android.os.Environment.isExternalStorageManager()
+            if (granted) searchWholePhone(kind) else showNotFound(kind)
+        }
+
+        private fun searchWholePhone(kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind) {
+            if (!isAdded) return
+            val act = requireActivity()
+            val dp = { v: Int -> (v * resources.displayMetrics.density).toInt() }
+            // fixed height: the two count lines are reserved, and the
+            // current folder is ONE middle-cut line, so the pop-up never resizes
+            val status = android.widget.TextView(act).apply {
+                setPadding(dp(22), dp(4), dp(22), 0)
+                textSize = 14f
+                setLines(2)
+                text = getString(R.string.search_progress, 0, 0)
+            }
+            val curPath = android.widget.TextView(act).apply {
+                setPadding(dp(22), 0, dp(22), dp(8))
+                textSize = 12f
+                isSingleLine = true
+                setLines(1)
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                textDirection = android.view.View.TEXT_DIRECTION_LTR   // a path
+                text = " "
+            }
+            val bar = android.widget.ProgressBar(act, null, android.R.attr.progressBarStyleHorizontal).apply {
+                isIndeterminate = true
+                val tint = android.content.res.ColorStateList.valueOf(
+                    io.github.theonionsarewatching.nova.ui.ThemeUtils.accentColor(act))
+                indeterminateTintList = tint
+                setPadding(dp(22), 0, dp(22), 0)
+            }
+            val box = android.widget.LinearLayout(act).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                addView(bar)
+                addView(status)
+                addView(curPath)
+            }
+            val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+            val dialog = DsmsAlertBuilder(act)
+                .setCustomTitle(io.github.theonionsarewatching.nova.ui.Dialogs.title(
+                    act, getString(R.string.searching_whole_phone)))
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel) { _, _ -> stop.set(true) }
+                .setOnCancelListener { stop.set(true) }   // BACK
+                .create()
+            dialog.setCanceledOnTouchOutside(false)
+            dialog.show()
+            val ctx = act.applicationContext
+            lifecycleScope.launch {
+                var lastUi = 0L
+                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        BackupHelper.searchWholePhone(ctx, kind, { stop.get() }) { dirs, found, cur ->
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastUi > 250) {
+                                lastUi = now
+                                status.post {
+                                    if (isAdded) {
+                                        status.text = getString(R.string.search_progress, dirs, found)
+                                        curPath.text = cur.ifEmpty { " " }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Exception) { emptyList() }
+                }
+                if (!isAdded) return@launch
+                try { dialog.dismiss() } catch (_: Exception) {}
+                if (stop.get()) return@launch
+                if (result.isNotEmpty()) showFoundList(kind, result) else showNotFound(kind)
+            }
+        }
+
+        private fun showNotFound(kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind) {
+            if (!isAdded) return
+            val what = getString(if (kind == BackupHelper.FileKind.BACKUP) R.string.what_backups
+                else R.string.what_settings_files)
+            DsmsAlertBuilder(requireContext())
+                .setTitle(R.string.could_not_find_it)
+                .setMessage(getString(R.string.not_found_on_phone, what))
+                .setPositiveButton(R.string.select_manually) { _, _ -> browseFor(kind) }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        /** Restore entry point: the system file picker when the phone has
+         *  one (opening in the D-SMS backup folder where supported);
+         *  otherwise the app's own keypad file browser, starting there. */
+        private fun browseFor(kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind) {
+            @Suppress("DEPRECATION")
+            val downloads = android.os.Environment
+                .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            // first existing folder of: D-SMS/<Backups|Settings> at the top,
+            // under Download, SD card, then the old Download/D-SMS
+            val sk = if (kind == BackupHelper.FileKind.BACKUP)
+                io.github.theonionsarewatching.nova.ui.Saver.Kind.BACKUPS
+                else io.github.theonionsarewatching.nova.ui.Saver.Kind.SETTINGS
+            val ourDir = io.github.theonionsarewatching.nova.ui.Saver.lookIn(requireContext(), sk)
+                .map { it.first }.firstOrNull { it.isDirectory }
+                ?: java.io.File(downloads, BackupHelper.FOLDER)
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                // start in that folder (Android 8+; pickers that don't
+                // support it just open their usual place)
+                @Suppress("DEPRECATION")
+                val top = android.os.Environment.getExternalStorageDirectory().absolutePath
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    val docId = if (ourDir.isDirectory && ourDir.absolutePath.startsWith("$top/"))
+                        "primary:" + ourDir.absolutePath.removePrefix("$top/")
+                        else "primary:" + android.os.Environment.DIRECTORY_DOWNLOADS
+                    try {
+                        putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                            android.provider.DocumentsContract.buildDocumentUri(
+                                "com.android.externalstorage.documents", docId))
+                    } catch (_: Exception) {}
+                }
+            }
+            val req = if (kind == BackupHelper.FileKind.BACKUP) REQ_PICK_BACKUP else REQ_PICK_SETTINGS
+            val hasPicker = try {
+                i.resolveActivity(requireContext().packageManager) != null
+            } catch (_: Exception) { false }
+            if (hasPicker) {
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(i, req)
+                    return
+                } catch (_: Exception) { /* fall through to our own browser */ }
+            }
+            // no system picker: our own browser. On Android 11+ it can only
+            // see files from an earlier install with all-files access, so
+            // offer that first when it is off.
+            val needAccess = android.os.Build.VERSION.SDK_INT >= 30 &&
+                !android.os.Environment.isExternalStorageManager()
+            if (needAccess) {
+                DsmsAlertBuilder(requireContext())
+                    .setMessage(R.string.all_files_access_off)
+                    .setPositiveButton(R.string.allow_access) { _, _ -> openAllFilesAccess() }
+                    .setNeutralButton(R.string.browse_anyway) { _, _ -> openOwnBrowser(kind, ourDir, downloads) }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            } else openOwnBrowser(kind, ourDir, downloads)
+        }
+
+        private fun openOwnBrowser(
+            kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind,
+            ourDir: java.io.File, downloads: java.io.File
+        ) {
+            if (!isAdded) return
+            // settings can also be read from a backup zip
+            val suffixes = if (kind == BackupHelper.FileKind.BACKUP) listOf(".zip") else listOf(".json", ".zip")
+            io.github.theonionsarewatching.nova.ui.FileBrowserDialog.show(requireActivity(), suffixes,
+                onPick = { uri, name -> if (isAdded) confirmRestore(kind, uri, name) },
+                start = if (ourDir.isDirectory) ourDir else downloads)
+        }
+
+        private fun confirmRestore(
+            kind: io.github.theonionsarewatching.nova.data.BackupHelper.FileKind,
+            uri: android.net.Uri, name: String
+        ) {
+            if (!isAdded) return
+            if (kind == BackupHelper.FileKind.BACKUP) {
+                val text = getString(R.string.restore_confirm_file, name) + "\n\n" +
+                    getString(R.string.restore_warning)
+                DsmsAlertBuilder(requireContext())
+                    .setTitle(R.string.restore_title)
+                    .setView(io.github.theonionsarewatching.nova.ui.Dialogs.scrollableMessageText(
+                        requireActivity(), text))
+                    .setPositiveButton(R.string.restore) { _, _ -> runBackupTask(exporting = false, uri = uri) }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            } else {
+                DsmsAlertBuilder(requireContext())
+                    .setTitle(R.string.pref_restore_settings)
+                    .setMessage(getString(R.string.restore_settings_confirm, name))
+                    .setPositiveButton(R.string.restore) { _, _ -> restoreSettingsFrom(uri) }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+
+        private fun restoreSettingsFrom(uri: android.net.Uri) {
+            val ctx = requireContext().applicationContext
+            lifecycleScope.launch {
+                val out = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    io.github.theonionsarewatching.nova.data.BackupHelper.restoreSettings(ctx, uri)
+                }
+                if (!isAdded) return@launch
+                val act = requireActivity()
+                DsmsAlertBuilder(act)
+                    .setMessage(out.message ?: getString(
+                        if (out.ok) R.string.settings_restored else R.string.err_unknown))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .setOnDismissListener {
+                        // rebuild the screen so theme / sizes / keys take effect
+                        if (out.ok && !act.isFinishing) act.recreate()
+                    }
+                    .show()
+            }
         }
 
         /** Progress dialog for the app-wide task, detachable to the background. */
@@ -748,46 +1340,26 @@ class SettingsActivity : BaseActivity() {
             val okRes = if (exporting) R.string.backup_done else R.string.restore_done
             val failRes = if (exporting) R.string.backup_failed else R.string.restore_failed
             if (!bt.start(ctx, if (exporting) R.string.backing_up else R.string.restoring, okRes, failRes)) return
+            bt.cancellable = true
             attachTaskDialog()
             bt.scope.launch {
                 val reporter = io.github.theonionsarewatching.nova.data.BackupHelper.Progress { p, d ->
+                    if (exporting && bt.cancelRequested) throw BackupHelper.Cancelled()
                     bt.report(p, d)
                 }
-                val ok = try {
-                    if (exporting) io.github.theonionsarewatching.nova.data.BackupHelper.export(ctx.applicationContext, uri, reporter)
-                    else io.github.theonionsarewatching.nova.data.BackupHelper.restore(ctx.applicationContext, uri, reporter)
-                } catch (_: Exception) { false }
-                bt.finish(ok)
-            }
-        }
-
-    }
-}
-
-// ============================== Size sub-settings ==============================
-
-class SizeSettingsActivity : BaseActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings)
-        if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.settings_container, SizeFragment())
-                .commit()
-        }
-    }
-
-    class SizeFragment : PreferenceFragmentCompat() {
-        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.preferences_size, rootKey)
-            // recreate so scale / outline changes are visible immediately
-            for (key in listOf("ui_scale", "focus_stroke")) {
-                findPreference<Preference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                    requireActivity().recreate()
-                    true
+                val out = try {
+                    if (exporting) BackupHelper.export(ctx.applicationContext, uri, BackupHelper.Content.ALL, reporter)
+                    else BackupHelper.restore(ctx.applicationContext, uri, reporter,
+                        cancelled = { bt.cancelRequested }, stopNotAllowed = { bt.cancellable = false })
+                } catch (e: BackupHelper.Cancelled) {
+                    BackupHelper.Outcome(true, ctx.getString(R.string.backup_cancelled), cancelled = true)
+                } catch (e: Throwable) {
+                    BackupHelper.Outcome(false, BackupHelper.reasonFor(ctx.applicationContext, e, reading = !exporting))
                 }
+                bt.finish(out.ok, out.message, out.settingsApplied, out.cancelled)
             }
         }
+
     }
 }
 
@@ -809,7 +1381,7 @@ abstract class SimpleListActivity : BaseActivity() {
         binding.btnBack.setOnClickListener { finish() }
         ThemeUtils.applyFocusHighlightRound(binding.btnBack)
         ThemeUtils.applyButtonFocus(binding.btnAction, binding.btnAction2)
-        binding.list.layoutManager = LinearLayoutManager(this)
+        binding.list.layoutManager = io.github.theonionsarewatching.nova.ui.SteadyLinearLayoutManager(this)
     }
 
     override fun onResume() {
@@ -879,7 +1451,7 @@ class KeywordsActivity : SimpleListActivity() {
 
     private fun addKeyword() {
         val input = EditText(this)
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.add_keyword)
             .setView(input)
             .setPositiveButton(R.string.add) { _, _ ->
@@ -921,7 +1493,7 @@ class KeywordsActivity : SimpleListActivity() {
             caseLabel,
             getString(R.string.remove)
         )
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(k.keyword)
             .setItems(options) { _, which ->
                 when (which) {
@@ -963,7 +1535,7 @@ class KeywordsActivity : SimpleListActivity() {
     }
 
     private fun confirmRemove(k: KeywordEntity) {
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setMessage(getString(R.string.remove_keyword_confirm, k.keyword))
             .setPositiveButton(R.string.remove) { _, _ ->
                 lifecycleScope.launch { repo.db.keywords().delete(k.id); load() }
@@ -1006,7 +1578,7 @@ class RecycleBinActivity : SimpleListActivity() {
 
     private fun rowOptions(row: BinRow) {
         val options = arrayOf(getString(R.string.restore), getString(R.string.delete_forever))
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setItems(options) { _, which ->
                 lifecycleScope.launch {
                     if (which == 0) repo.restoreMessage(row.id) else repo.hardDeleteMessage(row.id)
@@ -1018,7 +1590,7 @@ class RecycleBinActivity : SimpleListActivity() {
 
     private fun emptyBin() {
         if (items.isEmpty()) return
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setMessage(getString(R.string.empty_bin_confirm, items.size))
             .setPositiveButton(R.string.empty_bin) { _, _ ->
                 lifecycleScope.launch {
@@ -1047,7 +1619,7 @@ class HiddenConversationsActivity : SimpleListActivity() {
 
     override fun load() {
         lifecycleScope.launch {
-            items = repo.db.conversations().hiddenList()
+            items = io.github.theonionsarewatching.nova.data.NotesChat.filterOff(this@HiddenConversationsActivity, repo.db.conversations().hiddenList())
             adapter.submit(items.map { it.displayTitle() to it.snippet.take(80) })
             setEmpty(items.isEmpty())
         }
@@ -1055,7 +1627,7 @@ class HiddenConversationsActivity : SimpleListActivity() {
 
     private fun rowOptions(c: ConversationEntity) {
         val options = arrayOf(getString(R.string.open), getString(R.string.unhide))
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(c.displayTitle())
             .setItems(options) { _, which ->
                 when (which) {
@@ -1102,10 +1674,10 @@ class BlockedMessagesActivity : SimpleListActivity() {
             getString(R.string.restore),
             getString(R.string.delete)
         )
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> AlertDialog.Builder(this)
+                    0 -> DsmsAlertBuilder(this)
                         .setTitle(row.address + "  \u00B7  " + Formatters.listStamp(row.date))
                         .setMessage(row.body.ifBlank { getString(R.string.attach_vcard) })
                         .setPositiveButton(android.R.string.ok, null)
@@ -1231,15 +1803,15 @@ class SoftkeyConfigActivity : BaseActivity() {
     private fun manualCodeDialog() {
         val input = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            hint = getString(R.string.key_code_hint)
+            hint = getString(R.string.code_short_hint)
         }
-        AlertDialog.Builder(this)
+        DsmsAlertBuilder(this)
             .setTitle(R.string.enter_code_manually)
-            .setView(input)
+            .setView(io.github.theonionsarewatching.nova.ui.Dialogs.inputPanel(this, input, getString(R.string.key_code_hint)))
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 val code = input.text?.toString()?.toIntOrNull() ?: return@setPositiveButton
                 if (code <= 0 || code in BLOCKED_KEYS) {
-                    Toast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 acceptCode(code)
@@ -1257,7 +1829,7 @@ class SoftkeyConfigActivity : BaseActivity() {
             }
             Step.RIGHT -> {
                 if (code == capturedLeft) {
-                    Toast.makeText(this, R.string.same_key_twice, Toast.LENGTH_SHORT).show()
+                    io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.same_key_twice, Toast.LENGTH_SHORT).show()
                 } else {
                     capturedRight = code
                     step = Step.CONFIRM
@@ -1280,7 +1852,7 @@ class SoftkeyConfigActivity : BaseActivity() {
             prefs.softkeyLeftCode = capturedLeft
             prefs.softkeyRightCode = capturedRight
             prefs.softkeysMapped = true
-            Toast.makeText(this, R.string.softkeys_saved, Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.softkeys_saved, Toast.LENGTH_SHORT).show()
         }
         if (onboarding) prefs.softkeySetupDone = true
         finish()
@@ -1314,7 +1886,7 @@ class SoftkeyConfigActivity : BaseActivity() {
             ) {
                 return super.dispatchKeyEvent(event)
             }
-            Toast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
+            io.github.theonionsarewatching.nova.ui.DsmsToast.makeText(this, R.string.not_a_softkey, Toast.LENGTH_SHORT).show()
             return true
         }
         acceptCode(code)
